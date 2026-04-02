@@ -8,6 +8,9 @@ describe("terminalRunner hooks integration", () => {
   afterEach(() => {
     clearAllHooks();
     runner.spawnProc = origSpawn;
+    const confirmation = require("../../tools/confirmation");
+    if (confirmation && confirmation.clearPersistentAllows)
+      confirmation.clearPersistentAllows();
   });
 
   it("pre-hook blocks execution", async () => {
@@ -123,7 +126,7 @@ describe("terminalRunner hooks integration", () => {
     let callCount = 0;
     confirmation.confirmAction = async (cmd: string, ask: any) => {
       callCount++;
-      return callCount === 1 ? "approve" : "always";
+      return callCount === 1 ? "approve" : "always_workspace";
     };
 
     let spawned = 0;

@@ -3,7 +3,14 @@ import { execFile as execFileCb, spawn } from "child_process";
 import { promisify } from "util";
 import * as fs from "fs/promises";
 import { runPreToolHooks, runPostToolHooks, ToolContext } from "../tools/hooks";
-import { confirmAction, sessionAlwaysAllow } from "../tools/confirmation";
+import {
+  confirmAction,
+  sessionAlwaysAllow,
+  isAutoAllowed,
+  persistAllow,
+  computeHash,
+} from "../tools/confirmation";
+import { evaluatePolicy } from "../tools/policy";
 
 // exported handle to allow tests to stub process spawning
 export let spawnProc: typeof spawn = spawn;
@@ -752,12 +759,75 @@ export class DiffReviewPanel {
     };
 
     try {
+      // Evaluate policy (denylist/risky rules) before running pre-hooks
+      try {
+        const policy = await evaluatePolicy(initialCtx);
+        if (policy.decision === "deny") {
+          const reason = policy.reason || "blocked by safety policy";
+          await runPostToolHooks(initialCtx, { success: false, error: reason });
+          return { success: false, error: reason };
+        }
+        if (policy.decision === "ask") {
+          const cmdline =
+            `${initialCtx.command} ${(initialCtx.args || []).join(" ")}`.trim();
+          const toolKey = initialCtx.toolId || "git.apply";
+          const hash = computeHash(cmdline, toolKey);
+          const key = `${toolKey}::${hash}`;
+          if (
+            !isAutoAllowed(cmdline, toolKey) &&
+            !sessionAlwaysAllow.has(key)
+          ) {
+            const decision = await confirmAction(
+              cmdline,
+              policy.askPayload as any,
+            );
+            if (decision === "deny") {
+              const reason = "denied by user";
+              await runPostToolHooks(initialCtx, {
+                success: false,
+                error: reason,
+              });
+              return { success: false, error: reason };
+            }
+            if (decision === "always_workspace") {
+              sessionAlwaysAllow.add(key);
+              try {
+                await persistAllow(
+                  cmdline,
+                  toolKey,
+                  "workspace",
+                  policy.askPayload as any,
+                );
+              } catch (_) {}
+            } else if (decision === "always_global") {
+              sessionAlwaysAllow.add(key);
+              try {
+                await persistAllow(
+                  cmdline,
+                  toolKey,
+                  "global",
+                  policy.askPayload as any,
+                );
+              } catch (_) {}
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("policy evaluation error", e);
+      }
+
       const pre = await runPreToolHooks(initialCtx);
       if (!pre.allowed) {
         if (pre.ask) {
           const cmdline =
             `${pre.ctx.command} ${(pre.ctx.args || []).join(" ")}`.trim();
-          if (!sessionAlwaysAllow.has(cmdline)) {
+          const toolKey = pre.ctx.toolId || "git.apply";
+          const hash = computeHash(cmdline, toolKey);
+          const key = `${toolKey}::${hash}`;
+          if (
+            !isAutoAllowed(cmdline, toolKey) &&
+            !sessionAlwaysAllow.has(key)
+          ) {
             const decision = await confirmAction(cmdline, pre.ask);
             if (decision === "deny") {
               const reason = "denied by user";
@@ -767,7 +837,17 @@ export class DiffReviewPanel {
               });
               return { success: false, error: reason };
             }
-            if (decision === "always") sessionAlwaysAllow.add(cmdline);
+            if (decision === "always_workspace") {
+              sessionAlwaysAllow.add(key);
+              try {
+                await persistAllow(cmdline, toolKey, "workspace", pre.ask);
+              } catch (_) {}
+            } else if (decision === "always_global") {
+              sessionAlwaysAllow.add(key);
+              try {
+                await persistAllow(cmdline, toolKey, "global", pre.ask);
+              } catch (_) {}
+            }
             // approved -> continue
           }
         } else {

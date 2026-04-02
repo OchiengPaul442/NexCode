@@ -1,6 +1,14 @@
 import { spawn } from "child_process";
 import { runPreToolHooks, runPostToolHooks, ToolContext } from "./hooks";
-import { confirmAction, sessionAlwaysAllow } from "./confirmation";
+import {
+  confirmAction,
+  sessionAlwaysAllow,
+  isAutoAllowed,
+  persistAllow,
+  computeHash,
+} from "./confirmation";
+import { evaluatePolicy } from "./policy";
+import { logEvent } from "./audit";
 
 export let spawnProc: typeof spawn = spawn;
 
@@ -50,20 +58,124 @@ export async function runTerminalCommand(
   };
 
   try {
+    // handle empty or malformed command gracefully
+    if (!command || String(command).trim().length === 0) {
+      const reason = "empty command";
+      await runPostToolHooks(initialCtx, { success: false, error: reason });
+      return { success: false, error: reason };
+    }
+    // Evaluate safety policy (denylist / risky rules) before running pre-hooks
+    try {
+      const policy = await evaluatePolicy(initialCtx);
+      // log policy decision
+      try {
+        await logEvent({
+          tool: initialCtx.toolId,
+          command:
+            `${initialCtx.command} ${(initialCtx.args || []).join(" ")}`.trim(),
+          decision: policy.decision,
+          reason: policy.reason,
+          matchedRule: policy.matchedRule,
+          outcome: policy.decision === "deny" ? "blocked" : "pending",
+          cwd: initialCtx.cwd,
+        });
+      } catch (e) {}
+
+      if (policy.decision === "deny") {
+        const reason = policy.reason || "blocked by safety policy";
+        await runPostToolHooks(initialCtx, { success: false, error: reason });
+        return { success: false, error: reason };
+      }
+      if (policy.decision === "ask") {
+        const cmdline =
+          `${initialCtx.command} ${(initialCtx.args || []).join(" ")}`.trim();
+        const toolKey = initialCtx.toolId || initialCtx.command;
+        const hash = computeHash(cmdline, toolKey);
+        const key = `${toolKey}::${hash}`;
+        if (!isAutoAllowed(cmdline, toolKey) && !sessionAlwaysAllow.has(key)) {
+          const decision = await confirmAction(
+            cmdline,
+            policy.askPayload as any,
+          );
+          // log user decision
+          try {
+            await logEvent({
+              tool: initialCtx.toolId,
+              command: cmdline,
+              decision: decision === "deny" ? "deny" : "allow",
+              reason:
+                decision === "deny" ? "denied by user" : "approved by user",
+              matchedRule: policy.matchedRule,
+              outcome: decision === "deny" ? "blocked" : "pending",
+              cwd: initialCtx.cwd,
+            });
+          } catch (e) {}
+
+          if (decision === "deny") {
+            const reason = "denied by user";
+            await runPostToolHooks(initialCtx, {
+              success: false,
+              error: reason,
+            });
+            return { success: false, error: reason };
+          }
+          if (decision === "always_workspace") {
+            sessionAlwaysAllow.add(key);
+            try {
+              await persistAllow(
+                cmdline,
+                toolKey,
+                "workspace",
+                policy.askPayload as any,
+              );
+            } catch (_) {}
+          } else if (decision === "always_global") {
+            sessionAlwaysAllow.add(key);
+            try {
+              await persistAllow(
+                cmdline,
+                toolKey,
+                "global",
+                policy.askPayload as any,
+              );
+            } catch (_) {}
+          }
+        }
+      }
+    } catch (e) {
+      // policy evaluation failure -> continue and let hooks handle safety
+      console.warn("policy evaluation error", e);
+    }
     const pre = await runPreToolHooks(initialCtx);
     if (!pre.allowed) {
       // if a pre-hook returned an 'ask' payload, prompt the user
       if (pre.ask) {
         const cmdline =
           `${pre.ctx.command} ${(pre.ctx.args || []).join(" ")}`.trim();
-        if (!sessionAlwaysAllow.has(cmdline)) {
+        const hash = computeHash(cmdline, "terminal");
+        const key = `terminal::${hash}`;
+        if (
+          !isAutoAllowed(cmdline, "terminal") &&
+          !sessionAlwaysAllow.has(key)
+        ) {
           const decision = await confirmAction(cmdline, pre.ask);
           if (decision === "deny") {
             const reason = "denied by user";
             await runPostToolHooks(pre.ctx, { success: false, error: reason });
             return { success: false, error: reason };
           }
-          if (decision === "always") sessionAlwaysAllow.add(cmdline);
+          if (decision === "always_workspace") {
+            sessionAlwaysAllow.add(key);
+            // persist as workspace-level rule where possible
+            try {
+              await persistAllow(cmdline, "terminal", "workspace", pre.ask);
+            } catch (_) {}
+          } else if (decision === "always_global") {
+            sessionAlwaysAllow.add(key);
+            try {
+              await persistAllow(cmdline, "terminal", "global", pre.ask);
+            } catch (_) {}
+          }
           // if approved or always, continue with pre.ctx
         }
       } else {
@@ -107,6 +219,17 @@ export async function runTerminalCommand(
         try {
           await runPostToolHooks(ctx, result);
         } catch (e) {}
+        try {
+          await logEvent({
+            tool: ctx.toolId,
+            command: `${ctx.command} ${(ctx.args || []).join(" ")}`.trim(),
+            decision: "allow",
+            reason: "execution error",
+            outcome: "error",
+            error: result.error,
+            cwd: ctx.cwd,
+          });
+        } catch (e) {}
         resolve(result);
       });
       child.on("close", async (code: number) => {
@@ -120,6 +243,19 @@ export async function runTerminalCommand(
           result.error = stderr || `exit ${code}`;
         try {
           await runPostToolHooks(ctx, result);
+        } catch (e) {}
+        try {
+          await logEvent({
+            tool: ctx.toolId,
+            command: `${ctx.command} ${(ctx.args || []).join(" ")}`.trim(),
+            decision: "allow",
+            reason: result.error || undefined,
+            outcome: result.success ? "executed" : "failed",
+            exitCode: result.exitCode,
+            stdout: result.stdout,
+            stderr: result.stderr,
+            cwd: ctx.cwd,
+          });
         } catch (e) {}
         resolve(result);
       });

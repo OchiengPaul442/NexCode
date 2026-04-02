@@ -2,6 +2,10 @@
   "name": "nexcode-kiboko",
   "displayName": "Kiboko for VS Code",
   "version": "0.0.1",
+  "repository": {
+    "type": "git",
+    "url": "https://example.com/your/repo.git"
+  },
   "publisher": "your-name",
   "engines": {
     "vscode": "^1.80.0"
@@ -10,7 +14,9 @@
   "activationEvents": [
     "onCommand:kiboko.helloWorld",
     "onCommand:kiboko.openChat",
-    "onCommand:kiboko.openDiffReview"
+    "onCommand:kiboko.openDiffReview",
+    "onCommand:kiboko.openAuditLog",
+    "onCommand:kiboko.manageDenylist"
   ],
   "scripts": {
     "vscode:prepublish": "npm run build:webview && npm run compile",
@@ -50,6 +56,14 @@
       {
         "command": "kiboko.openDiffReview",
         "title": "Kiboko: Open Diff Review"
+      },
+      {
+        "command": "kiboko.openAuditLog",
+        "title": "Kiboko: Open Audit Log"
+      },
+      {
+        "command": "kiboko.manageDenylist",
+        "title": "Kiboko: Manage Denylist"
       }
     ],
     "configuration": {
@@ -110,6 +124,67 @@
           "type": "number",
           "default": 400,
           "description": "Number of characters after the cursor sent as suffix for inline completion."
+        },
+        "pulse.denylist": {
+          "type": "array",
+          "description": "Denylist rules for commands and file paths. Each rule can be toggled and assigned a risk level.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Optional rule id"
+              },
+              "pattern": {
+                "type": "string",
+                "description": "Command or file path pattern (glob or substring). Prefix with `re:` to use a JS RegExp."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "command",
+                  "file"
+                ],
+                "default": "command",
+                "description": "Whether the pattern targets commands or file paths"
+              },
+              "enabled": {
+                "type": "boolean",
+                "default": true
+              },
+              "risk": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "default": "high",
+                "description": "Risk level: high=deny, medium=ask, low=allow"
+              },
+              "description": {
+                "type": "string",
+                "description": "Human-readable explanation for the rule"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "pulse.policy": {
+          "type": "object",
+          "description": "Policy settings for safety and denylist behavior.",
+          "properties": {
+            "askRiskThreshold": {
+              "type": "string",
+              "enum": [
+                "low",
+                "medium",
+                "high"
+              ],
+              "default": "medium",
+              "description": "Risk level at or above which the system will ask the user before executing."
+            }
+          }
         }
       }
     },

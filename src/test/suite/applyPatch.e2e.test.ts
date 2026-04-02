@@ -9,6 +9,9 @@ describe("applyPatch _applyPatch with Pre/Post hooks", () => {
   afterEach(() => {
     clearAllHooks();
     panel.spawnProc = origSpawn;
+    const confirmation = require("../../tools/confirmation");
+    if (confirmation && confirmation.clearPersistentAllows)
+      confirmation.clearPersistentAllows();
   });
 
   it("pre-hook denies and blocks git apply", async () => {

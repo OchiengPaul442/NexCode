@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
+import "./audit";
 import { createRoot } from "react-dom/client";
 
 const vscode = (window as any).acquireVsCodeApi

@@ -296,7 +296,7 @@ describe("InlineCompletion Provider - integration tests", function () {
     await vscode.commands.executeCommand("editor.action.inlineSuggest.trigger");
 
     // wait for debounce + stream to produce tokens
-    await new Promise((r) => setTimeout(r, 500));
+    await new Promise((r) => setTimeout(r, 800));
 
     const pos = editor.selection.active;
     // Fallback: call the provider directly to verify the editor-typing flow

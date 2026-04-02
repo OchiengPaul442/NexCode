@@ -1,8 +1,11 @@
 import * as vscode from "vscode";
 import { ChatPanel } from "./panels/chatPanel";
 import { DiffReviewPanel } from "./panels/diffReviewPanel";
+import { AuditLogPanel } from "./panels/auditLogPanel";
 import * as path from "path";
 import registerInlineCompletion from "./inline/inlineCompletionProvider";
+import { initConfirmation } from "./tools/confirmation";
+import { initAudit } from "./tools/audit";
 
 // Register chat participant for native VS Code chat integration
 function registerChatParticipant(context: vscode.ExtensionContext) {
@@ -111,6 +114,17 @@ function registerChatParticipant(context: vscode.ExtensionContext) {
 export function activate(context: vscode.ExtensionContext) {
   console.log("Kiboko extension activated");
 
+  // initialize confirmation persistence (workspace-scoped)
+  try {
+    initConfirmation(context.workspaceState, context.globalState);
+    // initialize audit logging
+    try {
+      initAudit(context.workspaceState);
+    } catch (e) {}
+  } catch (e) {
+    // ignore
+  }
+
   const disposable = vscode.commands.registerCommand(
     "kiboko.helloWorld",
     () => {
@@ -129,6 +143,27 @@ export function activate(context: vscode.ExtensionContext) {
     },
   );
 
+  const manageDeny = vscode.commands.registerCommand(
+    "kiboko.manageDenylist",
+    () => {
+      try {
+        void vscode.commands.executeCommand(
+          "workbench.action.openSettings",
+          "pulse.denylist",
+        );
+      } catch (e) {}
+    },
+  );
+
+  const openAudit = vscode.commands.registerCommand(
+    "kiboko.openAuditLog",
+    () => {
+      try {
+        AuditLogPanel.createOrShow(context.extensionUri);
+      } catch (e) {}
+    },
+  );
+
   registerChatParticipant(context);
 
   // Register inline completion provider (inline suggestions)
@@ -142,6 +177,8 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(disposable, openChat);
   context.subscriptions.push(openDiffReview);
+  context.subscriptions.push(manageDeny);
+  context.subscriptions.push(openAudit);
 }
 
 export function deactivate() {}

@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900">
+  <style>
+    .bg { fill: #1e1e1e }
+    .panel { fill: #252526; stroke: #2c2c2c; }
+    .sidebar { fill: #151515; }
+    .accent { fill: #334155 }
+    .muted { fill: #9aa2a6 }
+    .token { fill: #9aa2a6 }
+    .text { fill: #e6eef3; font-family: Inter, Arial, sans-serif }
+    .small { font-size: 12px }
+    .title { font-size: 20px; font-weight: 600 }
+    .chip { fill: #2a2a2a; stroke: #333 }
+    .button { fill: #334155; stroke: #2b3946 }
+  </style>
+
+  <rect class="bg" x="0" y="0" width="1400" height="900" />
+
+  <!-- Left sidebar -->
+  <rect class="sidebar" x="16" y="16" width="260" height="868" rx="6" />
+  <text x="36" y="56" class="text title">SESSIONS</text>
+  <g transform="translate(0,80)">
+    <rect class="chip" x="36" y="0" width="200" height="44" rx="6" />
+    <text x="52" y="30" class="text small">Audit Pulse agent architecture</text>
+
+    <rect class="chip" x="36" y="64" width="200" height="44" rx="6" />
+    <text x="52" y="94" class="text small">Fix slow image loading issue</text>
+
+    <rect class="chip" x="36" y="128" width="200" height="44" rx="6" />
+    <text x="52" y="158" class="text small">New session · Start here</text>
+  </g>
+
+  <!-- Main panel -->
+  <rect class="panel" x="292" y="16" width="1092" height="868" rx="8" />
+
+  <!-- Header inside main -->
+  <g transform="translate(312,36)">
+    <rect x="0" y="0" width="980" height="56" rx="6" fill="#1f1f1f" />
+    <text x="18" y="36" class="text title">Kiboko — Chat</text>
+
+    <!-- Model selector mock -->
+    <rect x="760" y="8" width="200" height="40" rx="6" class="chip" />
+    <text x="780" y="34" class="text small">Claude Opus 4.6 · High</text>
+  </g>
+
+  <!-- Chat messages area -->
+  <g transform="translate(312,110)">
+    <rect x="0" y="0" width="980" height="520" rx="6" fill="#141414" />
+
+    <!-- Assistant message -->
+    <rect x="16" y="16" width="880" height="84" rx="8" fill="#334155" stroke="#222" />
+    <text x="32" y="44" class="text small">Assistant — Proposed plan:</text>
+    <text x="32" y="64" class="text small muted">1) Bootstrap project scaffold · 2) MVP Chat view · 3) Tools</text>
+
+    <!-- User message -->
+    <rect x="16" y="116" width="520" height="64" rx="8" fill="#334155" stroke="#222" />
+    <text x="32" y="148" class="text small">User — Please run tests locally and prepare VSIX</text>
+
+    <!-- Stream / response area indicator -->
+    <rect x="16" y="200" width="880" height="320" rx="8" fill="#0b1220" stroke="#222" />
+    <text x="32" y="228" class="text small muted">Streaming response (time-to-first-token shown)</text>
+    <!-- Token stream preview (simulated) -->
+    <g transform="translate(32,250)">
+      <rect class="token" x="0" y="0" width="22" height="12" rx="3" />
+      <rect class="token" x="26" y="0" width="18" height="12" rx="3" />
+      <rect class="token" x="48" y="0" width="30" height="12" rx="3" />
+      <rect class="token" x="82" y="0" width="12" height="12" rx="3" />
+      <rect class="token" x="100" y="0" width="24" height="12" rx="3" />
+      <rect class="token" x="128" y="0" width="16" height="12" rx="3" />
+      <rect class="token" x="150" y="0" width="28" height="12" rx="3" />
+    </g>
+  </g>
+
+  <!-- Input area (Copilot-like chrome) -->
+  <g transform="translate(312,650)">
+    <rect x="0" y="0" width="980" height="80" rx="8" fill="#0b1220" />
+    <!-- Input chrome -->
+    <rect x="16" y="12" width="660" height="56" rx="12" fill="#0f1720" stroke="#222" />
+    <!-- Slash shortcut chip -->
+    <rect x="24" y="20" width="36" height="32" rx="8" fill="#334155" />
+    <text x="36" y="43" class="text small">/</text>
+    <!-- Placeholder / example commands -->
+    <text x="72" y="44" class="text small muted">Ask or use /commands — e.g., /explain, /fix</text>
+    <!-- Attach icon -->
+    <rect x="700" y="20" width="36" height="32" rx="8" fill="#2a2a2a" />
+    <text x="712" y="43" class="text small muted">+</text>
+    <!-- Model selector small -->
+    <rect x="740" y="16" width="150" height="48" rx="10" class="chip"/>
+    <text x="752" y="44" class="text small">Claude Opus 4.6</text>
+    <!-- Send button -->
+    <rect x="905" y="18" width="68" height="44" rx="10" class="button"/>
+    <text x="927" y="46" class="text small">Send</text>
+  </g>
+
+  <!-- Footer: approvals, mode -->
+  <g transform="translate(312,740)">
+    <rect x="0" y="0" width="980" height="40" rx="6" fill="#141414" />
+    <text x="18" y="26" class="text small muted">Mode: Agent  ·  Approvals: Default</text>
+  </g>
+
+</svg>

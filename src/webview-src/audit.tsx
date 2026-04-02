@@ -67,7 +67,14 @@ const AuditApp = ({ vscode }: { vscode: any }) => {
 
   return (
     <div style={{ padding: 12, fontFamily: "Segoe UI, Arial, sans-serif" }}>
-      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+      <div
+        style={{
+          display: "flex",
+          gap: 8,
+          alignItems: "center",
+          marginBottom: 8,
+        }}
+      >
         <button onClick={refresh}>Refresh</button>
         <button onClick={doExport}>Export</button>
         <button onClick={doClear}>Clear</button>
@@ -81,27 +88,106 @@ const AuditApp = ({ vscode }: { vscode: any }) => {
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
-                <th style={{ textAlign: "left", padding: 6, borderBottom: "1px solid #eee" }}>Time</th>
-                <th style={{ textAlign: "left", padding: 6, borderBottom: "1px solid #eee" }}>Tool</th>
-                <th style={{ textAlign: "left", padding: 6, borderBottom: "1px solid #eee" }}>Command</th>
-                <th style={{ textAlign: "left", padding: 6, borderBottom: "1px solid #eee" }}>Decision</th>
-                <th style={{ textAlign: "left", padding: 6, borderBottom: "1px solid #eee" }}>Outcome</th>
-                <th style={{ textAlign: "left", padding: 6, borderBottom: "1px solid #eee" }}>Reason</th>
-                <th style={{ textAlign: "left", padding: 6, borderBottom: "1px solid #eee" }}>Details</th>
+                <th
+                  style={{
+                    textAlign: "left",
+                    padding: 6,
+                    borderBottom: "1px solid #eee",
+                  }}
+                >
+                  Time
+                </th>
+                <th
+                  style={{
+                    textAlign: "left",
+                    padding: 6,
+                    borderBottom: "1px solid #eee",
+                  }}
+                >
+                  Tool
+                </th>
+                <th
+                  style={{
+                    textAlign: "left",
+                    padding: 6,
+                    borderBottom: "1px solid #eee",
+                  }}
+                >
+                  Command
+                </th>
+                <th
+                  style={{
+                    textAlign: "left",
+                    padding: 6,
+                    borderBottom: "1px solid #eee",
+                  }}
+                >
+                  Decision
+                </th>
+                <th
+                  style={{
+                    textAlign: "left",
+                    padding: 6,
+                    borderBottom: "1px solid #eee",
+                  }}
+                >
+                  Outcome
+                </th>
+                <th
+                  style={{
+                    textAlign: "left",
+                    padding: 6,
+                    borderBottom: "1px solid #eee",
+                  }}
+                >
+                  Reason
+                </th>
+                <th
+                  style={{
+                    textAlign: "left",
+                    padding: 6,
+                    borderBottom: "1px solid #eee",
+                  }}
+                >
+                  Details
+                </th>
               </tr>
             </thead>
             <tbody>
               {events.map((ev, i) => (
                 <tr key={i}>
-                  <td style={{ padding: 6, borderBottom: "1px solid #eee" }}>{ev.timestamp}</td>
-                  <td style={{ padding: 6, borderBottom: "1px solid #eee" }}>{ev.tool}</td>
-                  <td style={{ padding: 6, borderBottom: "1px solid #eee" }}>{ev.command}</td>
-                  <td style={{ padding: 6, borderBottom: "1px solid #eee" }}>{ev.decision}</td>
-                  <td style={{ padding: 6, borderBottom: "1px solid #eee" }}>{ev.outcome}</td>
-                  <td style={{ padding: 6, borderBottom: "1px solid #eee" }}>{ev.reason}</td>
+                  <td style={{ padding: 6, borderBottom: "1px solid #eee" }}>
+                    {ev.timestamp}
+                  </td>
+                  <td style={{ padding: 6, borderBottom: "1px solid #eee" }}>
+                    {ev.tool}
+                  </td>
+                  <td style={{ padding: 6, borderBottom: "1px solid #eee" }}>
+                    {ev.command}
+                  </td>
+                  <td style={{ padding: 6, borderBottom: "1px solid #eee" }}>
+                    {ev.decision}
+                  </td>
+                  <td style={{ padding: 6, borderBottom: "1px solid #eee" }}>
+                    {ev.outcome}
+                  </td>
+                  <td style={{ padding: 6, borderBottom: "1px solid #eee" }}>
+                    {ev.reason}
+                  </td>
                   <td style={{ padding: 6, borderBottom: "1px solid #eee" }}>
                     <pre style={{ margin: 0, fontSize: 11 }}>
-{JSON.stringify({ stdout: ev.stdout, stderr: ev.stderr, error: ev.error, matchedRule: ev.matchedRule, cwd: ev.cwd, exitCode: ev.exitCode }, null, 2)}
+                      {JSON.stringify(
+                        {
+                          stdout: ev.stdout,
+                          stderr: ev.stderr,
+                          error: ev.error,
+                          matchedRule: ev.matchedRule,
+                          cwd: ev.cwd,
+                          exitCode: ev.exitCode,
+                        },
+                        null,
+                        2,
+                      )}
                     </pre>
                   </td>
                 </tr>

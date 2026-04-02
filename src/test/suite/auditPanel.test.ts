@@ -18,13 +18,18 @@ describe("Integration: AuditLogPanel", function () {
 
     // create the panel directly
     AuditLogPanel.createOrShow(vscode.Uri.file(ext!.extensionPath));
-    assert.ok(AuditLogPanel.currentPanel, "AuditLogPanel.currentPanel should exist");
+    assert.ok(
+      AuditLogPanel.currentPanel,
+      "AuditLogPanel.currentPanel should exist",
+    );
 
     const panelAny = AuditLogPanel.currentPanel as any;
     assert.ok(panelAny._panel && panelAny._panel.webview, "webview present");
 
     const messagesCaptured: any[] = [];
-    const origPost = panelAny._panel.webview.postMessage.bind(panelAny._panel.webview);
+    const origPost = panelAny._panel.webview.postMessage.bind(
+      panelAny._panel.webview,
+    );
     panelAny._panel.webview.postMessage = (m: any) => {
       messagesCaptured.push(m);
       return Promise.resolve(true);
@@ -32,7 +37,10 @@ describe("Integration: AuditLogPanel", function () {
 
     // the panel requests events shortly after creation; wait for an 'events' message
     await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error("timeout waiting for events")), 5000);
+      const timeout = setTimeout(
+        () => reject(new Error("timeout waiting for events")),
+        5000,
+      );
       const check = setInterval(() => {
         if (messagesCaptured.find((m) => m.type === "events")) {
           clearTimeout(timeout);

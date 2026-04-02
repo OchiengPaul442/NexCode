@@ -112,7 +112,9 @@ export class AuditLogPanel {
       pre{margin:0;font-size:11px}
     `;
 
-    const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, "media", "webview.js"));
+    const scriptUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this._extensionUri, "media", "webview.js"),
+    );
 
     const html = `<!DOCTYPE html>
       <html lang="en"><head>

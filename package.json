@@ -46,8 +46,7 @@
       {
         "command": "kiboko.openChat",
         "title": "Kiboko: Open Chat"
-      }
-      ,
+      },
       {
         "command": "kiboko.openDiffReview",
         "title": "Kiboko: Open Diff Review"

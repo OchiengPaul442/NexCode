@@ -155,6 +155,40 @@ export function createInlineProvider(): vscode.InlineCompletionItemProvider {
             })();
 
           try {
+            // start streaming
+
+            // create a wrapper so cancellations requested before the real
+            // controller is returned are preserved and forwarded.
+            const controllerWrapper: any = {
+              _real: undefined as any,
+              _pendingCancel: false,
+              cancel() {
+                if (this._real && typeof this._real.cancel === "function") {
+                  try {
+                    this._real.cancel();
+                  } catch (e) {}
+                } else {
+                  this._pendingCancel = true;
+                }
+              },
+              _setReal(rc: any) {
+                this._real = rc;
+                if (
+                  this._pendingCancel &&
+                  this._real &&
+                  typeof this._real.cancel === "function"
+                ) {
+                  try {
+                    this._real.cancel();
+                  } catch (e) {}
+                }
+              },
+            };
+
+            // store wrapper early so concurrent callers can cancel it
+            cur.controller = controllerWrapper as any;
+            pendings.set(sessionKey, cur);
+
             const controller = providerInst.streamCompletion(
               prompt,
               undefined,
@@ -162,7 +196,7 @@ export function createInlineProvider(): vscode.InlineCompletionItemProvider {
                 onToken: (t: string) => {
                   if (token.isCancellationRequested) {
                     try {
-                      controller.cancel();
+                      controllerWrapper.cancel();
                     } catch (e) {}
                     return;
                   }
@@ -173,7 +207,7 @@ export function createInlineProvider(): vscode.InlineCompletionItemProvider {
                   if (generated.length > maxChars) {
                     generated = generated.slice(0, maxChars);
                     try {
-                      controller.cancel();
+                      controllerWrapper.cancel();
                     } catch (e) {}
                   }
 
@@ -182,7 +216,7 @@ export function createInlineProvider(): vscode.InlineCompletionItemProvider {
                     cache.set(cacheKey, generated);
                     pendings.set(sessionKey, {
                       ...cur,
-                      controller,
+                      controller: controllerWrapper,
                       lastPrefix: prefix,
                       lastCompletion: generated,
                     });
@@ -193,7 +227,7 @@ export function createInlineProvider(): vscode.InlineCompletionItemProvider {
                     cache.set(cacheKey, generated);
                     pendings.set(sessionKey, {
                       ...cur,
-                      controller,
+                      controller: controllerWrapper,
                       lastPrefix: prefix,
                       lastCompletion: generated,
                     });
@@ -228,8 +262,14 @@ export function createInlineProvider(): vscode.InlineCompletionItemProvider {
               },
             );
 
+            // attach the real controller to the wrapper so pending cancels are applied
+            try {
+              controllerWrapper._setReal(controller);
+            } catch (e) {}
+            // and expose the real controller reference as well
             cur.controller = controller as any;
             pendings.set(sessionKey, cur);
+            // controller assigned
           } catch (e) {
             if (!resolved) {
               resolved = true;

@@ -59,10 +59,10 @@ Example `settings.json` snippet:
 
 ```json
 {
-	"pulse.inlineDebounceMs": 200,
-	"pulse.inlinePrefixChars": 800,
-	"pulse.inlineSuffixChars": 400,
-	"pulse.inlineMaxCompletionChars": 2000
+  "pulse.inlineDebounceMs": 200,
+  "pulse.inlinePrefixChars": 800,
+  "pulse.inlineSuffixChars": 400,
+  "pulse.inlineMaxCompletionChars": 2000
 }
 ```
 
@@ -72,9 +72,9 @@ Quick examples
 
 ```json
 {
-	"pulse.inlineDebounceMs": 120,
-	"pulse.inlinePrefixChars": 400,
-	"pulse.inlineSuffixChars": 200
+  "pulse.inlineDebounceMs": 120,
+  "pulse.inlinePrefixChars": 400,
+  "pulse.inlineSuffixChars": 200
 }
 ```
 
@@ -82,10 +82,10 @@ Quick examples
 
 ```json
 {
-	"pulse.inlineDebounceMs": 300,
-	"pulse.inlinePrefixChars": 2000,
-	"pulse.inlineSuffixChars": 800,
-	"pulse.inlineMaxCompletionChars": 4000
+  "pulse.inlineDebounceMs": 300,
+  "pulse.inlinePrefixChars": 2000,
+  "pulse.inlineSuffixChars": 800,
+  "pulse.inlineMaxCompletionChars": 4000
 }
 ```
 

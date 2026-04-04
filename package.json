@@ -1,0 +1,90 @@
+{
+  "name": "kiboko",
+  "displayName": "Kiboko for VS Code",
+  "description": "Kiboko — Copilot-like VS Code AI assistant (prototype)",
+  "version": "0.0.1",
+  "publisher": "your-name",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "main": "./out/src/extension.js",
+  "activationEvents": [
+    "onCommand:kiboko.hello",
+    "onCommand:kiboko.openChat"
+  ],
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "build:webview": "echo \"no-op\"",
+    "compile": "tsc -p .",
+    "watch": "tsc -w -p .",
+    "lint": "eslint src --ext .ts",
+    "test": "mocha -r ts-node/register tests/unit/**/*.ts tests/integration/**/*.ts --timeout 20000",
+    "test:e2e": "npm run compile && node ./out/tests/e2e/runTest.js"
+  },
+  "devDependencies": {
+    "typescript": "^5.2.2",
+    "ts-node": "^10.9.1",
+    "mocha": "^10.2.0",
+    "chai": "^4.3.7",
+    "@types/node": "^20.4.2",
+    "@types/mocha": "^10.0.1",
+    "@types/chai": "^4.3.4",
+    "eslint": "^8.45.0",
+    "zod": "^3.22.2",
+    "@typescript-eslint/parser": "^6.7.0",
+    "@typescript-eslint/eslint-plugin": "^6.7.0",
+    "@vscode/test-electron": "^2.4.0",
+    "vscode": "^1.1.37"
+  },
+  "dependencies": {},
+  "contributes": {
+    "commands": [
+      {
+        "command": "kiboko.hello",
+        "title": "Kiboko: Hello"
+      },
+      {
+        "command": "kiboko.openChat",
+        "title": "Kiboko: Open Chat"
+      },
+      {
+        "command": "kiboko.applyPatch",
+        "title": "Kiboko: Apply Patch"
+      },
+      {
+        "command": "kiboko.selectProvider",
+        "title": "Kiboko: Select Provider"
+      }
+    ],
+    "configuration": {
+      "type": "object",
+      "title": "Kiboko",
+      "properties": {
+        "kiboko.provider": {
+          "type": "string",
+          "default": "ollama",
+          "description": "Provider to use for completions (ollama, openai)."
+        },
+        "kiboko.ollamaBaseUrl": {
+          "type": "string",
+          "default": "http://localhost:11434",
+          "description": "Base URL for the local Ollama server."
+        }
+      },
+      "chatParticipants": [
+        {
+          "id": "kiboko.kiboko",
+          "name": "Kiboko",
+          "fullName": "Kiboko Chat Participant",
+          "description": "Kiboko AI assistant for editor-aware chat and actions",
+          "isSticky": true,
+          "sampleRequest": "Explain the selected code",
+          "icon": {
+            "dark": "media/icon-128.png",
+            "light": "media/icon-128.png"
+          }
+        }
+      ]
+    }
+  }
+}

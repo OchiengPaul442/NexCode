@@ -1,0 +1,13 @@
+node_modules
+out
+.vscode
+.kiboko
+.env
+node_modules/
+out/
+.vscode-test/
+*.vsix
+dist/
+.DS_Store
+.env
+.kiboko/

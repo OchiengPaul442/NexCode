@@ -3,12 +3,30 @@ const path = require("path");
 const { NexcodeOrchestrator } = require("../agent-core/dist");
 
 const workspaceRoot = process.cwd();
-const models = [
+const defaultModels = [
   "kimi-k2.5:cloud",
   "qwen3-coder:480b-cloud",
   "qwen2.5-coder:7b",
   "nemotron-mini:latest",
 ];
+
+const argv = process.argv.slice(2);
+
+function readArgValue(flag) {
+  const index = argv.indexOf(flag);
+  if (index === -1 || index + 1 >= argv.length) {
+    return undefined;
+  }
+  return argv[index + 1];
+}
+
+const modelsArg = readArgValue("--models");
+const models = modelsArg
+  ? modelsArg
+      .split(",")
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0)
+  : defaultModels;
 
 function safeName(input) {
   return input.replace(/[^a-zA-Z0-9._-]/g, "_");

@@ -2,3 +2,5 @@ src/**
 tsconfig.json
 .vscodeignore
 *.tgz
+../workspace.d.ts
+../**

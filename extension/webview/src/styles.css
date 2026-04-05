@@ -2,150 +2,938 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  :root {
-    color-scheme: dark;
-  }
+/* ── Design tokens ─────────────────────────────────────────────────────────── */
+:root {
+  --nk-bg: #1a1a1b;
+  --nk-bg2: #212123;
+  --nk-bg3: #2a2a2d;
+  --nk-border: #3a3a3e;
+  --nk-border2: #2e2e32;
+  --nk-text: #e2e2e2;
+  --nk-muted: #8b8b9a;
+  --nk-faint: #4b4b5a;
+  --nk-accent: #0284c7;
+  --nk-accent2: #0369a1;
+  --nk-accent-glow: rgba(2, 132, 199, 0.15);
+  --nk-green: #22c55e;
+  --nk-red: #f85149;
+  --nk-orange: #fb923c;
+  --nk-user-bg: #1a2b3c;
+  --nk-topbar-h: 38px;
+  color-scheme: dark;
+}
 
-  body {
-    @apply m-0 min-h-screen overflow-hidden bg-slate-950 text-slate-100 antialiased;
-    font-family: var(--vscode-font-family, "Segoe UI", sans-serif);
-  }
+/* ── Reset & base ──────────────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
 
-  * {
-    scrollbar-width: thin;
-    scrollbar-color: rgba(100, 116, 139, 0.65) transparent;
-  }
+body {
+  margin: 0;
+  background: var(--nk-bg);
+  color: var(--nk-text);
+  font-family: var(--vscode-font-family, "Segoe UI", system-ui, sans-serif);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  height: 100vh;
+  width: 100%;
+}
 
-  *::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-  }
+/* Scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #3a3a3e transparent;
+}
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #3a3a3e;
+  border-radius: 99px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
 
-  *::-webkit-scrollbar-thumb {
-    background-color: rgba(100, 116, 139, 0.65);
-    border-radius: 999px;
-    border: 2px solid transparent;
-    background-clip: padding-box;
-  }
+/* ── Shell layout ──────────────────────────────────────────────────────────── */
+.nk-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100%;
+  background: var(--nk-bg);
+  overflow: hidden;
+}
 
-  *::-webkit-scrollbar-track {
-    background: transparent;
+/* ── Top bar ───────────────────────────────────────────────────────────────── */
+.nk-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  height: var(--nk-topbar-h);
+  padding: 0 6px;
+  border-bottom: 1px solid var(--nk-border2);
+  background: var(--nk-bg);
+  flex-shrink: 0;
+}
+
+/* ── Icon buttons ──────────────────────────────────────────────────────────── */
+.nk-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 5px;
+  border: none;
+  background: transparent;
+  color: var(--nk-muted);
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    color 0.12s;
+  padding: 0;
+  flex-shrink: 0;
+}
+.nk-icon-btn:hover {
+  background: var(--nk-bg3);
+  color: var(--nk-text);
+}
+.nk-icon-btn:active {
+  background: #333;
+}
+
+/* ── Chat scroller ─────────────────────────────────────────────────────────── */
+.nk-chat-scroller {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+  position: relative;
+  transition: background 0.15s;
+}
+.nk-chat-scroller.nk-drag-active {
+  background: rgba(2, 132, 199, 0.04);
+}
+
+/* Drop overlay */
+.nk-drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 15, 18, 0.6);
+  border: 2px dashed var(--nk-accent);
+  border-radius: 8px;
+  pointer-events: none;
+}
+.nk-drop-hint {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: var(--nk-accent);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* Messages list */
+.nk-messages-list {
+  padding: 8px 8px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* Message rows (no avatars) */
+.nk-msg-row {
+  display: flex;
+  width: 100%;
+  padding: 3px 0;
+}
+.nk-msg-row--user {
+  justify-content: flex-end;
+}
+.nk-msg-row--bot {
+  justify-content: flex-start;
+}
+
+.nk-msg-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 88%;
+}
+.nk-msg-content--user {
+  align-items: flex-end;
+}
+.nk-msg-content--bot {
+  align-items: flex-start;
+  max-width: 100%;
+}
+
+/* Empty state */
+.nk-empty-chat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 220px;
+  padding: 24px 12px 16px;
+  text-align: center;
+}
+.nk-empty-hints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  justify-content: center;
+  margin-top: 10px;
+}
+.nk-empty-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--nk-bg2);
+  border: 1px solid var(--nk-border2);
+  border-radius: 4px;
+  color: var(--nk-faint);
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 10px;
+  padding: 2px 7px;
+}
+.nk-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--nk-muted);
+  font-size: 13px;
+}
+
+/* ── Message bubbles ───────────────────────────────────────────────────────── */
+.nk-bubble-user {
+  background: var(--nk-user-bg);
+  border: 1px solid #243850;
+  border-radius: 14px 14px 4px 14px;
+  padding: 7px 12px;
+  color: #b8d0ec;
+  word-break: break-word;
+}
+
+.nk-bubble-bot {
+  background: transparent;
+  padding: 2px 0;
+  color: var(--nk-text);
+  word-break: break-word;
+  width: 100%;
+}
+
+.nk-bubble-error {
+  background: rgba(248, 81, 73, 0.07);
+  border: 1px solid rgba(248, 81, 73, 0.25);
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: #fca5a5;
+  word-break: break-word;
+}
+
+/* ── Thinking indicator ── */
+.nk-thinking-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 0 4px;
+}
+.nk-thinking-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.nk-thinking-icon {
+  color: var(--nk-accent);
+  flex-shrink: 0;
+  opacity: 0.9;
+}
+.nk-thinking-label {
+  font-size: 11px;
+  color: var(--nk-muted);
+  font-weight: 500;
+}
+.nk-thinking-step {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  color: var(--nk-faint);
+  padding-left: 2px;
+  line-height: 1.4;
+}
+.nk-thinking-dots {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+}
+.nk-thinking-dots span {
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--nk-accent);
+  opacity: 0.3;
+  animation: nk-dot-pulse 1.2s ease-in-out infinite;
+}
+.nk-thinking-dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.nk-thinking-dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+@keyframes nk-dot-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.75);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
   }
 }
 
-@layer components {
-  .nexcode-shell {
-    @apply grid h-screen min-h-screen grid-cols-[220px_1fr] overflow-hidden bg-slate-950;
-    background-image:
-      radial-gradient(
-        circle at top right,
-        rgba(71, 85, 105, 0.22),
-        transparent 38%
-      ),
-      radial-gradient(
-        circle at bottom left,
-        rgba(51, 65, 85, 0.2),
-        transparent 36%
-      ),
-      linear-gradient(
-        180deg,
-        rgba(15, 23, 42, 0.97) 0%,
-        rgba(9, 12, 20, 0.98) 100%
-      );
-  }
-
-  .panel-edge {
-    @apply border-r border-slate-800/80 bg-slate-950/85 backdrop-blur;
-  }
-
-  .slate-card {
-    @apply rounded-2xl border border-slate-700/70 bg-slate-900/55 shadow-glow backdrop-blur;
-  }
-
-  .label-caps {
-    @apply text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400;
-  }
-
-  .input-base {
-    @apply w-full rounded-xl border border-slate-700/80 bg-slate-900/75 px-3 py-2 text-sm text-slate-100 outline-none transition duration-150 placeholder:text-slate-500 focus:border-slate-500 focus:ring-2 focus:ring-slate-500/35;
-  }
-
-  .ghost-btn {
-    @apply rounded-xl border border-slate-700/80 bg-slate-900/60 px-3 py-2 text-xs font-medium text-slate-200 transition hover:border-slate-500 hover:bg-slate-800/80;
-  }
-
-  .primary-btn {
-    @apply rounded-xl border border-cyan-500/55 bg-cyan-600/35 px-3 py-2 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-500/45;
-  }
-
-  .danger-btn {
-    @apply rounded-xl border border-rose-500/45 bg-rose-500/20 px-3 py-2 text-xs font-medium text-rose-100 transition hover:bg-rose-500/35;
-  }
-
-  .thinking-shimmer {
-    background: linear-gradient(
-      100deg,
-      rgba(15, 23, 42, 0.15) 20%,
-      rgba(125, 211, 252, 0.2) 45%,
-      rgba(15, 23, 42, 0.15) 70%
-    );
-    background-size: 240% 100%;
-    @apply animate-shimmer;
-  }
-
-  .markdown-body h1,
-  .markdown-body h2,
-  .markdown-body h3 {
-    @apply mb-2 mt-3 font-semibold text-slate-100;
-  }
-
-  .markdown-body h1 {
-    @apply text-base;
-  }
-
-  .markdown-body h2 {
-    @apply text-sm;
-  }
-
-  .markdown-body h3 {
-    @apply text-sm;
-  }
-
-  .markdown-body p {
-    @apply my-2 leading-relaxed text-slate-200;
-  }
-
-  .markdown-body ul,
-  .markdown-body ol {
-    @apply my-2 ml-5 space-y-1;
-  }
-
-  .markdown-body li {
-    @apply text-slate-200;
-  }
-
-  .markdown-body code {
-    @apply rounded bg-slate-900/90 px-1.5 py-0.5 text-[12px] text-cyan-200;
-  }
-
-  .markdown-body pre {
-    @apply my-3 overflow-auto rounded-xl border border-slate-700/70 bg-slate-950/85 p-3 text-[12px] text-slate-100;
-  }
-
-  .markdown-body pre code {
-    @apply bg-transparent p-0 text-inherit;
-  }
+/* ── Details / reasoning ───────────────────────────────────────────────────── */
+.nk-details-block {
+  background: var(--nk-bg2);
+  border: 1px solid var(--nk-border2);
+  border-radius: 8px;
+  padding: 6px 10px;
+  color: var(--nk-muted);
+  font-size: 11px;
+  margin-top: 4px;
+}
+.nk-details-block summary {
+  list-style: none;
+}
+.nk-details-block summary::-webkit-details-marker {
+  display: none;
+}
+.nk-details-block[open] .details-arrow {
+  transform: rotate(90deg);
+}
+.details-arrow {
+  transition: transform 0.15s;
+  display: inline-block;
 }
 
-@media (max-width: 860px) {
-  .nexcode-shell {
-    grid-template-columns: 168px 1fr;
-  }
+/* ── Edit card ─────────────────────────────────────────────────────────────── */
+.nk-edit-card {
+  background: var(--nk-bg2);
+  border: 1px solid var(--nk-border);
+  border-radius: 8px;
+  padding: 8px 10px;
 }
 
-@media (max-width: 640px) {
-  .nexcode-shell {
-    grid-template-columns: 1fr;
+.nk-edit-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 999px;
+  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.nk-edit-badge--pending {
+  background: rgba(2, 132, 199, 0.12);
+  color: #7dd3fc;
+  border: 1px solid rgba(2, 132, 199, 0.3);
+}
+.nk-edit-badge--applied {
+  background: rgba(63, 185, 80, 0.12);
+  color: #86efac;
+  border: 1px solid rgba(63, 185, 80, 0.3);
+}
+.nk-edit-badge--rejected {
+  background: rgba(248, 81, 73, 0.1);
+  color: #fca5a5;
+  border: 1px solid rgba(248, 81, 73, 0.3);
+}
+
+.nk-code-block {
+  display: block;
+  background: #141416;
+  border: 1px solid var(--nk-border2);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-family: var(
+    --vscode-editor-font-family,
+    "Cascadia Code",
+    "Fira Code",
+    monospace
+  );
+  font-size: 11px;
+  color: #d4d4d4;
+  white-space: pre;
+  overflow: auto;
+}
+
+.nk-code-inline {
+  background: #252530;
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-family: inherit;
+  font-size: 11px;
+  color: #7dd3fc;
+}
+
+/* ── Input area ────────────────────────────────────────────────────────────── */
+.nk-input-area {
+  flex-shrink: 0;
+  padding: 6px 8px 8px;
+  background: var(--nk-bg);
+  border-top: 1px solid var(--nk-border2);
+}
+
+.nk-chips-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-bottom: 5px;
+}
+
+/* Input card — Copilot-style unified container */
+.nk-input-card {
+  background: var(--nk-bg2);
+  border: 1px solid var(--nk-border);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+.nk-input-card:focus-within {
+  border-color: var(--nk-accent);
+  box-shadow: 0 0 0 1px rgba(2, 132, 199, 0.2);
+}
+
+/* Textarea inside the card */
+.nk-textarea {
+  flex: 1;
+  resize: none;
+  background: transparent;
+  border: none;
+  color: var(--nk-text);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 9px 12px 5px;
+  outline: none;
+  min-height: 38px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+.nk-textarea::placeholder {
+  color: var(--nk-faint);
+}
+
+/* Toolbar inside the card */
+.nk-input-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 6px 5px;
+  gap: 4px;
+  border-top: 1px solid var(--nk-border2);
+}
+.nk-input-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+/* + Attach button */
+.nk-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  border: 1px solid var(--nk-border);
+  background: var(--nk-bg3);
+  color: var(--nk-muted);
+  cursor: pointer;
+  transition:
+    background 0.1s,
+    color 0.1s,
+    border-color 0.1s;
+  padding: 0;
+  flex-shrink: 0;
+}
+.nk-toolbar-btn:hover {
+  background: var(--nk-accent);
+  border-color: var(--nk-accent);
+  color: #fff;
+}
+
+/* Pill selectors inside input toolbar */
+.nk-pill-select-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.nk-pill-select {
+  appearance: none;
+  background: var(--nk-bg3);
+  border: 1px solid var(--nk-border);
+  border-radius: 20px;
+  color: var(--nk-muted);
+  font-size: 11px;
+  padding: 2px 20px 2px 8px;
+  cursor: pointer;
+  outline: none;
+  max-width: 120px;
+  height: 22px;
+  line-height: 1;
+  transition:
+    border-color 0.12s,
+    color 0.12s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nk-pill-select:hover {
+  border-color: #555;
+  color: var(--nk-text);
+}
+.nk-pill-select:focus {
+  border-color: var(--nk-accent);
+  color: var(--nk-text);
+}
+.nk-pill-select--mode {
+  max-width: 76px;
+  font-size: 10px;
+}
+.nk-pill-arrow {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  color: var(--nk-faint);
+}
+
+/* Send button */
+.nk-send-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  border: none;
+  background: var(--nk-accent);
+  color: #fff;
+  cursor: pointer;
+  transition:
+    background 0.13s,
+    opacity 0.13s;
+  flex-shrink: 0;
+}
+.nk-send-btn:hover:not(:disabled) {
+  background: var(--nk-accent2);
+}
+.nk-send-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.nk-send-btn--busy {
+  background: var(--nk-bg3);
+  color: var(--nk-muted);
+}
+
+/* Attachment chip */
+
+.nk-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--nk-bg2);
+  border: 1px solid var(--nk-border);
+  border-radius: 999px;
+  padding: 3px 8px 3px 7px;
+  color: var(--nk-muted);
+  font-size: 11px;
+}
+.nk-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--nk-faint);
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.12s;
+}
+.nk-chip-remove:hover {
+  color: var(--nk-red);
+}
+
+/* ── Drawers ───────────────────────────────────────────────────────────────── */
+.nk-drawer-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  background: rgba(10, 10, 12, 0.55);
+}
+.nk-drawer-backdrop--right {
+  justify-content: flex-end;
+}
+
+.nk-drawer {
+  display: flex;
+  flex-direction: column;
+  width: min(240px, 85vw);
+  height: 100%;
+  background: #1c1c1e;
+  border-right: 1px solid var(--nk-border);
+  overflow: hidden;
+}
+.nk-drawer--right {
+  border-right: none;
+  border-left: 1px solid var(--nk-border);
+}
+
+/* Sessions list item */
+.nk-session-item {
+  position: relative;
+  display: block;
+  border-radius: 6px;
+  padding: 7px 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.nk-session-item:hover {
+  background: var(--nk-bg3);
+}
+.nk-session-item--active {
+  background: rgba(2, 132, 199, 0.1);
+  border-color: rgba(2, 132, 199, 0.22);
+}
+.nk-session-item:hover .nk-icon-btn {
+  opacity: 1 !important;
+}
+
+/* ── Settings elements ─────────────────────────────────────────────────────── */
+.nk-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--nk-faint);
+  margin-bottom: 2px;
+}
+
+.nk-select {
+  appearance: none;
+  width: 100%;
+  background: var(--nk-bg3);
+  border: 1px solid var(--nk-border);
+  border-radius: 6px;
+  color: var(--nk-text);
+  font-size: 12px;
+  padding: 6px 10px;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.nk-select:focus {
+  border-color: var(--nk-accent);
+}
+
+.nk-input {
+  width: 100%;
+  background: var(--nk-bg3);
+  border: 1px solid var(--nk-border);
+  border-radius: 6px;
+  color: var(--nk-text);
+  font-size: 12px;
+  padding: 6px 10px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.nk-input:focus {
+  border-color: var(--nk-accent);
+}
+.nk-input::placeholder {
+  color: var(--nk-faint);
+}
+
+.nk-range {
+  width: 100%;
+  accent-color: var(--nk-accent);
+}
+
+/* Toggle */
+.nk-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+}
+.nk-toggle {
+  position: relative;
+  width: 32px;
+  height: 18px;
+  background: var(--nk-bg3);
+  border: 1px solid var(--nk-border);
+  border-radius: 999px;
+  cursor: pointer;
+  transition:
+    background 0.2s,
+    border-color 0.2s;
+  flex-shrink: 0;
+}
+.nk-toggle--on {
+  background: var(--nk-accent);
+  border-color: var(--nk-accent);
+}
+.nk-toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  background: #fff;
+  border-radius: 50%;
+  transition: left 0.2s;
+}
+.nk-toggle--on .nk-toggle-thumb {
+  left: 16px;
+}
+
+/* Info box */
+.nk-info-box {
+  background: var(--nk-bg3);
+  border: 1px solid var(--nk-border2);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+/* ── Shared buttons ────────────────────────────────────────────────────────── */
+.nk-btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--nk-bg2);
+  border: 1px solid var(--nk-border);
+  border-radius: 6px;
+  color: var(--nk-muted);
+  cursor: pointer;
+  padding: 5px 12px;
+  font-size: 12px;
+  transition:
+    background 0.12s,
+    color 0.12s;
+}
+.nk-btn-ghost:hover {
+  background: var(--nk-bg3);
+  color: var(--nk-text);
+}
+
+.nk-btn-accent {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(2, 132, 199, 0.15);
+  border: 1px solid rgba(2, 132, 199, 0.3);
+  border-radius: 6px;
+  color: #7dd3fc;
+  cursor: pointer;
+  padding: 5px 12px;
+  font-size: 12px;
+  transition: background 0.12s;
+}
+.nk-btn-accent:hover {
+  background: rgba(2, 132, 199, 0.25);
+}
+
+.nk-btn-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(248, 81, 73, 0.1);
+  border: 1px solid rgba(248, 81, 73, 0.3);
+  border-radius: 6px;
+  color: #fca5a5;
+  cursor: pointer;
+  padding: 5px 12px;
+  font-size: 12px;
+  transition: background 0.12s;
+}
+.nk-btn-danger:hover {
+  background: rgba(248, 81, 73, 0.2);
+}
+
+/* ── Modal ─────────────────────────────────────────────────────────────────── */
+.nk-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 10, 12, 0.7);
+  padding: 16px;
+}
+.nk-modal {
+  width: 100%;
+  max-width: 300px;
+  background: #222225;
+  border: 1px solid var(--nk-border);
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+/* ── Markdown ──────────────────────────────────────────────────────────────── */
+.markdown-body {
+  color: var(--nk-text);
+}
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3 {
+  font-weight: 600;
+  color: #f0f0f0;
+  margin: 12px 0 6px;
+  line-height: 1.3;
+}
+.markdown-body h1 {
+  font-size: 15px;
+}
+.markdown-body h2 {
+  font-size: 13px;
+}
+.markdown-body h3 {
+  font-size: 12px;
+}
+.markdown-body p {
+  margin: 6px 0;
+  color: #d4d4d4;
+}
+.markdown-body ul,
+.markdown-body ol {
+  margin: 6px 0 6px 18px;
+}
+.markdown-body li {
+  margin: 2px 0;
+  color: #d4d4d4;
+}
+.markdown-body code {
+  background: #2a2a32;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 11px;
+  color: #a5b4fc;
+}
+.markdown-body pre {
+  background: #141416;
+  border: 1px solid #2e2e34;
+  border-radius: 8px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+.markdown-body pre code {
+  background: transparent;
+  padding: 0;
+  color: #d4d4d4;
+  font-size: 12px;
+}
+.markdown-body a {
+  color: #38bdf8;
+  text-decoration: underline;
+}
+.markdown-body a:hover {
+  color: #7dd3fc;
+}
+.markdown-body blockquote {
+  border-left: 3px solid var(--nk-border);
+  margin: 6px 0;
+  padding: 4px 12px;
+  color: var(--nk-muted);
+  font-style: italic;
+}
+.markdown-body hr {
+  border: none;
+  border-top: 1px solid var(--nk-border);
+  margin: 10px 0;
+}
+.markdown-body table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin: 8px 0;
+  display: block;
+  overflow-x: auto;
+}
+.markdown-body thead {
+  background: var(--nk-bg3);
+}
+.markdown-body th,
+.markdown-body td {
+  border: 1px solid var(--nk-border);
+  padding: 5px 10px;
+  text-align: left;
+}
+.markdown-body th {
+  font-weight: 600;
+  color: #e0e0e0;
+}
+.markdown-body tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* ── Animations ────────────────────────────────────────────────────────────── */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
   }
+}
+.animate-spin {
+  animation: spin 0.8s linear infinite;
+}
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+.animate-pulse {
+  animation: pulse 1.5s ease-in-out infinite;
 }

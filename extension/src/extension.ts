@@ -55,6 +55,24 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   context.subscriptions.push(
+    vscode.commands.registerCommand("nexcodeKiboko.openInTab", async () => {
+      const panel = vscode.window.createWebviewPanel(
+        "nexcodeKibokoTab",
+        "Nexcode Kiboko",
+        vscode.ViewColumn.One,
+        {
+          enableScripts: true,
+          localResourceRoots: [
+            vscode.Uri.joinPath(context.extensionUri, "media"),
+          ],
+          retainContextWhenHidden: true,
+        },
+      );
+      provider.populateTabPanel(panel, context);
+    }),
+  );
+
+  context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (event.affectsConfiguration("nexcodeKiboko")) {
         provider.notifyConfigChanged();

@@ -61,6 +61,10 @@ interface WebviewClearMessage {
   type: "clearConversation";
 }
 
+interface WebviewOpenInTabMessage {
+  type: "openInTab";
+}
+
 interface WebviewRefreshProviderStatusMessage {
   type: "refreshProviderStatus";
   provider?: ProviderId;
@@ -81,7 +85,8 @@ type InboundWebviewMessage =
   | WebviewRemoveAttachmentMessage
   | WebviewAddAttachmentMessage
   | WebviewRefreshProviderStatusMessage
-  | WebviewRequestModelSuggestionsMessage;
+  | WebviewRequestModelSuggestionsMessage
+  | WebviewOpenInTabMessage;
 
 interface AttachmentChip {
   id: string;
@@ -163,6 +168,9 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         return;
       case "pickAttachments":
         await this.pickAttachments();
+        return;
+      case "openInTab":
+        await vscode.commands.executeCommand("nexcodeKiboko.openInTab");
         return;
       case "addAttachment":
         this.addAttachmentFromWebview(message);
@@ -788,7 +796,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
   <link href="${styleUri}" rel="stylesheet" />
-  <title>NEXCODE-KIBOKO</title>
+  <title>Nexcode Kiboko</title>
 </head>
 <body>
   <div id="root"></div>
@@ -796,6 +804,21 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
   <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;
+  }
+
+  public populateTabPanel(
+    panel: vscode.WebviewPanel,
+    context: vscode.ExtensionContext,
+  ): void {
+    panel.webview.html = this.getHtml(panel.webview);
+
+    panel.webview.onDidReceiveMessage(
+      (message: InboundWebviewMessage) => {
+        void this.handleWebviewMessage(message);
+      },
+      undefined,
+      context.subscriptions,
+    );
   }
 
   private postMessage(message: unknown): void {

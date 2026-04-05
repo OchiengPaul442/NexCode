@@ -1,8 +1,44 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useCallback,
+} from "react";
 import { createRoot } from "react-dom/client";
 import { AnimatePresence, motion } from "framer-motion";
 import { create } from "zustand";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import {
+  MessageSquarePlus,
+  PanelLeft,
+  Settings,
+  Send,
+  Plus,
+  RefreshCw,
+  Trash2,
+  X,
+  ChevronDown,
+  ExternalLink,
+  Loader2,
+  CheckCircle2,
+  AlertCircle,
+  ChevronRight,
+  FileText,
+  Image,
+  File,
+  Eraser,
+  ArrowUp,
+  Cpu,
+  Zap,
+  Globe,
+  Code2,
+  GitBranch,
+  Search,
+  Terminal,
+  Wrench,
+} from "lucide-react";
 
 declare const acquireVsCodeApi: <T = unknown>() => {
   postMessage: (message: unknown) => void;
@@ -154,7 +190,61 @@ interface BackendEvent {
 
 const vscode = acquireVsCodeApi<PersistedState>();
 
-const persisted = vscode.getState();
+function normalizePersistedState(
+  state: PersistedState | undefined,
+): PersistedState | undefined {
+  if (!state) {
+    return undefined;
+  }
+
+  const sessions = (state.sessions ?? [])
+    .map((session) => ({
+      ...session,
+      messages: (session.messages ?? [])
+        .filter(
+          (message) =>
+            !(
+              message.role === "assistant" &&
+              !String(message.text ?? "").trim() &&
+              (message.proposedEdits ?? []).length === 0
+            ),
+        )
+        .map((message) => ({
+          ...message,
+          streaming: false,
+          thinking: false,
+        })),
+    }))
+    .filter((session) => session.messages.length > 0 || session.title.trim());
+
+  if (sessions.length === 0) {
+    return {
+      ...state,
+      sessions: [],
+      activeSessionId: null,
+      drafts: {},
+    };
+  }
+
+  const activeSessionExists = sessions.some(
+    (session) => session.id === state.activeSessionId,
+  );
+
+  return {
+    ...state,
+    sessions,
+    activeSessionId: activeSessionExists
+      ? state.activeSessionId
+      : sessions[0].id,
+    drafts: Object.fromEntries(
+      Object.entries(state.drafts ?? {}).filter(([sessionId]) =>
+        sessions.some((session) => session.id === sessionId),
+      ),
+    ),
+  };
+}
+
+const persisted = normalizePersistedState(vscode.getState());
 
 function makeId(prefix: string): string {
   if (
@@ -743,6 +833,125 @@ function getActiveSession(state: StoreState): Session | undefined {
   return state.sessions.find((session) => session.id === state.activeSessionId);
 }
 
+// ─── Token Ring ──────────────────────────────────────────────────────────────
+function TokenRing({ text }: { text: string }) {
+  const estimated = Math.ceil(text.length / 4);
+  const max = 8192;
+  const pct = Math.min(estimated / max, 1);
+  const r = 6;
+  const circ = 2 * Math.PI * r;
+  const dash = circ * pct;
+  const color = pct > 0.85 ? "#f87171" : pct > 0.65 ? "#fb923c" : "#0284c7";
+
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" className="shrink-0">
+      <circle
+        cx="8"
+        cy="8"
+        r={r}
+        fill="none"
+        stroke="#2a2a30"
+        strokeWidth="2"
+      />
+      <circle
+        cx="8"
+        cy="8"
+        r={r}
+        fill="none"
+        stroke={color}
+        strokeWidth="2"
+        strokeDasharray={`${dash} ${circ}`}
+        strokeLinecap="round"
+        transform="rotate(-90 8 8)"
+        style={{ transition: "stroke-dasharray 0.25s ease" }}
+      />
+    </svg>
+  );
+}
+
+// ─── Attachment Icon ──────────────────────────────────────────────────────────
+function AttachIcon({ kind }: { kind: "text" | "image" | "binary" }) {
+  if (kind === "image") return <Image size={12} />;
+  if (kind === "text") return <FileText size={12} />;
+  return <File size={12} />;
+}
+
+// ─── Status Dot ──────────────────────────────────────────────────────────────
+function StatusDot({
+  connected,
+  latencyMs,
+  error,
+}: {
+  connected: boolean;
+  latencyMs?: number;
+  error?: string;
+}) {
+  return (
+    <div
+      title={
+        connected
+          ? `Connected${latencyMs ? ` (${latencyMs}ms)` : ""}`
+          : (error ?? "Disconnected")
+      }
+      className="flex items-center gap-1"
+    >
+      <span
+        className="inline-block w-2 h-2 rounded-full"
+        style={{ background: connected ? "#22c55e" : "#f85149" }}
+      />
+      {latencyMs !== undefined && connected && (
+        <span className="text-[10px]" style={{ color: "#6b6b75" }}>
+          {latencyMs}ms
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ─── Thinking Indicator ───────────────────────────────────────────────────────
+const THINK_PHASES = [
+  { icon: Cpu, label: "Understanding request" },
+  { icon: Search, label: "Analyzing codebase" },
+  { icon: GitBranch, label: "Planning approach" },
+  { icon: Code2, label: "Formulating response" },
+];
+
+function ThinkingIndicator({ reasoning }: { reasoning: string[] }) {
+  const [phaseIdx, setPhaseIdx] = useState(0);
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      setPhaseIdx((p) => (p + 1) % THINK_PHASES.length);
+    }, 900);
+    return () => clearInterval(t);
+  }, []);
+
+  const phase = THINK_PHASES[phaseIdx];
+  const PhaseIcon = phase.icon;
+  const latestStep = reasoning.at(-1);
+
+  return (
+    <div className="nk-thinking-wrap">
+      <div className="nk-thinking-row">
+        <span className="nk-thinking-dots">
+          <span />
+          <span />
+          <span />
+        </span>
+        <PhaseIcon size={12} className="nk-thinking-icon" />
+        <span className="nk-thinking-label">{phase.label}</span>
+      </div>
+      {latestStep && (
+        <div className="nk-thinking-step">
+          <Zap size={9} style={{ color: "#0284c7", flexShrink: 0 }} />
+          <span>{latestStep}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Message Bubble ──────────────────────────────────────────────────────────
 function MessageBubble({
   message,
   showReasoning,
@@ -763,140 +972,452 @@ function MessageBubble({
   return (
     <motion.div
       layout
-      initial={{ opacity: 0, y: 8 }}
+      initial={{ opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -6 }}
-      className={`flex w-full ${isUser ? "justify-end" : "justify-start"}`}
+      exit={{ opacity: 0 }}
+      className={`nk-msg-row ${isUser ? "nk-msg-row--user" : "nk-msg-row--bot"}`}
     >
+      {/* Bubble */}
       <div
-        className={[
-          "max-w-[92%] rounded-2xl border px-3 py-2 shadow-glow",
-          isUser
-            ? "border-cyan-500/45 bg-cyan-600/20 text-cyan-50"
-            : message.error
-              ? "border-rose-500/45 bg-rose-500/15 text-rose-100"
-              : "border-slate-700/80 bg-slate-900/70 text-slate-100",
-        ].join(" ")}
+        className={`nk-msg-content ${isUser ? "nk-msg-content--user" : "nk-msg-content--bot"}`}
       >
-        <div className="label-caps mb-1">{isUser ? "You" : "Nexcode"}</div>
+        {/* Thinking state */}
+        {message.thinking && !message.text && (
+          <ThinkingIndicator reasoning={message.reasoning} />
+        )}
 
-        {message.thinking && !message.text ? (
-          <div className="thinking-shimmer rounded-xl border border-slate-700/80 px-3 py-3 text-sm text-slate-200">
-            Nexcode is thinking...
-          </div>
-        ) : isUser ? (
-          <pre className="m-0 whitespace-pre-wrap text-sm leading-relaxed">
-            {message.text}
-          </pre>
-        ) : (
-          <div className="markdown-body text-sm leading-relaxed">
-            <ReactMarkdown>{message.text || ""}</ReactMarkdown>
+        {/* Main text */}
+        {(message.text || !message.thinking) && (
+          <div
+            className={
+              isUser
+                ? "nk-bubble-user"
+                : message.error
+                  ? "nk-bubble-error"
+                  : "nk-bubble-bot"
+            }
+          >
+            {isUser ? (
+              <pre className="m-0 whitespace-pre-wrap text-[13px] leading-relaxed font-sans">
+                {message.text}
+              </pre>
+            ) : (
+              <div className="markdown-body text-[13px] leading-relaxed">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {message.text || ""}
+                </ReactMarkdown>
+              </div>
+            )}
           </div>
         )}
 
-        {!isUser && showReasoning && message.reasoning.length > 0 ? (
-          <details className="mt-2 rounded-xl border border-slate-700/70 bg-slate-950/65 p-2 text-xs text-slate-300">
-            <summary className="cursor-pointer font-medium text-slate-200">
-              Show reasoning
+        {/* Reasoning */}
+        {!isUser && showReasoning && message.reasoning.length > 0 && (
+          <details className="nk-details-block w-full">
+            <summary className="cursor-pointer flex items-center gap-1.5 text-[11px] font-medium select-none">
+              <ChevronRight size={11} className="details-arrow" />
+              Steps
             </summary>
-            <ol className="mt-2 list-decimal space-y-1 pl-5">
-              {message.reasoning.map((item, index) => (
-                <li key={`${message.id}-reasoning-${index}`}>{item}</li>
+            <ol className="mt-2 list-decimal space-y-1 pl-5 text-[11px]">
+              {message.reasoning.map((item, i) => (
+                <li key={`${message.id}-r-${i}`}>{item}</li>
               ))}
             </ol>
           </details>
-        ) : null}
+        )}
 
-        {!isUser && showDebug && message.debug.length > 0 ? (
-          <details className="mt-2 rounded-xl border border-slate-700/70 bg-slate-950/65 p-2 text-xs text-slate-300">
-            <summary className="cursor-pointer font-medium text-slate-200">
-              Debug details
+        {/* Debug */}
+        {!isUser && showDebug && message.debug.length > 0 && (
+          <details className="nk-details-block w-full">
+            <summary className="cursor-pointer flex items-center gap-1.5 text-[11px] font-medium select-none">
+              <ChevronRight size={11} className="details-arrow" />
+              Debug trace
             </summary>
-            <ol className="mt-2 list-decimal space-y-1 pl-5">
-              {message.debug.map((item, index) => (
-                <li key={`${message.id}-debug-${index}`}>{item}</li>
+            <ol className="mt-2 list-decimal space-y-0.5 pl-5 text-[11px]">
+              {message.debug.map((item, i) => (
+                <li key={`${message.id}-d-${i}`}>{item}</li>
               ))}
             </ol>
           </details>
-        ) : null}
+        )}
 
-        {message.proposedEdits.length > 0 ? (
-          <div className="mt-3 space-y-2">
+        {/* Proposed edits */}
+        {message.proposedEdits.length > 0 && (
+          <div className="mt-1 w-full space-y-2">
             {message.proposedEdits.map((edit) => (
-              <div
-                key={edit.id}
-                className="rounded-xl border border-slate-700/80 bg-slate-950/70 p-2"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="text-xs font-semibold text-slate-200">
-                    {edit.filePath}
+              <div key={edit.id} className="nk-edit-card">
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <FileText
+                      size={12}
+                      className="shrink-0"
+                      style={{ color: "#8b8b9a" }}
+                    />
+                    <span
+                      className="text-[11px] font-medium truncate"
+                      style={{ color: "#e2e2e2" }}
+                    >
+                      {edit.filePath}
+                    </span>
                   </div>
                   <span
-                    className={[
-                      "rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.12em]",
+                    className={`nk-edit-badge ${
                       edit.status === "applied"
-                        ? "border-emerald-500/40 bg-emerald-500/20 text-emerald-100"
+                        ? "nk-edit-badge--applied"
                         : edit.status === "rejected"
-                          ? "border-rose-500/40 bg-rose-500/20 text-rose-100"
-                          : "border-cyan-500/40 bg-cyan-500/20 text-cyan-100",
-                    ].join(" ")}
+                          ? "nk-edit-badge--rejected"
+                          : "nk-edit-badge--pending"
+                    }`}
                   >
+                    {edit.status === "applied" && <CheckCircle2 size={10} />}
                     {edit.statusLabel ?? edit.status}
                   </span>
                 </div>
-
-                <div className="mt-1 text-xs text-slate-400">
-                  {edit.summary}
-                </div>
-                <pre className="mt-2 max-h-40 overflow-auto rounded-lg border border-slate-700/70 bg-slate-900/85 p-2 text-[11px] text-slate-200">
+                {edit.summary && (
+                  <p
+                    className="text-[11px] mb-1.5"
+                    style={{ color: "#8b8b9a" }}
+                  >
+                    {edit.summary}
+                  </p>
+                )}
+                <pre className="nk-code-block max-h-36 overflow-auto">
                   {edit.patch || edit.newText || ""}
                 </pre>
-
-                <div className="mt-2 grid grid-cols-3 gap-2">
-                  <button
-                    className="ghost-btn"
-                    onClick={() => onPreview(edit.id)}
-                  >
-                    Preview
-                  </button>
-                  <button
-                    className="primary-btn"
-                    disabled={edit.status !== "pending"}
-                    onClick={() => onApply(edit.id)}
-                  >
-                    Apply
-                  </button>
-                  <button
-                    className="danger-btn"
-                    disabled={edit.status !== "pending"}
-                    onClick={() => onReject(edit.id)}
-                  >
-                    Reject
-                  </button>
-                </div>
+                {edit.status === "pending" && (
+                  <div className="mt-2 flex gap-1.5">
+                    <button
+                      className="nk-btn-ghost text-[11px] px-2.5 py-1 flex items-center gap-1"
+                      onClick={() => onPreview(edit.id)}
+                    >
+                      <ExternalLink size={11} /> Preview
+                    </button>
+                    <button
+                      className="nk-btn-accent text-[11px] px-2.5 py-1 flex items-center gap-1"
+                      onClick={() => onApply(edit.id)}
+                    >
+                      <CheckCircle2 size={11} /> Apply
+                    </button>
+                    <button
+                      className="nk-btn-danger text-[11px] px-2.5 py-1 flex items-center gap-1"
+                      onClick={() => onReject(edit.id)}
+                    >
+                      <X size={11} /> Reject
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
           </div>
-        ) : null}
+        )}
       </div>
     </motion.div>
   );
 }
 
-function App() {
-  const sessions = useStore((state) => state.sessions);
-  const activeSessionId = useStore((state) => state.activeSessionId);
-  const drafts = useStore((state) => state.drafts);
-  const attachments = useStore((state) => state.attachments);
-  const isBusy = useStore((state) => state.isBusy);
-  const settingsPanelOpen = useStore((state) => state.settingsPanelOpen);
-  const settings = useStore((state) => state.settings);
-  const providerStatus = useStore((state) => state.providerStatus);
-  const modelSuggestions = useStore((state) => state.modelSuggestions);
+// ─── Sessions Drawer ──────────────────────────────────────────────────────────
+function SessionsDrawer({
+  sessions,
+  activeSessionId,
+  onSelect,
+  onNew,
+  onDeleteRequest,
+  onClose,
+}: {
+  sessions: Session[];
+  activeSessionId: string | null;
+  onSelect: (id: string) => void;
+  onNew: () => void;
+  onDeleteRequest: (id: string) => void;
+  onClose: () => void;
+}) {
+  return (
+    <motion.div
+      className="nk-drawer-backdrop"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={onClose}
+    >
+      <motion.aside
+        className="nk-drawer"
+        initial={{ x: -16, opacity: 0 }}
+        animate={{ x: 0, opacity: 1 }}
+        exit={{ x: -16, opacity: 0 }}
+        transition={{ type: "spring", stiffness: 320, damping: 32 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-3 pt-3 pb-2">
+          <span
+            className="text-[11px] font-semibold uppercase tracking-widest"
+            style={{ color: "#6b6b75" }}
+          >
+            Chats
+          </span>
+          <div className="flex items-center gap-1">
+            <button
+              className="nk-icon-btn"
+              title="New chat"
+              onClick={() => {
+                onNew();
+                onClose();
+              }}
+            >
+              <MessageSquarePlus size={15} />
+            </button>
+            <button className="nk-icon-btn" title="Close" onClick={onClose}>
+              <X size={15} />
+            </button>
+          </div>
+        </div>
 
+        <div className="flex-1 overflow-auto px-2 pb-2 space-y-0.5">
+          <AnimatePresence initial={false}>
+            {sessions.map((s) => (
+              <motion.button
+                key={s.id}
+                layout
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => {
+                  onSelect(s.id);
+                  onClose();
+                }}
+                className={`nk-session-item w-full text-left ${s.id === activeSessionId ? "nk-session-item--active" : ""}`}
+              >
+                <div className="flex items-start justify-between gap-1 min-w-0">
+                  <div className="min-w-0 flex-1">
+                    <div
+                      className="text-[12px] font-medium leading-snug line-clamp-2"
+                      style={{ color: "#e2e2e2" }}
+                    >
+                      {s.title}
+                    </div>
+                    <div
+                      className="text-[10px] mt-0.5"
+                      style={{ color: "#6b6b75" }}
+                    >
+                      {formatRelativeTime(s.updatedAt)}
+                    </div>
+                  </div>
+                  <button
+                    className="nk-icon-btn shrink-0 opacity-0 group-hover:opacity-100"
+                    title="Delete"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDeleteRequest(s.id);
+                    }}
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              </motion.button>
+            ))}
+          </AnimatePresence>
+        </div>
+      </motion.aside>
+    </motion.div>
+  );
+}
+
+// ─── Settings Drawer ──────────────────────────────────────────────────────────
+function SettingsDrawer({
+  activeSession,
+  settings,
+  modelsForProvider,
+  onProviderChange,
+  onModelChange,
+  onClose,
+}: {
+  activeSession: Session;
+  settings: SidebarSettings;
+  modelsForProvider: string[];
+  onProviderChange: (p: ProviderId) => void;
+  onModelChange: (m: string) => void;
+  onClose: () => void;
+}) {
+  return (
+    <motion.div
+      className="nk-drawer-backdrop nk-drawer-backdrop--right"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={onClose}
+    >
+      <motion.aside
+        className="nk-drawer nk-drawer--right"
+        initial={{ x: 16, opacity: 0 }}
+        animate={{ x: 0, opacity: 1 }}
+        exit={{ x: 16, opacity: 0 }}
+        transition={{ type: "spring", stiffness: 320, damping: 32 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-3 pt-3 pb-2">
+          <span
+            className="text-[11px] font-semibold uppercase tracking-widest"
+            style={{ color: "#6b6b75" }}
+          >
+            Settings
+          </span>
+          <button className="nk-icon-btn" onClick={onClose}>
+            <X size={15} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-auto px-3 pb-3 space-y-3">
+          {/* Provider */}
+          <div>
+            <label className="nk-label">Provider</label>
+            <select
+              className="nk-select mt-1"
+              value={activeSession.provider}
+              onChange={(e) => onProviderChange(e.target.value as ProviderId)}
+            >
+              <option value="ollama">Ollama</option>
+              <option value="openai-compatible">OpenAI compatible</option>
+            </select>
+          </div>
+
+          {/* Model */}
+          <div>
+            <label className="nk-label">Model</label>
+            <select
+              className="nk-select mt-1"
+              value={activeSession.model}
+              onChange={(e) => onModelChange(e.target.value)}
+            >
+              {modelsForProvider.length === 0 ? (
+                <option value={activeSession.model}>
+                  {activeSession.model}
+                </option>
+              ) : (
+                modelsForProvider.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))
+              )}
+            </select>
+            <input
+              className="nk-input mt-1"
+              placeholder="Or type model name…"
+              value={activeSession.model}
+              onChange={(e) => onModelChange(e.target.value)}
+            />
+          </div>
+
+          {/* Temperature */}
+          <div>
+            <label className="nk-label">
+              Temperature{" "}
+              <span style={{ color: "#6b6b75" }}>
+                ({settings.temperature.toFixed(2)})
+              </span>
+            </label>
+            <input
+              type="range"
+              min={0}
+              max={2}
+              step={0.05}
+              value={settings.temperature}
+              className="mt-2 w-full nk-range"
+              onChange={(e) =>
+                useStore
+                  .getState()
+                  .setSettings({ temperature: parseFloat(e.target.value) })
+              }
+            />
+            <div
+              className="flex justify-between text-[10px] mt-0.5"
+              style={{ color: "#6b6b75" }}
+            >
+              <span>Precise</span>
+              <span>Creative</span>
+            </div>
+          </div>
+
+          {/* Toggles */}
+          {(
+            [
+              ["Show reasoning", "showReasoning"],
+              ["Show debug panel", "showDebugPanel"],
+              ["Auto-apply changes", "autoApplyChanges"],
+              ["Require terminal approval", "requireTerminalApproval"],
+            ] as [string, keyof SidebarSettings][]
+          ).map(([label, key]) => (
+            <label key={key} className="nk-toggle-row">
+              <span className="text-[12px]" style={{ color: "#cccccc" }}>
+                {label}
+              </span>
+              <div
+                className={`nk-toggle ${settings[key] ? "nk-toggle--on" : ""}`}
+                onClick={() =>
+                  useStore.getState().setSettings({
+                    [key]: !settings[key],
+                  } as Partial<SidebarSettings>)
+                }
+              >
+                <div className="nk-toggle-thumb" />
+              </div>
+            </label>
+          ))}
+
+          {/* Open in tab */}
+          <button
+            className="nk-btn-ghost w-full flex items-center justify-center gap-2 mt-2"
+            onClick={() => vscode.postMessage({ type: "openInTab" })}
+          >
+            <ExternalLink size={13} />
+            <span className="text-[12px]">Open in editor tab</span>
+          </button>
+
+          {/* Slash commands reference */}
+          <div className="nk-info-box">
+            <p
+              className="text-[11px] font-semibold mb-1"
+              style={{ color: "#cccccc" }}
+            >
+              Slash commands
+            </p>
+            {[
+              ["/plan", "Generate implementation plan"],
+              ["/code", "Write clean code"],
+              ["/fix", "Diagnose & fix a bug"],
+              ["/test", "Write test cases"],
+              ["/explain", "Explain selected code"],
+            ].map(([cmd, desc]) => (
+              <div key={cmd} className="flex gap-2 text-[11px] leading-relaxed">
+                <code className="nk-code-inline shrink-0">{cmd}</code>
+                <span style={{ color: "#8b8b9a" }}>{desc}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </motion.aside>
+    </motion.div>
+  );
+}
+
+// ─── App ──────────────────────────────────────────────────────────────────────
+function App() {
+  const sessions = useStore((s) => s.sessions);
+  const activeSessionId = useStore((s) => s.activeSessionId);
+  const drafts = useStore((s) => s.drafts);
+  const attachments = useStore((s) => s.attachments);
+  const isBusy = useStore((s) => s.isBusy);
+  const settingsPanelOpen = useStore((s) => s.settingsPanelOpen);
+  const settings = useStore((s) => s.settings);
+  const providerStatus = useStore((s) => s.providerStatus);
+  const modelSuggestions = useStore((s) => s.modelSuggestions);
+
+  const [sessionsOpen, setSessionsOpen] = useState(false);
   const [deleteTargetSessionId, setDeleteTargetSessionId] = useState<
     string | null
   >(null);
+
+  // Fixed DnD: counter-based to avoid nested element false leaves
+  const dragCounterRef = useRef(0);
   const [isDragOver, setIsDragOver] = useState(false);
 
   const chatScrollerRef = useRef<HTMLDivElement | null>(null);
@@ -910,17 +1431,14 @@ function App() {
   const flushHandleRef = useRef<number | null>(null);
 
   const activeSession = useMemo(
-    () => sessions.find((session) => session.id === activeSessionId),
+    () => sessions.find((s) => s.id === activeSessionId),
     [sessions, activeSessionId],
   );
 
   const activeDraft = activeSession ? (drafts[activeSession.id] ?? "") : "";
 
   const modelsForActiveProvider = useMemo(() => {
-    if (!activeSession) {
-      return [];
-    }
-
+    if (!activeSession) return [];
     const current = activeSession.model ? [activeSession.model] : [];
     return [
       ...new Set([
@@ -930,84 +1448,74 @@ function App() {
     ];
   }, [activeSession, modelSuggestions]);
 
+  // Persist state to VS Code webview state
   useEffect(() => {
-    let persistHandle: number | null = null;
-
-    const unsubscribe = useStore.subscribe((state) => {
-      const snapshot: PersistedState = {
-        sessions: state.sessions,
-        activeSessionId: state.activeSessionId,
-        drafts: state.drafts,
-        settings: state.settings,
-      };
-
-      if (persistHandle !== null) {
-        clearTimeout(persistHandle);
-      }
-
-      persistHandle = window.setTimeout(() => {
-        vscode.setState(snapshot);
-        persistHandle = null;
+    let handle: number | null = null;
+    const unsub = useStore.subscribe((state) => {
+      if (handle !== null) clearTimeout(handle);
+      handle = window.setTimeout(() => {
+        vscode.setState({
+          sessions: state.sessions,
+          activeSessionId: state.activeSessionId,
+          drafts: state.drafts,
+          settings: state.settings,
+        });
+        handle = null;
       }, 260);
     });
-
     return () => {
-      unsubscribe();
-      if (persistHandle !== null) {
-        clearTimeout(persistHandle);
-      }
+      unsub();
+      if (handle !== null) clearTimeout(handle);
     };
   }, []);
 
+  // Keyboard: Escape closes drawers
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (settingsPanelOpen) useStore.getState().setSettingsPanelOpen(false);
+        if (sessionsOpen) setSessionsOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [settingsPanelOpen, sessionsOpen]);
+
+  // Token flush machinery
   useEffect(() => {
     function flushTokenQueue() {
-      const currentPending = pendingRef.current;
-      if (!currentPending || tokenQueueRef.current.length === 0) {
+      const cur = pendingRef.current;
+      if (!cur || tokenQueueRef.current.length === 0) {
         flushHandleRef.current = null;
         return;
       }
-
-      const nextChunk = tokenQueueRef.current.splice(0, 8).join("");
+      const chunk = tokenQueueRef.current.splice(0, 8).join("");
       useStore
         .getState()
-        .appendAssistantToken(
-          currentPending.sessionId,
-          currentPending.messageId,
-          nextChunk,
-        );
-
+        .appendAssistantToken(cur.sessionId, cur.messageId, chunk);
       if (tokenQueueRef.current.length > 0) {
         flushHandleRef.current = window.setTimeout(flushTokenQueue, 14);
       } else {
         flushHandleRef.current = null;
       }
     }
-
     function enqueueToken(token: string) {
       tokenQueueRef.current.push(...token.split(""));
-      if (flushHandleRef.current === null) {
+      if (flushHandleRef.current === null)
         flushHandleRef.current = window.setTimeout(flushTokenQueue, 12);
-      }
     }
-
-    function flushAllQueuedTokens() {
+    function flushAll() {
       while (tokenQueueRef.current.length > 0) {
-        const currentPending = pendingRef.current;
-        if (!currentPending) {
+        const cur = pendingRef.current;
+        if (!cur) {
           tokenQueueRef.current = [];
           break;
         }
-
         const chunk = tokenQueueRef.current.splice(0, 32).join("");
         useStore
           .getState()
-          .appendAssistantToken(
-            currentPending.sessionId,
-            currentPending.messageId,
-            chunk,
-          );
+          .appendAssistantToken(cur.sessionId, cur.messageId, chunk);
       }
-
       if (flushHandleRef.current !== null) {
         clearTimeout(flushHandleRef.current);
         flushHandleRef.current = null;
@@ -1016,82 +1524,68 @@ function App() {
 
     function onMessage(event: MessageEvent<BackendEvent>) {
       const payload = event.data;
-      if (!payload || typeof payload.type !== "string") {
-        return;
-      }
+      if (!payload || typeof payload.type !== "string") return;
 
       switch (payload.type) {
         case "config": {
           useStore.getState().hydrateConfig(payload.value as BackendConfig);
-
-          const currentSession = getActiveSession(useStore.getState());
-          if (currentSession) {
+          const sess = getActiveSession(useStore.getState());
+          if (sess) {
             vscode.postMessage({
               type: "refreshProviderStatus",
-              provider: currentSession.provider,
+              provider: sess.provider,
             });
             vscode.postMessage({
               type: "requestModelSuggestions",
-              provider: currentSession.provider,
+              provider: sess.provider,
             });
           }
           return;
         }
-        case "attachmentsSelected": {
+        case "attachmentsSelected":
           useStore
             .getState()
             .setAttachments((payload.attachments as AttachmentChip[]) ?? []);
           return;
-        }
-        case "providerStatus": {
+        case "providerStatus":
           useStore
             .getState()
             .setProviderStatus(payload.value as ProviderStatus);
           return;
-        }
-        case "modelSuggestions": {
-          const provider = payload.provider as ProviderId;
-          const models = (payload.models as string[]) ?? [];
-          useStore.getState().setModelSuggestions(provider, models);
+        case "modelSuggestions":
+          useStore
+            .getState()
+            .setModelSuggestions(
+              payload.provider as ProviderId,
+              (payload.models as string[]) ?? [],
+            );
           return;
-        }
-        case "start": {
+        case "start":
           useStore.getState().setBusy(true);
           reasoningRef.current = [];
           debugRef.current = [];
           tokenQueueRef.current = [];
           pendingRef.current = useStore.getState().beginAssistantMessage();
           return;
-        }
         case "status": {
           const raw = String(payload.message ?? "");
-          if (raw.length === 0) {
-            return;
-          }
-
+          if (!raw) return;
           debugRef.current.push(raw);
           const cleaned = sanitizeReasoningStatus(raw);
-          if (reasoningRef.current.at(-1) !== cleaned) {
+          if (reasoningRef.current.at(-1) !== cleaned)
             reasoningRef.current.push(cleaned);
-          }
           return;
         }
         case "token": {
           const token = String(payload.token ?? "");
-          if (token.length > 0) {
-            enqueueToken(token);
-          }
+          if (token) enqueueToken(token);
           return;
         }
         case "final": {
-          flushAllQueuedTokens();
-
-          const currentPending = pendingRef.current;
-          if (!currentPending) {
-            return;
-          }
-
-          const response = payload.response as {
+          flushAll();
+          const cur = pendingRef.current;
+          if (!cur) return;
+          const resp = payload.response as {
             text: string;
             proposedEdits?: Array<{
               id: string;
@@ -1102,47 +1596,42 @@ function App() {
               newText: string;
             }>;
           };
-
-          const edits = (response.proposedEdits ?? []).map((edit) => ({
-            ...edit,
+          const edits = (resp.proposedEdits ?? []).map((e) => ({
+            ...e,
             status: "pending" as EditStatus,
           }));
-
           useStore
             .getState()
             .finalizeAssistantMessage(
-              currentPending.sessionId,
-              currentPending.messageId,
-              response.text ?? "",
+              cur.sessionId,
+              cur.messageId,
+              resp.text ?? "",
               [...reasoningRef.current],
               [...debugRef.current],
               edits,
             );
-
           if (
             useStore.getState().settings.autoApplyChanges &&
             edits.length > 0
           ) {
-            for (const edit of edits) {
+            for (const edit of edits)
               vscode.postMessage({ type: "applyEdit", editId: edit.id });
-            }
           }
           return;
         }
         case "error": {
-          const currentPending = pendingRef.current;
-          if (currentPending) {
+          const cur = pendingRef.current;
+          if (cur)
             useStore
               .getState()
               .failAssistantMessage(
-                currentPending.sessionId,
-                currentPending.messageId,
+                cur.sessionId,
+                cur.messageId,
                 String(payload.message ?? "Request failed."),
               );
-          }
           return;
         }
-        case "end": {
+        case "end":
           useStore.getState().setBusy(false);
           pendingRef.current = null;
           reasoningRef.current = [];
@@ -1153,30 +1642,29 @@ function App() {
             flushHandleRef.current = null;
           }
           return;
-        }
         case "editApplied": {
           const editId = String(payload.editId ?? "");
-          const filePath = String(payload.filePath ?? "");
-          if (editId) {
+          if (editId)
             useStore
               .getState()
-              .updateEditStatus(editId, "applied", `Applied ${filePath}`);
-          }
+              .updateEditStatus(
+                editId,
+                "applied",
+                `Applied ${payload.filePath ?? ""}`,
+              );
           return;
         }
         case "editRejected": {
           const editId = String(payload.editId ?? "");
-          if (editId) {
+          if (editId)
             useStore
               .getState()
               .updateEditStatus(editId, "rejected", "Rejected");
-          }
           return;
         }
-        case "cleared": {
+        case "cleared":
           useStore.getState().clearActiveSession();
           return;
-        }
         default:
           return;
       }
@@ -1185,133 +1673,105 @@ function App() {
     window.addEventListener("message", onMessage);
     return () => {
       window.removeEventListener("message", onMessage);
-      if (flushHandleRef.current !== null) {
-        clearTimeout(flushHandleRef.current);
-      }
+      if (flushHandleRef.current !== null) clearTimeout(flushHandleRef.current);
     };
   }, []);
 
+  // Re-fetch on session/provider change
   useEffect(() => {
-    const currentSession = getActiveSession(useStore.getState());
-    if (!currentSession) {
-      return;
-    }
-
+    const sess = getActiveSession(useStore.getState());
+    if (!sess) return;
     vscode.postMessage({
       type: "refreshProviderStatus",
-      provider: currentSession.provider,
+      provider: sess.provider,
     });
     vscode.postMessage({
       type: "requestModelSuggestions",
-      provider: currentSession.provider,
+      provider: sess.provider,
     });
   }, [activeSession?.id, activeSession?.provider]);
 
+  // Auto-scroll
   useEffect(() => {
-    if (!chatScrollerRef.current) {
-      return;
+    if (chatScrollerRef.current) {
+      chatScrollerRef.current.scrollTop = chatScrollerRef.current.scrollHeight;
     }
-
-    chatScrollerRef.current.scrollTop = chatScrollerRef.current.scrollHeight;
   }, [activeSession?.messages]);
 
+  // Auto-resize textarea
   useEffect(() => {
-    if (!textareaRef.current) {
-      return;
-    }
-
-    textareaRef.current.style.height = "0px";
-    textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 220)}px`;
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.style.height = "0px";
+    ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
   }, [activeDraft]);
 
-  async function onDropFiles(files: FileList | null): Promise<void> {
-    if (!files || files.length === 0) {
-      return;
-    }
-
-    for (const file of Array.from(files)) {
-      const kind = estimateAttachmentKind(file);
-      const id = makeId("att");
-
-      if (kind === "text" && file.size <= 700_000) {
-        const textContent = await file.text();
+  // DnD file handler
+  const onDropFiles = useCallback(
+    async (files: FileList | null): Promise<void> => {
+      if (!files || files.length === 0) return;
+      for (const file of Array.from(files)) {
+        const kind = estimateAttachmentKind(file);
+        const id = makeId("att");
+        if (kind === "text" && file.size <= 700_000) {
+          vscode.postMessage({
+            type: "addAttachment",
+            attachment: {
+              id,
+              fileName: file.name,
+              mimeType: file.type || "text/plain",
+              kind,
+              textContent: await file.text(),
+              byteSize: file.size,
+            },
+          });
+          continue;
+        }
         vscode.postMessage({
           type: "addAttachment",
           attachment: {
             id,
             fileName: file.name,
-            mimeType: file.type || "text/plain",
+            mimeType: file.type || "application/octet-stream",
             kind,
-            textContent,
+            base64Data: arrayBufferToBase64(await file.arrayBuffer()),
             byteSize: file.size,
           },
         });
-        continue;
       }
+    },
+    [],
+  );
 
-      const base64Data = arrayBufferToBase64(await file.arrayBuffer());
-      vscode.postMessage({
-        type: "addAttachment",
-        attachment: {
-          id,
-          fileName: file.name,
-          mimeType: file.type || "application/octet-stream",
-          kind,
-          base64Data,
-          byteSize: file.size,
-        },
-      });
-    }
-  }
-
+  // Send
   function onSendPrompt(): void {
-    const currentSession = getActiveSession(useStore.getState());
-    if (!currentSession || isBusy) {
-      return;
-    }
-
-    const rawPrompt = (
-      useStore.getState().drafts[currentSession.id] ?? ""
-    ).trim();
-    if (!rawPrompt) {
-      return;
-    }
-
-    const parsed = parseSlashCommand(rawPrompt, currentSession.mode);
-
+    const sess = getActiveSession(useStore.getState());
+    if (!sess || isBusy) return;
+    const rawPrompt = (useStore.getState().drafts[sess.id] ?? "").trim();
+    if (!rawPrompt) return;
+    const parsed = parseSlashCommand(rawPrompt, sess.mode);
     if (
       settings.requireTerminalApproval &&
       /^\/tool\s+terminal\s+/i.test(parsed.prompt)
     ) {
-      const command = parsed.prompt.replace(/^\/tool\s+terminal\s+/i, "");
-      const approved = window.confirm(
-        [
-          "Approval required for terminal command:",
-          "",
-          command,
-          "",
-          "Continue?",
-        ].join("\n"),
-      );
-
-      if (!approved) {
+      const cmd = parsed.prompt.replace(/^\/tool\s+terminal\s+/i, "");
+      if (
+        !window.confirm(
+          `Approval required for terminal command:\n\n${cmd}\n\nContinue?`,
+        )
+      )
         return;
-      }
     }
-
     useStore.getState().addUserMessage(rawPrompt);
-    useStore.getState().setDraft(currentSession.id, "");
-
+    useStore.getState().setDraft(sess.id, "");
     vscode.postMessage({
       type: "sendPrompt",
       prompt: parsed.prompt,
-      provider: currentSession.provider,
-      model: currentSession.model,
+      provider: sess.provider,
+      model: sess.model,
       mode: parsed.mode,
       temperature: settings.temperature,
-      attachmentIds: useStore
-        .getState()
-        .attachments.map((attachment) => attachment.id),
+      attachmentIds: useStore.getState().attachments.map((a) => a.id),
     });
   }
 
@@ -1320,195 +1780,147 @@ function App() {
     vscode.postMessage({ type: "refreshProviderStatus", provider });
     vscode.postMessage({ type: "requestModelSuggestions", provider });
   }
-
   function onModelChange(model: string): void {
     useStore.getState().updateActiveSession({ model });
   }
-
   function onModeChange(mode: UiMode): void {
     useStore.getState().updateActiveSession({ mode });
   }
 
   if (!activeSession) {
-    return (
-      <div className="p-4 text-sm text-slate-300">Initializing Nexcode...</div>
-    );
+    return <div className="nk-empty">Initializing…</div>;
   }
 
   const providerHealth = providerStatus[activeSession.provider];
-  const providerLabel = providerHealth?.connected
-    ? `${activeSession.provider}: connected${providerHealth.latencyMs ? ` (${providerHealth.latencyMs}ms)` : ""}`
-    : `${activeSession.provider}: disconnected`;
 
   return (
-    <div className="nexcode-shell">
-      <aside className="panel-edge flex min-h-0 flex-col px-3 py-3">
-        <div className="mb-3 flex items-center justify-between gap-2">
-          <div className="text-sm font-semibold tracking-wide text-slate-100">
-            Sessions
-          </div>
+    <div className="nk-shell">
+      {/* ── Minimal Top bar ── */}
+      <header className="nk-topbar">
+        <div className="flex items-center gap-1">
           <button
-            className="primary-btn"
-            onClick={() => useStore.getState().newSession()}
+            className="nk-icon-btn"
+            title="Chat history"
+            onClick={() => setSessionsOpen(true)}
           >
-            + New Chat
+            <PanelLeft size={15} />
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-auto pr-1">
-          <AnimatePresence>
-            {sessions.map((session) => (
-              <motion.button
-                key={session.id}
-                layout
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                onClick={() => useStore.getState().setActiveSession(session.id)}
-                className={[
-                  "mb-2 w-full rounded-xl border p-2 text-left transition",
-                  session.id === activeSession.id
-                    ? "border-cyan-500/45 bg-cyan-500/10"
-                    : "border-slate-700/70 bg-slate-900/50 hover:border-slate-500/70",
-                ].join(" ")}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <div className="line-clamp-2 text-sm font-medium text-slate-100">
-                      {session.title}
-                    </div>
-                    <div className="mt-1 text-[11px] text-slate-400">
-                      {formatRelativeTime(session.updatedAt)}
-                    </div>
-                  </div>
-                  <button
-                    className="rounded-lg border border-slate-700/70 px-2 py-1 text-[10px] text-slate-300 hover:border-rose-500/60 hover:text-rose-200"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      setDeleteTargetSessionId(session.id);
-                    }}
-                  >
-                    Delete
-                  </button>
-                </div>
-              </motion.button>
-            ))}
-          </AnimatePresence>
+        <div className="flex items-center gap-1 shrink-0">
+          <StatusDot
+            connected={providerHealth?.connected ?? false}
+            latencyMs={providerHealth?.latencyMs}
+            error={providerHealth?.error}
+          />
+          <button
+            className="nk-icon-btn"
+            title="Refresh connection"
+            onClick={() => {
+              vscode.postMessage({
+                type: "refreshProviderStatus",
+                provider: activeSession.provider,
+              });
+              vscode.postMessage({
+                type: "requestModelSuggestions",
+                provider: activeSession.provider,
+              });
+            }}
+          >
+            <RefreshCw size={14} />
+          </button>
+          <button
+            className="nk-icon-btn"
+            title="Clear conversation"
+            onClick={() => useStore.getState().clearActiveSession()}
+          >
+            <Eraser size={14} />
+          </button>
+          <button
+            className="nk-icon-btn"
+            title="New chat"
+            onClick={() => useStore.getState().newSession()}
+          >
+            <MessageSquarePlus size={14} />
+          </button>
+          <button
+            className="nk-icon-btn"
+            title="Settings"
+            onClick={() => useStore.getState().setSettingsPanelOpen(true)}
+          >
+            <Settings size={14} />
+          </button>
         </div>
-      </aside>
+      </header>
 
-      <section className="flex min-h-0 flex-col gap-3 px-3 py-3">
-        <header className="slate-card p-2">
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <div className="text-sm font-semibold tracking-wide text-slate-100">
-              NEXCODE-KIBOKO
+      {/* ── Chat area ── */}
+      <div
+        ref={chatScrollerRef}
+        className={`nk-chat-scroller ${isDragOver ? "nk-drag-active" : ""}`}
+        onDragEnter={(e) => {
+          e.preventDefault();
+          dragCounterRef.current += 1;
+          if (dragCounterRef.current === 1) setIsDragOver(true);
+        }}
+        onDragOver={(e) => e.preventDefault()}
+        onDragLeave={(e) => {
+          e.preventDefault();
+          dragCounterRef.current -= 1;
+          if (dragCounterRef.current <= 0) {
+            dragCounterRef.current = 0;
+            setIsDragOver(false);
+          }
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          dragCounterRef.current = 0;
+          setIsDragOver(false);
+          void onDropFiles(e.dataTransfer.files);
+        }}
+      >
+        {isDragOver && (
+          <div className="nk-drop-overlay">
+            <div className="nk-drop-hint">
+              <Plus size={20} />
+              <span>Drop files to attach</span>
             </div>
-            <div
-              className={[
-                "rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.13em]",
-                providerHealth?.connected
-                  ? "border-emerald-500/45 bg-emerald-500/20 text-emerald-100"
-                  : "border-rose-500/45 bg-rose-500/20 text-rose-100",
-              ].join(" ")}
-              title={providerHealth?.error || "Provider health"}
+          </div>
+        )}
+
+        {activeSession.messages.length === 0 ? (
+          <div className="nk-empty-chat">
+            <Cpu size={24} style={{ color: "#3a3a48" }} />
+            <p
+              className="mt-3 text-[13px] font-medium"
+              style={{ color: "#6b6b75" }}
             >
-              {providerLabel}
+              Ask me anything about your code
+            </p>
+            <div className="nk-empty-hints">
+              <span className="nk-empty-hint">
+                <Code2 size={10} /> /code
+              </span>
+              <span className="nk-empty-hint">
+                <GitBranch size={10} /> /plan
+              </span>
+              <span className="nk-empty-hint">
+                <Search size={10} /> /fix
+              </span>
+              <span className="nk-empty-hint">
+                <Globe size={10} /> web-search
+              </span>
+              <span className="nk-empty-hint">
+                <Terminal size={10} /> terminal
+              </span>
             </div>
           </div>
-
-          <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-            <label className="label-caps col-span-1">
-              Provider
-              <select
-                className="input-base mt-1"
-                value={activeSession.provider}
-                onChange={(event) =>
-                  onProviderChange(event.target.value as ProviderId)
-                }
-              >
-                <option value="ollama">Ollama</option>
-                <option value="openai-compatible">OpenAI-compatible</option>
-              </select>
-            </label>
-
-            <label className="label-caps col-span-1">
-              Model
-              <select
-                className="input-base mt-1"
-                value={activeSession.model}
-                onChange={(event) => onModelChange(event.target.value)}
-              >
-                {modelsForActiveProvider.length === 0 ? (
-                  <option value={activeSession.model}>
-                    {activeSession.model}
-                  </option>
-                ) : (
-                  modelsForActiveProvider.map((model) => (
-                    <option key={model} value={model}>
-                      {model}
-                    </option>
-                  ))
-                )}
-              </select>
-            </label>
-
-            <label className="label-caps col-span-1">
-              Mode
-              <select
-                className="input-base mt-1"
-                value={activeSession.mode}
-                onChange={(event) => onModeChange(event.target.value as UiMode)}
-              >
-                <option value="architect">Architect</option>
-                <option value="coder">Coder</option>
-                <option value="debug">Debug</option>
-                <option value="review">Review</option>
-              </select>
-            </label>
-
-            <div className="col-span-1 flex items-end justify-end gap-2">
-              <button
-                className="ghost-btn"
-                onClick={() => {
-                  vscode.postMessage({
-                    type: "refreshProviderStatus",
-                    provider: activeSession.provider,
-                  });
-                  vscode.postMessage({
-                    type: "requestModelSuggestions",
-                    provider: activeSession.provider,
-                  });
-                }}
-              >
-                Refresh
-              </button>
-              <button
-                className="ghost-btn"
-                onClick={() => useStore.getState().clearActiveSession()}
-              >
-                Clear
-              </button>
-              <button
-                className="ghost-btn"
-                title="Settings"
-                onClick={() => useStore.getState().setSettingsPanelOpen(true)}
-              >
-                ⚙
-              </button>
-            </div>
-          </div>
-        </header>
-
-        <div
-          ref={chatScrollerRef}
-          className="slate-card min-h-0 flex-1 overflow-auto p-3"
-        >
-          <div className="space-y-3">
-            <AnimatePresence>
-              {activeSession.messages.map((message) => (
+        ) : (
+          <div className="nk-messages-list">
+            <AnimatePresence initial={false}>
+              {activeSession.messages.map((msg) => (
                 <MessageBubble
-                  key={message.id}
-                  message={message}
+                  key={msg.id}
+                  message={msg}
                   showReasoning={settings.showReasoning}
                   showDebug={settings.showDebugPanel}
                   onPreview={(editId) =>
@@ -1524,263 +1936,192 @@ function App() {
               ))}
             </AnimatePresence>
           </div>
-        </div>
+        )}
+      </div>
 
-        <div
-          className={[
-            "slate-card shrink-0 p-3 transition",
-            isDragOver ? "border-cyan-400/70 bg-cyan-500/10" : "",
-          ].join(" ")}
-          onDragOver={(event) => {
-            event.preventDefault();
-            setIsDragOver(true);
-          }}
-          onDragLeave={(event) => {
-            event.preventDefault();
-            setIsDragOver(false);
-          }}
-          onDrop={(event) => {
-            event.preventDefault();
-            setIsDragOver(false);
-            void onDropFiles(event.dataTransfer.files);
-          }}
-        >
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <button
-              className="ghost-btn"
-              onClick={() => vscode.postMessage({ type: "pickAttachments" })}
-            >
-              Attach
-            </button>
-            <div className="text-[11px] text-slate-400">
-              Drop files here or use Attach
-            </div>
-          </div>
-
-          <div className="mb-2 flex flex-wrap gap-2">
-            {attachments.length === 0 ? (
-              <div className="rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-1 text-xs text-slate-400">
-                No attachments selected
-              </div>
-            ) : (
-              attachments.map((attachment) => (
-                <div
-                  key={attachment.id}
-                  className="flex items-center gap-2 rounded-xl border border-slate-700/70 bg-slate-900/80 px-2 py-1 text-xs text-slate-200"
+      {/* ── Copilot-style Input Card ── */}
+      <div className="nk-input-area">
+        {/* Attachment chips */}
+        {attachments.length > 0 && (
+          <div className="nk-chips-row">
+            {attachments.map((att) => (
+              <div key={att.id} className="nk-chip">
+                <AttachIcon kind={att.kind} />
+                <span className="max-w-[100px] truncate text-[11px]">
+                  {att.fileName}
+                </span>
+                <button
+                  className="nk-chip-remove"
+                  onClick={() =>
+                    vscode.postMessage({
+                      type: "removeAttachment",
+                      attachmentId: att.id,
+                    })
+                  }
                 >
-                  <span className="max-w-[160px] truncate">
-                    {attachment.fileName}
-                  </span>
-                  <button
-                    className="rounded-lg border border-slate-700/70 px-1.5 py-0.5 text-[10px] hover:border-rose-500/60"
-                    onClick={() =>
-                      vscode.postMessage({
-                        type: "removeAttachment",
-                        attachmentId: attachment.id,
-                      })
-                    }
-                  >
-                    Remove
-                  </button>
-                </div>
-              ))
-            )}
+                  <X size={9} />
+                </button>
+              </div>
+            ))}
           </div>
+        )}
 
+        {/* Input card */}
+        <div className="nk-input-card">
+          {/* Textarea */}
           <textarea
             ref={textareaRef}
-            className="input-base max-h-56 min-h-[76px] resize-none"
-            placeholder="Ask Nexcode to build, fix, or explain code..."
+            className="nk-textarea"
+            placeholder="Ask Nexcode…"
             value={activeDraft}
-            onChange={(event) =>
-              useStore.getState().setDraft(activeSession.id, event.target.value)
+            rows={1}
+            onChange={(e) =>
+              useStore.getState().setDraft(activeSession.id, e.target.value)
             }
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
-                event.preventDefault();
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
                 onSendPrompt();
               }
             }}
           />
 
-          <div className="mt-2 flex items-center justify-between gap-2">
-            <div className="text-[11px] text-slate-400">
-              Slash commands: /plan /code /fix /test /explain
+          {/* Toolbar row */}
+          <div className="nk-input-toolbar">
+            {/* Left: attach + selectors */}
+            <div className="nk-input-toolbar-left">
+              {/* Attach */}
+              <button
+                className="nk-toolbar-btn"
+                title="Attach file"
+                onClick={() => vscode.postMessage({ type: "pickAttachments" })}
+              >
+                <Plus size={14} />
+              </button>
+
+              {/* Model selector */}
+              <div className="nk-pill-select-wrap">
+                <select
+                  className="nk-pill-select"
+                  value={activeSession.model}
+                  onChange={(e) => onModelChange(e.target.value)}
+                  title="Model"
+                >
+                  {modelsForActiveProvider.length === 0 ? (
+                    <option value={activeSession.model}>
+                      {activeSession.model}
+                    </option>
+                  ) : (
+                    modelsForActiveProvider.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))
+                  )}
+                </select>
+                <ChevronDown size={10} className="nk-pill-arrow" />
+              </div>
+
+              {/* Mode selector */}
+              <div className="nk-pill-select-wrap">
+                <select
+                  className="nk-pill-select nk-pill-select--mode"
+                  value={activeSession.mode}
+                  onChange={(e) => onModeChange(e.target.value as UiMode)}
+                  title="Agent mode"
+                >
+                  <option value="architect">Architect</option>
+                  <option value="coder">Coder</option>
+                  <option value="debug">Debug</option>
+                  <option value="review">Review</option>
+                </select>
+                <ChevronDown size={10} className="nk-pill-arrow" />
+              </div>
+
+              {/* Token ring */}
+              <TokenRing text={activeDraft} />
             </div>
+
+            {/* Right: send */}
             <button
-              className="primary-btn"
-              disabled={isBusy}
+              className={`nk-send-btn ${isBusy ? "nk-send-btn--busy" : ""}`}
+              disabled={isBusy || !activeDraft.trim()}
+              title={isBusy ? "Responding…" : "Send (Enter)"}
               onClick={onSendPrompt}
             >
-              {isBusy ? "Responding..." : "Send"}
+              {isBusy ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <ArrowUp size={14} />
+              )}
             </button>
           </div>
         </div>
-      </section>
+      </div>
 
+      {/* ── Overlays ── */}
       <AnimatePresence>
-        {settingsPanelOpen ? (
-          <motion.div
-            className="absolute inset-0 z-50 flex justify-end bg-slate-950/60"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => useStore.getState().setSettingsPanelOpen(false)}
-          >
-            <motion.div
-              className="h-full w-[320px] border-l border-slate-700/80 bg-slate-950/95 p-4 backdrop-blur"
-              initial={{ x: 28, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: 24, opacity: 0 }}
-              transition={{ type: "spring", stiffness: 280, damping: 30 }}
-              onClick={(event) => event.stopPropagation()}
-            >
-              <div className="mb-3 flex items-center justify-between">
-                <div className="text-sm font-semibold text-slate-100">
-                  Settings
-                </div>
-                <button
-                  className="ghost-btn"
-                  onClick={() =>
-                    useStore.getState().setSettingsPanelOpen(false)
-                  }
-                >
-                  Close
-                </button>
-              </div>
-
-              <div className="space-y-3">
-                <label className="label-caps block">
-                  Provider
-                  <select
-                    className="input-base mt-1"
-                    value={activeSession.provider}
-                    onChange={(event) =>
-                      onProviderChange(event.target.value as ProviderId)
-                    }
-                  >
-                    <option value="ollama">Ollama</option>
-                    <option value="openai-compatible">OpenAI-compatible</option>
-                  </select>
-                </label>
-
-                <label className="label-caps block">
-                  Model
-                  <input
-                    className="input-base mt-1"
-                    value={activeSession.model}
-                    onChange={(event) => onModelChange(event.target.value)}
-                  />
-                </label>
-
-                <label className="label-caps block">
-                  Temperature ({settings.temperature.toFixed(2)})
-                  <input
-                    className="mt-2 w-full accent-cyan-400"
-                    type="range"
-                    min={0}
-                    max={2}
-                    step={0.05}
-                    value={settings.temperature}
-                    onChange={(event) =>
-                      useStore
-                        .getState()
-                        .setSettings({
-                          temperature: Number.parseFloat(event.target.value),
-                        })
-                    }
-                  />
-                </label>
-
-                <label className="flex items-center justify-between rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2 text-xs text-slate-200">
-                  Show reasoning
-                  <input
-                    type="checkbox"
-                    checked={settings.showReasoning}
-                    onChange={(event) =>
-                      useStore
-                        .getState()
-                        .setSettings({ showReasoning: event.target.checked })
-                    }
-                  />
-                </label>
-
-                <label className="flex items-center justify-between rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2 text-xs text-slate-200">
-                  Show debug panel
-                  <input
-                    type="checkbox"
-                    checked={settings.showDebugPanel}
-                    onChange={(event) =>
-                      useStore
-                        .getState()
-                        .setSettings({ showDebugPanel: event.target.checked })
-                    }
-                  />
-                </label>
-
-                <label className="flex items-center justify-between rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2 text-xs text-slate-200">
-                  Auto-apply changes
-                  <input
-                    type="checkbox"
-                    checked={settings.autoApplyChanges}
-                    onChange={(event) =>
-                      useStore
-                        .getState()
-                        .setSettings({ autoApplyChanges: event.target.checked })
-                    }
-                  />
-                </label>
-
-                <label className="flex items-center justify-between rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2 text-xs text-slate-200">
-                  Require terminal approval
-                  <input
-                    type="checkbox"
-                    checked={settings.requireTerminalApproval}
-                    onChange={(event) =>
-                      useStore
-                        .getState()
-                        .setSettings({
-                          requireTerminalApproval: event.target.checked,
-                        })
-                    }
-                  />
-                </label>
-              </div>
-            </motion.div>
-          </motion.div>
-        ) : null}
+        {sessionsOpen && (
+          <SessionsDrawer
+            sessions={sessions}
+            activeSessionId={activeSessionId}
+            onSelect={(id) => useStore.getState().setActiveSession(id)}
+            onNew={() => useStore.getState().newSession()}
+            onDeleteRequest={(id) => setDeleteTargetSessionId(id)}
+            onClose={() => setSessionsOpen(false)}
+          />
+        )}
       </AnimatePresence>
 
       <AnimatePresence>
-        {deleteTargetSessionId ? (
+        {settingsPanelOpen && (
+          <SettingsDrawer
+            activeSession={activeSession}
+            settings={settings}
+            modelsForProvider={modelsForActiveProvider}
+            onProviderChange={onProviderChange}
+            onModelChange={onModelChange}
+            onClose={() => useStore.getState().setSettingsPanelOpen(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Delete confirm */}
+      <AnimatePresence>
+        {deleteTargetSessionId && (
           <motion.div
-            className="absolute inset-0 z-50 flex items-center justify-center bg-slate-950/65 px-4"
+            className="nk-modal-backdrop"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
           >
             <motion.div
-              className="w-full max-w-sm rounded-2xl border border-slate-700/80 bg-slate-900/95 p-4 shadow-glow"
-              initial={{ y: 12, opacity: 0 }}
+              className="nk-modal"
+              initial={{ y: 10, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 12, opacity: 0 }}
+              exit={{ y: 10, opacity: 0 }}
             >
-              <div className="text-sm font-semibold text-slate-100">
-                Delete chat session?
+              <div className="flex items-center gap-2 mb-2">
+                <Trash2 size={15} style={{ color: "#f87171" }} />
+                <span
+                  className="text-[13px] font-semibold"
+                  style={{ color: "#e2e2e2" }}
+                >
+                  Delete this chat?
+                </span>
               </div>
-              <div className="mt-2 text-xs text-slate-300">
-                This action removes the selected session from local cache.
-              </div>
-
-              <div className="mt-4 flex justify-end gap-2">
+              <p className="text-[11px] mb-3" style={{ color: "#8b8b9a" }}>
+                The session will be removed from local storage.
+              </p>
+              <div className="flex justify-end gap-2">
                 <button
-                  className="ghost-btn"
+                  className="nk-btn-ghost text-[12px] px-3 py-1.5"
                   onClick={() => setDeleteTargetSessionId(null)}
                 >
                   Cancel
                 </button>
                 <button
-                  className="danger-btn"
+                  className="nk-btn-danger text-[12px] px-3 py-1.5"
                   onClick={() => {
                     useStore.getState().deleteSession(deleteTargetSessionId);
                     setDeleteTargetSessionId(null);
@@ -1791,7 +2132,7 @@ function App() {
               </div>
             </motion.div>
           </motion.div>
-        ) : null}
+        )}
       </AnimatePresence>
     </div>
   );

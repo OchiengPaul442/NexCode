@@ -1,9 +1,9 @@
 {
   "name": "nexcode-kiboko-extension",
-  "displayName": "NEXCODE-KIBOKO",
+  "displayName": "Nexcode Kiboko",
   "description": "Local-first, multi-agent AI coding assistant for VS Code.",
   "publisher": "nexcode",
-  "version": "0.1.22",
+  "version": "0.1.27",
   "private": true,
   "icon": "media/icon.png",
   "engines": {
@@ -21,6 +21,13 @@
   "categories": [
     "Other"
   ],
+  "activationEvents": [
+    "onView:nexcodeKiboko.sidebarView",
+    "onCommand:nexcodeKiboko.openSidebar",
+    "onCommand:nexcodeKiboko.pickModel",
+    "onCommand:nexcodeKiboko.clearConversation",
+    "onCommand:nexcodeKiboko.openInTab"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "viewsContainers": {
@@ -36,7 +43,7 @@
       "nexcodeKiboko": [
         {
           "id": "nexcodeKiboko.sidebarView",
-          "name": "NEXCODE-KIBOKO",
+          "name": "Nexcode Kiboko",
           "icon": "media/kiboko.svg",
           "type": "webview"
         }
@@ -143,15 +150,17 @@
     "build": "npm run build:webview && tsc -p .",
     "watch": "tsc -watch -p .",
     "lint": "tsc -p . --noEmit",
-    "package": "vsce package --allow-missing-repository"
+    "package": "node ../tools/extension-release.mjs --no-bump --no-install"
   },
   "dependencies": {
-    "@nexcode/agent-core": "^0.1.0"
+    "@nexcode/agent-core": "^0.1.0",
+    "lucide-react": "^1.7.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
+    "@types/node": "^22.13.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
-    "@types/node": "^22.13.0",
     "@types/vscode": "^1.95.0",
     "@vscode/vsce": "^3.2.2",
     "esbuild": "^0.25.11",
@@ -160,7 +169,7 @@
     "react-dom": "^18.3.1",
     "react-markdown": "^9.0.1",
     "tailwindcss": "^3.4.17",
-    "zustand": "^5.0.8",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "zustand": "^5.0.8"
   }
 }

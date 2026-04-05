@@ -63,7 +63,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
       throw new Error("OpenAI-compatible provider requires an API key.");
     }
 
-    const abort = this.createAbortController(request.signal, 90_000);
+    const abort = this.createAbortController(request.signal, 300_000);
 
     try {
       const response = await fetch(`${this.baseUrl}/chat/completions`, {
@@ -106,7 +106,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
       throw new Error("OpenAI-compatible provider requires an API key.");
     }
 
-    const abort = this.createAbortController(request.signal, 120_000);
+    const abort = this.createAbortController(request.signal, 600_000);
 
     try {
       const response = await fetch(`${this.baseUrl}/chat/completions`, {

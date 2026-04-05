@@ -46,7 +46,7 @@ export class OllamaProvider implements ModelProvider {
   }
 
   public async generate(request: ModelRequest): Promise<ModelResponse> {
-    const abort = this.createAbortController(request.signal, 90_000);
+    const abort = this.createAbortController(request.signal, 300_000);
     try {
       const payload = {
         model: request.model,
@@ -85,7 +85,7 @@ export class OllamaProvider implements ModelProvider {
   }
 
   public async *stream(request: ModelRequest): AsyncGenerator<string> {
-    const abort = this.createAbortController(request.signal, 120_000);
+    const abort = this.createAbortController(request.signal, 600_000);
     try {
       const payload = {
         model: request.model,

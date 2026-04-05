@@ -351,6 +351,7 @@ function createSession(defaults: {
 
 function sanitizeReasoningStatus(raw: string): string {
   const clean = raw.replace(/\s+/g, " ").trim();
+  // Translate the internal mode-meta marker into a readable model header
   const modeMeta = clean.match(
     /^mode:\s*([^|]+)\|\s*provider:\s*([^|]+)\|\s*model:\s*(.+)$/i,
   );
@@ -358,32 +359,7 @@ function sanitizeReasoningStatus(raw: string): string {
     const [, mode, provider, model] = modeMeta;
     return `Using ${model.trim()} on ${provider.trim()} (${mode.trim()} mode)`;
   }
-
-  const normalized = clean.toLowerCase();
-  if (
-    normalized.includes("collecting workspace") ||
-    normalized.includes("memory context")
-  ) {
-    return "Gathering workspace and memory context";
-  }
-  if (normalized.includes("routing request")) {
-    return "Routing request to best agent path";
-  }
-  if (normalized.includes("multi-agent workflow")) {
-    return "Coordinating specialist agents";
-  }
-  if (normalized.includes("tool command")) {
-    return "Executing selected tool";
-  }
-  if (normalized.includes("edit proposal")) {
-    return "Preparing code diff proposal";
-  }
-  if (normalized.startsWith("mode:")) {
-    return "Initializing response pipeline";
-  }
-  if (normalized.includes("specialist agent")) {
-    return "Running specialist analysis";
-  }
+  // Pass all other orchestrator messages through as-is
   return clean;
 }
 
@@ -2283,7 +2259,7 @@ function App() {
     const ta = textareaRef.current;
     if (!ta) return;
     ta.style.height = "0px";
-    ta.style.height = `${Math.min(ta.scrollHeight, 240)}px`;
+    ta.style.height = `${Math.min(ta.scrollHeight, 420)}px`;
   }, [activeDraft]);
 
   // DnD file handler

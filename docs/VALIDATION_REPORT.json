@@ -1,69 +1,69 @@
 {
   "summary": {
     "models": [
-      "gpt-oss:120b-cloud"
+      "kimi-k2.5:cloud"
     ],
     "total": 9,
     "passed": 9,
     "failed": 0,
-    "memoryBefore": 188,
-    "memoryAfter": 197,
+    "memoryBefore": 201,
+    "memoryAfter": 210,
     "memoryDelta": 9
   },
   "results": [
     {
-      "model": "gpt-oss:120b-cloud",
+      "model": "kimi-k2.5:cloud",
       "case": "real-world-auto",
       "ok": true,
-      "durationMs": 87813
+      "durationMs": 142175
     },
     {
-      "model": "gpt-oss:120b-cloud",
+      "model": "kimi-k2.5:cloud",
       "case": "tool-search",
       "ok": true,
-      "durationMs": 13468
+      "durationMs": 9007
     },
     {
-      "model": "gpt-oss:120b-cloud",
+      "model": "kimi-k2.5:cloud",
       "case": "tool-read",
       "ok": true,
-      "durationMs": 3875
+      "durationMs": 7730
     },
     {
-      "model": "gpt-oss:120b-cloud",
+      "model": "kimi-k2.5:cloud",
       "case": "tool-web-search",
       "ok": true,
-      "durationMs": 6332
+      "durationMs": 11175
     },
     {
-      "model": "gpt-oss:120b-cloud",
+      "model": "kimi-k2.5:cloud",
       "case": "terminal-create-file",
       "ok": true,
-      "durationMs": 4099
+      "durationMs": 7890
     },
     {
-      "model": "gpt-oss:120b-cloud",
+      "model": "kimi-k2.5:cloud",
       "case": "terminal-move-file",
       "ok": true,
-      "durationMs": 3934
+      "durationMs": 7862
     },
     {
-      "model": "gpt-oss:120b-cloud",
+      "model": "kimi-k2.5:cloud",
       "case": "terminal-delete-file",
       "ok": true,
-      "durationMs": 3935
+      "durationMs": 7920
     },
     {
-      "model": "gpt-oss:120b-cloud",
+      "model": "kimi-k2.5:cloud",
       "case": "terminal-security-block",
       "ok": true,
-      "durationMs": 3809
+      "durationMs": 7840
     },
     {
-      "model": "gpt-oss:120b-cloud",
+      "model": "kimi-k2.5:cloud",
       "case": "edit-proposal-apply",
       "ok": true,
-      "durationMs": 6124
+      "durationMs": 15332
     }
   ]
 }

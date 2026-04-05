@@ -126,6 +126,14 @@ export class NexcodeOrchestrator {
       content: request.prompt,
     });
 
+    const promptSnippet = request.prompt
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 70);
+    const taskHint = promptSnippet
+      ? ` – ${promptSnippet}${request.prompt.length > 70 ? "..." : ""}`
+      : "";
+
     yield {
       type: "status",
       message: `Mode: ${mode} | Provider: ${provider} | Model: ${model}`,
@@ -133,7 +141,7 @@ export class NexcodeOrchestrator {
 
     yield {
       type: "status",
-      message: "Collecting workspace and memory context...",
+      message: `Collecting context${taskHint}`,
     };
 
     try {
@@ -147,7 +155,7 @@ export class NexcodeOrchestrator {
 
       yield {
         type: "status",
-        message: "Context ready. Routing request...",
+        message: `Context ready – routing to ${mode} pipeline`,
       };
 
       let response: OrchestratorResponse;
@@ -157,7 +165,7 @@ export class NexcodeOrchestrator {
       ) {
         yield {
           type: "status",
-          message: "Executing tool command...",
+          message: `Executing tool command${taskHint}`,
         };
         response = await this.handleToolRequest(
           request.prompt,
@@ -170,7 +178,7 @@ export class NexcodeOrchestrator {
       } else if (request.prompt.trimStart().startsWith("/edit ")) {
         yield {
           type: "status",
-          message: "Preparing edit proposal for approval...",
+          message: `Preparing edit proposal${taskHint}`,
         };
         response = await this.handleEditRequest(
           request.prompt,
@@ -186,8 +194,7 @@ export class NexcodeOrchestrator {
       } else if (mode === "auto") {
         yield {
           type: "status",
-          message:
-            "Running multi-agent workflow (planner, coder, reviewer, qa, security)...",
+          message: `Orchestrating multi-agent pipeline${taskHint}`,
         };
         response = await this.runAutoMode(
           request.prompt,
@@ -202,7 +209,7 @@ export class NexcodeOrchestrator {
       } else {
         yield {
           type: "status",
-          message: `Running ${mode} specialist agent...`,
+          message: `Calling ${mode} agent${taskHint}`,
         };
         response = await this.runSingleMode(
           mode,
@@ -220,11 +227,6 @@ export class NexcodeOrchestrator {
       this.ensureNotAborted(request.abortSignal);
 
       response.diagnostics = diagnostics;
-      response.text = this.prependExecutionSummary(response, {
-        mode,
-        provider,
-        model,
-      });
 
       for (const token of chunkText(response.text, 32)) {
         yield {
@@ -660,16 +662,15 @@ export class NexcodeOrchestrator {
         throw error;
       }
 
-      const message = `${capitalize(mode)} agent fallback: ${String(error)}`;
-      diagnostics.push(message);
+      const errorStr = String(error);
+      const isTimeout = errorStr.toLowerCase().includes("timeout");
+      diagnostics.push(`${capitalize(mode)} agent error: ${errorStr}`);
+      const reason = isTimeout
+        ? `The request timed out. The model is taking too long to respond. Try a simpler task, break it into smaller steps, or switch to a faster model.`
+        : errorStr;
       return {
         agent: mode,
-        content: [
-          `The ${mode} agent could not complete with the selected model endpoint.`,
-          `Details: ${String(error)}`,
-          "Fallback suggestion:",
-          this.fallbackByMode(mode),
-        ].join("\n"),
+        content: `> **${capitalize(mode)} agent could not complete the task.**\n>\n> ${reason}`,
       };
     }
   }
@@ -689,66 +690,10 @@ export class NexcodeOrchestrator {
     return message.includes("abort");
   }
 
-  private fallbackByMode(mode: Exclude<AgentMode, "auto">): string {
-    switch (mode) {
-      case "planner":
-        return "1) Confirm target files and acceptance criteria. 2) Implement incrementally. 3) Run tests and review.";
-      case "coder":
-        return "Implement the smallest safe change, keep interfaces stable, and add tests for the changed behavior.";
-      case "reviewer":
-        return "Check for regressions, null/edge handling, and missing tests around modified code paths.";
-      case "qa":
-        return "Add one happy-path test, one edge-case test, and one regression test for prior behavior.";
-      case "security":
-        return "Validate input handling, avoid secret leakage, and pin/scan dependencies in CI.";
-    }
-  }
-
   private getSessionId(workspaceRoot?: string): string {
     return workspaceRoot
       ? `workspace:${workspaceRoot}`
       : `session:${randomUUID()}`;
-  }
-
-  private prependExecutionSummary(
-    response: OrchestratorResponse,
-    context: {
-      mode: AgentMode;
-      provider: ProviderId;
-      model: string;
-    },
-  ): string {
-    if (/^##\s+summary\b/im.test(response.text.trimStart())) {
-      return response.text;
-    }
-
-    const summaryLines = [
-      "## Summary",
-      `- Mode: ${context.mode}`,
-      `- Provider: ${context.provider}`,
-      `- Model: ${context.model}`,
-      `- Proposed edits: ${response.proposedEdits.length}`,
-      `- Diagnostics: ${response.diagnostics.length}`,
-      `- Outcome: ${this.deriveOutcomeLine(response.text)}`,
-    ];
-
-    return `${summaryLines.join("\n")}\n\n${response.text}`;
-  }
-
-  private deriveOutcomeLine(text: string): string {
-    const flattened = text
-      .replace(/```[\s\S]*?```/g, " ")
-      .replace(/[>#*_`]/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-
-    if (!flattened) {
-      return "Completed response generation.";
-    }
-
-    const sentenceMatch = flattened.match(/^(.{20,180}?[.!?])(?:\s|$)/);
-    const outcome = sentenceMatch ? sentenceMatch[1] : flattened.slice(0, 180);
-    return outcome.length > 180 ? `${outcome.slice(0, 177)}...` : outcome;
   }
 
   private async buildWorkspaceContext(

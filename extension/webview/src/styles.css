@@ -19,7 +19,7 @@
   --nk-red: #f85149;
   --nk-orange: #fb923c;
   --nk-user-bg: #1a2b3c;
-  --nk-topbar-h: 38px;
+  --nk-topbar-h: 34px;
   color-scheme: dark;
 }
 
@@ -146,7 +146,7 @@ body {
 
 /* Messages list */
 .nk-messages-list {
-  padding: 7px 2px 2px;
+  padding: 4px 2px 2px;
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -156,7 +156,7 @@ body {
 .nk-msg-row {
   display: flex;
   width: 100%;
-  padding: 3px 0;
+  padding: 1px 0;
 }
 .nk-msg-row--user {
   justify-content: flex-end;
@@ -248,8 +248,8 @@ body {
 .nk-thinking-wrap {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 6px 0 4px;
+  gap: 3px;
+  padding: 3px 0 2px;
 }
 .nk-thinking-row {
   display: flex;
@@ -387,7 +387,7 @@ body {
   background: linear-gradient(180deg, #202228 0%, #1b1d23 100%);
   border: 1px solid #2b2f38;
   border-radius: 8px;
-  padding: 7px 9px;
+  padding: 5px 8px;
   color: #9da8bb;
 }
 .nk-reasoning-panel--live {
@@ -436,7 +436,7 @@ body {
   background: #1d2026;
   border: 1px solid #2f3540;
   border-radius: 8px;
-  padding: 7px 9px;
+  padding: 5px 8px;
 }
 .nk-summary-title {
   margin: 0;
@@ -575,7 +575,7 @@ body {
   padding: 8px 10px 4px;
   outline: none;
   min-height: 38px;
-  max-height: 220px;
+  max-height: 400px;
   overflow-y: auto;
 }
 .nk-textarea::placeholder {

@@ -7,6 +7,7 @@ import {
   OrchestratorRequest,
   ProposedEdit,
   ProviderId,
+  RequestAttachment,
 } from "@nexcode/agent-core";
 
 interface WebviewSendPromptMessage {
@@ -15,10 +16,30 @@ interface WebviewSendPromptMessage {
   provider?: ProviderId;
   model?: string;
   mode?: AgentMode;
+  attachmentIds?: string[];
+}
+
+interface WebviewPickAttachmentsMessage {
+  type: "pickAttachments";
+}
+
+interface WebviewRemoveAttachmentMessage {
+  type: "removeAttachment";
+  attachmentId: string;
 }
 
 interface WebviewApplyEditMessage {
   type: "applyEdit";
+  editId: string;
+}
+
+interface WebviewPreviewEditMessage {
+  type: "previewEdit";
+  editId: string;
+}
+
+interface WebviewRejectEditMessage {
+  type: "rejectEdit";
   editId: string;
 }
 
@@ -29,7 +50,19 @@ interface WebviewClearMessage {
 type InboundWebviewMessage =
   | WebviewSendPromptMessage
   | WebviewApplyEditMessage
-  | WebviewClearMessage;
+  | WebviewPreviewEditMessage
+  | WebviewRejectEditMessage
+  | WebviewClearMessage
+  | WebviewPickAttachmentsMessage
+  | WebviewRemoveAttachmentMessage;
+
+interface AttachmentChip {
+  id: string;
+  fileName: string;
+  kind: RequestAttachment["kind"];
+  mimeType: string;
+  byteSize?: number;
+}
 
 export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = "nexcodeKiboko.sidebarView";
@@ -38,6 +71,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
   private orchestrator?: NexcodeOrchestrator;
   private currentWorkspaceRoot?: string;
   private readonly pendingEdits = new Map<string, ProposedEdit>();
+  private readonly pendingAttachments = new Map<string, RequestAttachment>();
   private isBusy = false;
 
   public constructor(private readonly context: vscode.ExtensionContext) {}
@@ -58,14 +92,18 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     });
 
     this.postMessage({ type: "config", value: this.getRuntimeSettings() });
+    this.postAttachments();
   }
 
   public notifyConfigChanged(): void {
+    this.orchestrator = undefined;
+    this.currentWorkspaceRoot = undefined;
     this.postMessage({ type: "config", value: this.getRuntimeSettings() });
   }
 
   public clearConversation(): void {
     this.pendingEdits.clear();
+    this.pendingAttachments.clear();
     this.postMessage({ type: "cleared" });
   }
 
@@ -79,8 +117,21 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       case "applyEdit":
         await this.applyProposedEdit(message.editId);
         return;
+      case "previewEdit":
+        await this.previewProposedEdit(message.editId);
+        return;
+      case "rejectEdit":
+        this.rejectProposedEdit(message.editId);
+        return;
       case "clearConversation":
         this.clearConversation();
+        return;
+      case "pickAttachments":
+        await this.pickAttachments();
+        return;
+      case "removeAttachment":
+        this.pendingAttachments.delete(message.attachmentId);
+        this.postAttachments();
         return;
     }
   }
@@ -101,6 +152,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
 
     this.isBusy = true;
     this.postMessage({ type: "start" });
+    const selectedAttachmentIds = message.attachmentIds ?? [];
 
     try {
       const workspaceRoot = this.getWorkspaceRoot();
@@ -116,6 +168,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         workspaceRoot,
         activeFilePath: activeEditor?.document.uri.fsPath,
         selectedText: activeEditor?.document.getText(activeEditor.selection),
+        attachments: this.resolveAttachmentsForPrompt(selectedAttachmentIds),
       };
 
       for await (const event of orchestrator.stream(request)) {
@@ -133,9 +186,40 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         message: String(error),
       });
     } finally {
+      for (const attachmentId of selectedAttachmentIds) {
+        this.pendingAttachments.delete(attachmentId);
+      }
+      this.postAttachments();
       this.isBusy = false;
       this.postMessage({ type: "end" });
     }
+  }
+
+  private async pickAttachments(): Promise<void> {
+    const selected = await vscode.window.showOpenDialog({
+      canSelectMany: true,
+      canSelectFiles: true,
+      canSelectFolders: false,
+      openLabel: "Attach",
+    });
+
+    if (!selected || selected.length === 0) {
+      return;
+    }
+
+    for (const uri of selected) {
+      try {
+        const attachment = await this.readAttachment(uri);
+        this.pendingAttachments.set(attachment.id, attachment);
+      } catch (error) {
+        this.postMessage({
+          type: "error",
+          message: `Failed to attach ${path.basename(uri.fsPath)}: ${String(error)}`,
+        });
+      }
+    }
+
+    this.postAttachments();
   }
 
   private async applyProposedEdit(editId: string): Promise<void> {
@@ -185,6 +269,81 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     });
   }
 
+  private async previewProposedEdit(editId: string): Promise<void> {
+    const edit = this.pendingEdits.get(editId);
+    if (!edit) {
+      this.postMessage({
+        type: "error",
+        message: "Proposed edit not found.",
+      });
+      return;
+    }
+
+    const workspaceRoot = this.getWorkspaceRoot();
+    const targetUri = vscode.Uri.file(path.join(workspaceRoot, edit.filePath));
+    const previewsDir = vscode.Uri.file(
+      path.join(workspaceRoot, ".nexcode", "edit-previews"),
+    );
+    await vscode.workspace.fs.createDirectory(previewsDir);
+
+    const extension = path.extname(edit.filePath) || ".txt";
+    const safeBaseName = path
+      .basename(edit.filePath)
+      .replace(/[^a-zA-Z0-9._-]/g, "_");
+
+    const beforeUri = vscode.Uri.file(
+      path.join(
+        previewsDir.fsPath,
+        `${edit.id}-${safeBaseName}.before${extension}`,
+      ),
+    );
+    const afterUri = vscode.Uri.file(
+      path.join(
+        previewsDir.fsPath,
+        `${edit.id}-${safeBaseName}.after${extension}`,
+      ),
+    );
+
+    const targetExists = await this.fileExists(targetUri);
+    if (!targetExists) {
+      await vscode.workspace.fs.writeFile(beforeUri, Buffer.from("", "utf8"));
+    }
+
+    await vscode.workspace.fs.writeFile(
+      afterUri,
+      Buffer.from(edit.newText, "utf8"),
+    );
+
+    await vscode.commands.executeCommand(
+      "vscode.diff",
+      targetExists ? targetUri : beforeUri,
+      afterUri,
+      `NEXCODE Review: ${edit.filePath}`,
+    );
+
+    this.postMessage({
+      type: "editPreviewOpened",
+      editId,
+      filePath: edit.filePath,
+    });
+  }
+
+  private rejectProposedEdit(editId: string): void {
+    if (!this.pendingEdits.has(editId)) {
+      this.postMessage({
+        type: "error",
+        message: "Proposed edit not found.",
+      });
+      return;
+    }
+
+    this.pendingEdits.delete(editId);
+    this.postMessage({
+      type: "editRejected",
+      editId,
+    });
+  }
+
   private getOrchestrator(workspaceRoot: string): NexcodeOrchestrator {
     if (!this.orchestrator || this.currentWorkspaceRoot !== workspaceRoot) {
       const settings = this.getRuntimeSettings();
@@ -197,11 +356,127 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         ollamaBaseUrl: settings.ollamaBaseUrl,
         openAIBaseUrl: settings.openAIBaseUrl,
         openAIApiKey: settings.openAIApiKey,
+        tavilyApiKey: settings.tavilyApiKey,
       });
       this.currentWorkspaceRoot = workspaceRoot;
     }
 
     return this.orchestrator;
+  }
+
+  private resolveAttachmentsForPrompt(
+    selectedAttachmentIds?: string[],
+  ): RequestAttachment[] {
+    if (!selectedAttachmentIds || selectedAttachmentIds.length === 0) {
+      return [];
+    }
+
+    const attachments: RequestAttachment[] = [];
+    for (const attachmentId of selectedAttachmentIds) {
+      const attachment = this.pendingAttachments.get(attachmentId);
+      if (attachment) {
+        attachments.push(attachment);
+      }
+    }
+    return attachments;
+  }
+
+  private async readAttachment(uri: vscode.Uri): Promise<RequestAttachment> {
+    const bytes = await vscode.workspace.fs.readFile(uri);
+    const fileName = path.basename(uri.fsPath);
+    const mimeType = this.guessMimeType(fileName);
+    const byteSize = bytes.byteLength;
+    const id = `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+
+    if (this.isTextLike(mimeType, fileName) && byteSize <= 250_000) {
+      const textContent = new TextDecoder("utf-8", { fatal: false }).decode(
+        bytes,
+      );
+      return {
+        id,
+        fileName,
+        mimeType,
+        kind: "text",
+        textContent,
+        byteSize,
+      };
+    }
+
+    const base64Data = Buffer.from(bytes).toString("base64");
+    return {
+      id,
+      fileName,
+      mimeType,
+      kind: mimeType.startsWith("image/") ? "image" : "binary",
+      base64Data,
+      byteSize,
+    };
+  }
+
+  private postAttachments(): void {
+    const attachments: AttachmentChip[] = [
+      ...this.pendingAttachments.values(),
+    ].map((attachment) => ({
+      id: attachment.id,
+      fileName: attachment.fileName,
+      kind: attachment.kind,
+      mimeType: attachment.mimeType,
+      byteSize: attachment.byteSize,
+    }));
+
+    this.postMessage({
+      type: "attachmentsSelected",
+      attachments,
+    });
+  }
+
+  private guessMimeType(fileName: string): string {
+    const lowered = fileName.toLowerCase();
+    if (lowered.endsWith(".png")) {
+      return "image/png";
+    }
+    if (lowered.endsWith(".jpg") || lowered.endsWith(".jpeg")) {
+      return "image/jpeg";
+    }
+    if (lowered.endsWith(".gif")) {
+      return "image/gif";
+    }
+    if (lowered.endsWith(".webp")) {
+      return "image/webp";
+    }
+    if (lowered.endsWith(".svg")) {
+      return "image/svg+xml";
+    }
+    if (lowered.endsWith(".md")) {
+      return "text/markdown";
+    }
+    if (
+      lowered.endsWith(".ts") ||
+      lowered.endsWith(".tsx") ||
+      lowered.endsWith(".js") ||
+      lowered.endsWith(".jsx") ||
+      lowered.endsWith(".json") ||
+      lowered.endsWith(".yml") ||
+      lowered.endsWith(".yaml") ||
+      lowered.endsWith(".py") ||
+      lowered.endsWith(".java") ||
+      lowered.endsWith(".go") ||
+      lowered.endsWith(".rs") ||
+      lowered.endsWith(".txt")
+    ) {
+      return "text/plain";
+    }
+    return "application/octet-stream";
+  }
+
+  private isTextLike(mimeType: string, fileName: string): boolean {
+    return (
+      mimeType.startsWith("text/") ||
+      fileName.toLowerCase().endsWith(".md") ||
+      fileName.toLowerCase().endsWith(".json") ||
+      fileName.toLowerCase().endsWith(".yaml") ||
+      fileName.toLowerCase().endsWith(".yml")
+    );
   }
 
   private getWorkspaceRoot(): string {
@@ -220,7 +495,9 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     ollamaBaseUrl: string;
     openAIBaseUrl: string;
     openAIApiKey: string;
+    tavilyApiKey: string;
     allowTools: boolean;
+    requireTerminalApproval: boolean;
   } {
     const config = vscode.workspace.getConfiguration("nexcodeKiboko");
 
@@ -237,7 +514,12 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         "https://api.openai.com/v1",
       ),
       openAIApiKey: config.get<string>("openAIApiKey", ""),
+      tavilyApiKey: config.get<string>("tavilyApiKey", ""),
       allowTools: config.get<boolean>("allowToolCommands", true),
+      requireTerminalApproval: config.get<boolean>(
+        "requireTerminalApproval",
+        true,
+      ),
     };
   }
 
@@ -291,7 +573,11 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     <section id="chat" class="chat"></section>
 
     <section class="composer">
-      <textarea id="promptInput" rows="4" placeholder="Ask Nexcode Kiboko...\nExamples:\n- Build login endpoint with tests\n- /tool search orchestrator\n- /edit src/file.ts :: improve error handling"></textarea>
+      <div class="composer-actions">
+        <button id="attachBtn" class="secondary" type="button">Attach</button>
+      </div>
+      <ul id="attachmentList" class="attachment-list"></ul>
+      <textarea id="promptInput" rows="4" placeholder="Ask Nexcode Kiboko...\nExamples:\n- Build login endpoint with tests\n- /tool search orchestrator\n- /tool web-search OWASP API Security Top 10\n- /edit src/file.ts :: improve error handling"></textarea>
       <button id="sendBtn">Send</button>
     </section>
 

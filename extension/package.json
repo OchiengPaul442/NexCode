@@ -3,11 +3,21 @@
   "displayName": "NEXCODE-KIBOKO",
   "description": "Local-first, multi-agent AI coding assistant for VS Code.",
   "publisher": "nexcode",
-  "version": "0.1.0",
+  "version": "0.1.16",
   "private": true,
+  "icon": "media/icon.png",
   "engines": {
     "vscode": "^1.95.0"
   },
+  "keywords": [
+    "ai",
+    "chat",
+    "agent",
+    "ollama",
+    "code-review",
+    "developer-tools"
+  ],
+  "license": "MIT",
   "categories": [
     "Other"
   ],
@@ -18,7 +28,7 @@
         {
           "id": "nexcodeKiboko",
           "title": "NexCode",
-          "icon": "media/kiboko.svg"
+          "icon": "media/activitybar-icon.svg"
         }
       ]
     },
@@ -27,7 +37,8 @@
         {
           "id": "nexcodeKiboko.sidebarView",
           "name": "NEXCODE-KIBOKO",
-          "icon": "media/kiboko.svg"
+          "icon": "media/kiboko.svg",
+          "type": "webview"
         }
       ]
     },
@@ -90,10 +101,20 @@
           "default": "",
           "description": "API key for OpenAI-compatible provider."
         },
+        "nexcodeKiboko.tavilyApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "API key for Tavily online web search used by /tool web-search."
+        },
         "nexcodeKiboko.allowToolCommands": {
           "type": "boolean",
           "default": true,
           "description": "Allow /tool command execution from the sidebar chat."
+        },
+        "nexcodeKiboko.requireTerminalApproval": {
+          "type": "boolean",
+          "default": true,
+          "description": "Require explicit confirmation in the sidebar before running /tool terminal commands."
         }
       }
     }
@@ -102,7 +123,7 @@
     "build": "tsc -p .",
     "watch": "tsc -watch -p .",
     "lint": "tsc -p . --noEmit",
-    "package": "vsce package"
+    "package": "vsce package --allow-missing-repository --no-dependencies"
   },
   "dependencies": {
     "@nexcode/agent-core": "file:../agent-core"

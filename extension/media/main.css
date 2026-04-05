@@ -1,28 +1,28 @@
 :root {
   --panel-bg: color-mix(
     in srgb,
-    var(--vscode-editor-background) 82%,
-    #0a7c74 18%
+    var(--vscode-editor-background) 84%,
+    #1f2937 16%
   );
   --surface: color-mix(
     in srgb,
     var(--vscode-sideBar-background) 90%,
-    #0d2826 10%
+    #111827 10%
   );
   --surface-strong: color-mix(
     in srgb,
-    var(--vscode-sideBar-background) 70%,
-    #11413d 30%
+    var(--vscode-sideBar-background) 72%,
+    #334155 28%
   );
   --text: var(--vscode-foreground);
   --text-muted: color-mix(in srgb, var(--vscode-foreground) 70%, transparent);
-  --accent: #34b1a4;
-  --accent-2: #ef9f3f;
-  --danger: #de4b4b;
+  --accent: #64748b;
+  --accent-2: #94a3b8;
+  --danger: #ef4444;
   --border: color-mix(
     in srgb,
     var(--vscode-editorWidget-border) 70%,
-    #1b5b55 30%
+    #334155 30%
   );
 }
 
@@ -36,12 +36,12 @@ body {
   background:
     radial-gradient(
       circle at top right,
-      color-mix(in srgb, var(--accent) 16%, transparent) 0%,
+      color-mix(in srgb, var(--accent) 18%, transparent) 0%,
       transparent 45%
     ),
     radial-gradient(
       circle at bottom left,
-      color-mix(in srgb, var(--accent-2) 12%, transparent) 0%,
+      color-mix(in srgb, var(--accent-2) 14%, transparent) 0%,
       transparent 40%
     ),
     var(--panel-bg);
@@ -164,6 +164,50 @@ textarea {
   border-radius: 10px;
 }
 
+.composer-actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.attachment-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+  max-height: 110px;
+  overflow: auto;
+}
+
+.attachment-item,
+.attachment-empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: color-mix(in srgb, var(--surface-strong) 72%, #111827 28%);
+  font-size: 11px;
+}
+
+.attachment-empty {
+  justify-content: center;
+  opacity: 0.8;
+}
+
+.attachment-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-remove {
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
 button {
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -206,7 +250,7 @@ button:disabled {
 .history-item {
   width: 100%;
   text-align: left;
-  background: color-mix(in srgb, var(--surface-strong) 70%, #0f2a28 30%);
+  background: color-mix(in srgb, var(--surface-strong) 72%, #111827 28%);
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 6px;
@@ -226,12 +270,33 @@ button:disabled {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 6px;
-  background: color-mix(in srgb, var(--surface-strong) 72%, #172927 28%);
+  background: color-mix(in srgb, var(--surface-strong) 72%, #111827 28%);
 }
 
 .edit-card summary {
   cursor: pointer;
   font-size: 12px;
+}
+
+.edit-card.approved {
+  border-color: color-mix(in srgb, #10b981 58%, var(--border) 42%);
+}
+
+.edit-card.rejected {
+  border-color: color-mix(in srgb, #ef4444 58%, var(--border) 42%);
+  opacity: 0.85;
+}
+
+.edit-badge {
+  margin-top: 6px;
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+  border: 1px solid var(--border);
 }
 
 .patch {
@@ -247,4 +312,42 @@ button:disabled {
 
 .apply {
   width: 100%;
+}
+
+.edit-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.edit-actions button {
+  width: 100%;
+}
+
+.edit-status {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.reasoning-trace {
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-strong) 70%, #0f172a 30%);
+  padding: 6px;
+}
+
+.reasoning-trace summary {
+  cursor: pointer;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+
+.trace-list {
+  margin: 8px 0 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+  font-size: 11px;
 }

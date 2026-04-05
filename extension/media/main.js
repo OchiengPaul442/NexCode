@@ -4,17 +4,22 @@ const ui = {
   chat: document.getElementById("chat"),
   sendBtn: document.getElementById("sendBtn"),
   clearBtn: document.getElementById("clearBtn"),
+  attachBtn: document.getElementById("attachBtn"),
   promptInput: document.getElementById("promptInput"),
   providerSelect: document.getElementById("providerSelect"),
   modelInput: document.getElementById("modelInput"),
   modeSelect: document.getElementById("modeSelect"),
   historyList: document.getElementById("historyList"),
+  attachmentList: document.getElementById("attachmentList"),
 };
 
 const state = {
   streamNode: null,
   history: [],
   busy: false,
+  attachments: [],
+  currentStatuses: [],
+  requireTerminalApproval: true,
 };
 
 bindEvents();
@@ -26,6 +31,10 @@ function bindEvents() {
 
   ui.clearBtn.addEventListener("click", () => {
     vscode.postMessage({ type: "clearConversation" });
+  });
+
+  ui.attachBtn.addEventListener("click", () => {
+    vscode.postMessage({ type: "pickAttachments" });
   });
 
   ui.promptInput.addEventListener("keydown", (event) => {
@@ -50,8 +59,33 @@ function sendPrompt() {
     return;
   }
 
+  if (state.requireTerminalApproval && /^\/tool\s+terminal\s+/i.test(prompt)) {
+    const terminalCommand = prompt.replace(/^\/tool\s+terminal\s+/i, "");
+    const approved = window.confirm(
+      [
+        "Approval required to run terminal command:",
+        "",
+        terminalCommand,
+        "",
+        "Continue?",
+      ].join("\n"),
+    );
+    if (!approved) {
+      appendMessage("status", "Terminal command canceled by user.");
+      return;
+    }
+  }
+
   appendMessage("user", prompt);
   addToHistory(prompt);
+
+  const attachmentIds = state.attachments.map((item) => item.id);
+  if (state.attachments.length > 0) {
+    const summary = state.attachments
+      .map((item) => `${item.fileName} (${item.kind})`)
+      .join(", ");
+    appendMessage("status", `Attached: ${summary}`);
+  }
 
   vscode.postMessage({
     type: "sendPrompt",
@@ -59,9 +93,12 @@ function sendPrompt() {
     provider: ui.providerSelect.value,
     model: ui.modelInput.value.trim(),
     mode: ui.modeSelect.value,
+    attachmentIds,
   });
 
   ui.promptInput.value = "";
+  state.attachments = [];
+  renderAttachments();
 }
 
 function handleIncoming(message) {
@@ -73,19 +110,25 @@ function handleIncoming(message) {
       state.busy = true;
       ui.sendBtn.disabled = true;
       state.streamNode = null;
+      state.currentStatuses = [];
       break;
     case "end":
       state.busy = false;
       ui.sendBtn.disabled = false;
+      state.currentStatuses = [];
       break;
     case "status":
+      state.currentStatuses.push({
+        text: message.message,
+        at: new Date().toLocaleTimeString(),
+      });
       appendMessage("status", message.message);
       break;
     case "token":
       appendStreamToken(message.token);
       break;
     case "final":
-      finalizeAssistantMessage(message.response);
+      finalizeAssistantMessage(message.response, state.currentStatuses.slice());
       break;
     case "error":
       appendMessage("error", message.message);
@@ -93,8 +136,23 @@ function handleIncoming(message) {
     case "editApplied":
       markEditApplied(message.editId, message.filePath);
       break;
+    case "editPreviewOpened":
+      appendMessage(
+        "status",
+        `Opened diff preview for ${message.filePath || message.editId}.`,
+      );
+      break;
+    case "editRejected":
+      markEditRejected(message.editId);
+      break;
     case "cleared":
       clearUi();
+      break;
+    case "attachmentsSelected":
+      state.attachments = Array.isArray(message.attachments)
+        ? message.attachments
+        : [];
+      renderAttachments();
       break;
   }
 }
@@ -107,6 +165,7 @@ function applyConfig(config) {
   ui.providerSelect.value = config.provider;
   ui.modelInput.value = config.model;
   ui.modeSelect.value = config.mode;
+  state.requireTerminalApproval = config.requireTerminalApproval !== false;
 }
 
 function appendMessage(kind, text) {
@@ -158,9 +217,37 @@ function ensureStreamingMessage() {
   return wrapper;
 }
 
-function finalizeAssistantMessage(response) {
+function finalizeAssistantMessage(response, statuses) {
   const message = ensureStreamingMessage();
   const body = message.querySelector(".message-body");
+
+  const existingTrace = message.querySelector(".reasoning-trace");
+  if (existingTrace) {
+    existingTrace.remove();
+  }
+
+  if (Array.isArray(statuses) && statuses.length > 0) {
+    const trace = document.createElement("details");
+    trace.className = "reasoning-trace";
+
+    const summary = document.createElement("summary");
+    summary.textContent = `Reasoning Trace (${statuses.length} step${
+      statuses.length === 1 ? "" : "s"
+    })`;
+
+    const list = document.createElement("ol");
+    list.className = "trace-list";
+    for (const item of statuses) {
+      const li = document.createElement("li");
+      li.textContent = `[${item.at}] ${item.text}`;
+      list.appendChild(li);
+    }
+
+    trace.appendChild(summary);
+    trace.appendChild(list);
+    message.insertBefore(trace, body);
+  }
+
   body.textContent = response.text || "";
 
   if (
@@ -179,9 +266,23 @@ function finalizeAssistantMessage(response) {
       const summary = document.createElement("summary");
       summary.textContent = `${edit.filePath} - ${edit.summary}`;
 
+      const badge = document.createElement("div");
+      badge.className = "edit-badge";
+      badge.textContent = "Approval required";
+
       const patch = document.createElement("pre");
       patch.className = "patch";
       patch.textContent = edit.patch || edit.newText || "";
+
+      const actions = document.createElement("div");
+      actions.className = "edit-actions";
+
+      const previewButton = document.createElement("button");
+      previewButton.className = "secondary";
+      previewButton.textContent = "Preview Diff";
+      previewButton.addEventListener("click", () => {
+        vscode.postMessage({ type: "previewEdit", editId: edit.id });
+      });
 
       const applyButton = document.createElement("button");
       applyButton.className = "apply";
@@ -190,9 +291,26 @@ function finalizeAssistantMessage(response) {
         vscode.postMessage({ type: "applyEdit", editId: edit.id });
       });
 
+      const rejectButton = document.createElement("button");
+      rejectButton.className = "secondary";
+      rejectButton.textContent = "Reject";
+      rejectButton.addEventListener("click", () => {
+        vscode.postMessage({ type: "rejectEdit", editId: edit.id });
+      });
+
+      actions.appendChild(previewButton);
+      actions.appendChild(applyButton);
+      actions.appendChild(rejectButton);
+
+      const statusLine = document.createElement("div");
+      statusLine.className = "edit-status";
+      statusLine.textContent = "Pending review";
+
       card.appendChild(summary);
+      card.appendChild(badge);
       card.appendChild(patch);
-      card.appendChild(applyButton);
+      card.appendChild(actions);
+      card.appendChild(statusLine);
       editContainer.appendChild(card);
     }
 
@@ -206,12 +324,37 @@ function finalizeAssistantMessage(response) {
 function markEditApplied(editId, filePath) {
   const card = ui.chat.querySelector(`[data-edit-id="${cssEscape(editId)}"]`);
   if (card) {
-    const button = card.querySelector("button.apply");
-    if (button) {
+    const buttons = card.querySelectorAll("button");
+    for (const button of buttons) {
       button.disabled = true;
-      button.textContent = `Applied to ${filePath}`;
     }
+
+    const statusLine = card.querySelector(".edit-status");
+    if (statusLine) {
+      statusLine.textContent = `Applied to ${filePath}`;
+    }
+
+    card.classList.add("approved");
   }
+}
+
+function markEditRejected(editId) {
+  const card = ui.chat.querySelector(`[data-edit-id="${cssEscape(editId)}"]`);
+  if (!card) {
+    return;
+  }
+
+  const buttons = card.querySelectorAll("button");
+  for (const button of buttons) {
+    button.disabled = true;
+  }
+
+  const statusLine = card.querySelector(".edit-status");
+  if (statusLine) {
+    statusLine.textContent = "Rejected";
+  }
+
+  card.classList.add("rejected");
 }
 
 function addToHistory(prompt) {
@@ -238,8 +381,45 @@ function addToHistory(prompt) {
 function clearUi() {
   state.streamNode = null;
   state.history = [];
+  state.attachments = [];
+  state.currentStatuses = [];
   ui.chat.textContent = "";
   ui.historyList.textContent = "";
+  renderAttachments();
+}
+
+function renderAttachments() {
+  ui.attachmentList.textContent = "";
+
+  if (state.attachments.length === 0) {
+    const li = document.createElement("li");
+    li.className = "attachment-empty";
+    li.textContent = "No attachments selected";
+    ui.attachmentList.appendChild(li);
+    return;
+  }
+
+  for (const attachment of state.attachments) {
+    const li = document.createElement("li");
+    li.className = "attachment-item";
+
+    const label = document.createElement("span");
+    label.textContent = `${attachment.fileName} (${attachment.kind})`;
+
+    const removeButton = document.createElement("button");
+    removeButton.className = "attachment-remove";
+    removeButton.textContent = "Remove";
+    removeButton.addEventListener("click", () => {
+      vscode.postMessage({
+        type: "removeAttachment",
+        attachmentId: attachment.id,
+      });
+    });
+
+    li.appendChild(label);
+    li.appendChild(removeButton);
+    ui.attachmentList.appendChild(li);
+  }
 }
 
 function cssEscape(value) {

@@ -2,30 +2,30 @@
 
 Local-first, multi-agent AI coding assistant for VS Code.
 
-This repository contains:
+## What You Get
 
-- A VS Code sidebar extension (Copilot-like chat UX, independent from Copilot)
-- A modular orchestration core with planner/coder/reviewer/qa/security agents
-- Provider routing (Ollama by default, OpenAI-compatible optional)
-- Tool layer (filesystem, terminal, git, test, search)
-- Memory + reflection loop for self-improving prompts
+- VS Code sidebar extension with chat, streaming, attachments, and controlled edit approvals.
+- Multi-agent core with `auto`, `planner`, `coder`, `reviewer`, `qa`, and `security` modes.
+- Provider routing for local Ollama and OpenAI-compatible endpoints.
+- Tooling layer for filesystem, terminal, git, tests, local code search, and online web search.
+- Online web search through Tavily with DuckDuckGo and Wikipedia fallbacks.
+- Persistent memory and feedback logs for iterative prompt refinement.
 
-## Project Structure
+## Repository Layout
 
-- `extension/` VS Code extension package
-- `agent-core/` orchestration/runtime package
-- `prompts/` editable system prompts by role
-- `providers/` provider templates
-- `tools/` helper scripts
-- `memory/` runtime memory store
-- `ui/` UI notes/assets
+- `extension/`: VS Code extension.
+- `agent-core/`: orchestration and tools runtime.
+- `prompts/`: editable system prompts.
+- `providers/`: provider templates and examples.
+- `memory/`: runtime memory store (generated files are ignored).
+- `tools/`: setup, cleanup, packaging, and release scripts.
 
-## Requirements
+## Prerequisites
 
-- Node.js 18+
-- npm 9+
-- VS Code 1.95+
-- Ollama (recommended for local inference)
+- Node.js `>=18`
+- npm `>=9`
+- VS Code `>=1.95`
+- Ollama installed and running for local model usage.
 
 ## Quick Start
 
@@ -33,50 +33,107 @@ This repository contains:
    - `npm install`
 2. Build all packages:
    - `npm run build`
-3. Optional: pull local models:
-   - PowerShell: `./tools/setup-ollama.ps1`
-4. Run extension in VS Code:
-   - Open `extension/` in VS Code and press `F5` to launch an Extension Development Host.
-5. Open sidebar:
-   - Run command `NEXCODE: Open Sidebar`
+3. Optional model pull for local inference:
+   - `powershell -ExecutionPolicy Bypass -File .\tools\setup-ollama.ps1`
+4. Launch extension host:
+   - Open `extension/` in VS Code.
+   - Press `F5`.
+5. Open the sidebar:
+   - Run command `NEXCODE: Open Sidebar`.
 
-## Sidebar Usage
+## Recommended Ollama Model
 
-- Standard prompt: type request and send
-- Tool command: `/tool <command>`
-- Edit flow: `/edit <path> :: <instruction>` then click `Apply Edit`
+The sidebar model field is editable. For advanced runs, set model to:
 
-Examples:
+- `gpt-oss:120b-cloud`
 
-- `Build auth middleware with tests`
-- `/tool search orchestrator`
-- `/edit agent-core/src/orchestrator.ts :: add retry logic around provider calls`
+You can still use lighter models such as `qwen2.5-coder:7b` for faster local iteration.
 
-## Provider Configuration
+## Chat Command Surface
 
-Extension settings (`nexcodeKiboko.*`) control runtime behavior:
+- Standard prompt:
+  - `Build auth middleware with tests`
+- Local code search:
+  - `/tool search orchestrator`
+- Online search (Tavily + fallback):
+  - `/tool web-search OWASP API Security Top 10`
+- Terminal execution:
+  - `/tool terminal npm run test`
+- Git and tests:
+  - `/tool git-status`
+  - `/tool git-diff`
+  - `/tool git-branch`
+  - `/tool test npm test -- --runInBand`
+- Read file:
+  - `/tool read README.md`
+- Propose code edit:
+  - `/edit agent-core/src/orchestrator.ts :: add retry around provider call`
 
-- `defaultProvider`: `ollama` or `openai-compatible`
+## Approval And Safety Flow
+
+- Edit proposals are never auto-applied.
+- Every proposal supports:
+  - `Preview Diff`
+  - `Apply Edit`
+  - `Reject`
+- Terminal commands can require explicit confirmation from the sidebar.
+- High-risk destructive command patterns are blocked in `agent-core` terminal tool policy.
+
+## Extension Settings
+
+All settings are under `nexcodeKiboko.*`:
+
+- `defaultProvider`
 - `defaultModel`
 - `defaultMode`
 - `ollamaBaseUrl`
 - `openAIBaseUrl`
 - `openAIApiKey`
+- `tavilyApiKey`
 - `allowToolCommands`
+- `requireTerminalApproval`
 
-## Build And Test
+## Build, Test, Package
 
-- Build: `npm run build`
-- Lint type-check: `npm run lint`
-- Tests: `npm run test`
-- Package extension: `npm run package:vsix`
+- Build:
+  - `npm run build`
+- Type/lint checks:
+  - `npm run lint`
+- Tests:
+  - `npm run test`
+- Raw VSIX package:
+  - `npm run package:vsix`
 
-## Notes On Self-Improvement
+## Extension Install And Auto Version Bump
 
-`agent-core` logs interaction quality and prompt versions to `memory/`:
+Use the release script to bump version, package, and install into VS Code:
 
-- `feedback-log.jsonl`
-- `long-term-memory.json`
-- `prompt-versions.json`
+- Package and install:
+  - `npm run extension:release`
+- Package only:
+  - `npm run extension:package`
+- Bump only:
+  - `npm run extension:bump`
 
-This enables iterative prompt refinement over time.
+You can choose version increment type:
+
+- `node tools/extension-release.mjs --bump-type patch`
+- `node tools/extension-release.mjs --bump-type minor --no-install`
+
+## Maintenance And Cleanup
+
+- Clean generated simulation/artifact files:
+  - `npm run clean`
+- Run full local checks:
+  - `powershell -ExecutionPolicy Bypass -File .\tools\run-local-checks.ps1`
+
+Ignored/generated content includes:
+
+- `audit/`
+- framework caches (`.next`, pytest cache, bytecode)
+- runtime memory logs
+- local VSIX outputs
+
+## Runtime Memory Notes
+
+Generated runtime memory files are written to `memory/` during use. These are intentionally excluded from source control to keep commits clean.

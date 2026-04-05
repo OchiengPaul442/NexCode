@@ -13,10 +13,23 @@ export type AgentMode =
 export interface ChatMessage {
   role: ChatRole;
   content: string;
+  images?: string[];
+}
+
+export type AttachmentKind = "text" | "image" | "binary";
+
+export interface RequestAttachment {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  kind: AttachmentKind;
+  textContent?: string;
+  base64Data?: string;
+  byteSize?: number;
 }
 
 export interface ToolCall {
-  tool: "filesystem" | "terminal" | "git" | "test" | "search";
+  tool: "filesystem" | "terminal" | "git" | "test" | "search" | "web-search";
   input: string;
 }
 
@@ -37,6 +50,7 @@ export interface OrchestratorRequest {
   workspaceRoot?: string;
   activeFilePath?: string;
   selectedText?: string;
+  attachments?: RequestAttachment[];
   allowTools?: boolean;
 }
 

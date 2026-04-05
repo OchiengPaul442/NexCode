@@ -1,5 +1,5 @@
 param(
-    [string[]]$Models = @("qwen2.5-coder:7b", "deepseek-coder")
+    [string[]]$Models = @("qwen2.5-coder:7b", "deepseek-coder", "gpt-oss:120b-cloud")
 )
 
 Write-Host "Checking Ollama..."

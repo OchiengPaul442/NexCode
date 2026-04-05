@@ -8,11 +8,26 @@ Pulls default local coding models into Ollama.
 
 Runs install, build, and tests for this workspace.
 
+## `clean-workspace.mjs`
+
+Removes simulation artifacts, generated caches, and runtime memory logs that should not be committed.
+
+## `extension-release.mjs`
+
+Builds, packages, and optionally installs the VS Code extension.
+
+Examples:
+
+- `node tools/extension-release.mjs`
+- `node tools/extension-release.mjs --no-install`
+- `node tools/extension-release.mjs --bump-type minor`
+
 ## Agent Tool Commands In Chat
 
 From the sidebar chat, these commands are supported:
 
 - `/tool search <query>`
+- `/tool web-search <query>`
 - `/tool terminal <command>`
 - `/tool git-status`
 - `/tool git-diff`

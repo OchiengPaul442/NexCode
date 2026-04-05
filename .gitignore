@@ -3,9 +3,21 @@ node_modules/
 **/dist/
 **/out/
 **/*.vsix
+**/.next/
+**/.pytest_cache/
+**/__pycache__/
+extension/package-lock.json
 .vscode-test/
 .nexcode/
 *.log
 *.tmp
 .DS_Store
 Thumbs.db
+
+# Generated runtime memory files
+memory/feedback-log.jsonl
+memory/long-term-memory.json
+memory/prompt-versions.json
+
+# Local simulation and audit artifacts
+audit/

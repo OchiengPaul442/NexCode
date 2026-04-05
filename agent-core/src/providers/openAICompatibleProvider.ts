@@ -9,6 +9,16 @@ interface OpenAIChoice {
   message?: OpenAIMessage;
 }
 
+interface OpenAIStreamChoice {
+  delta?: {
+    content?: string;
+  };
+}
+
+interface OpenAIStreamChunk {
+  choices?: OpenAIStreamChoice[];
+}
+
 interface OpenAIChatResponse {
   choices?: OpenAIChoice[];
 }
@@ -58,13 +68,83 @@ export class OpenAICompatibleProvider implements ModelProvider {
   }
 
   public async *stream(request: ModelRequest): AsyncGenerator<string> {
-    const response = await this.generate(request);
+    if (!this.apiKey) {
+      throw new Error("OpenAI-compatible provider requires an API key.");
+    }
 
-    const tokens = response.text
-      .split(/(\s+)/)
-      .filter((token) => token.length > 0);
-    for (const token of tokens) {
-      yield token;
+    const response = await fetch(`${this.baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: request.model,
+        messages: request.messages,
+        temperature: request.temperature ?? 0.2,
+        max_tokens: request.maxTokens,
+        stream: true,
+      }),
+    });
+
+    if (!response.ok || !response.body) {
+      const body = await response.text();
+      throw new Error(
+        `OpenAI-compatible stream failed (${response.status}): ${body}`,
+      );
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+
+      for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line || !line.startsWith("data:")) {
+          continue;
+        }
+
+        const payload = line.slice(5).trim();
+        if (!payload || payload === "[DONE]") {
+          continue;
+        }
+
+        try {
+          const chunk = JSON.parse(payload) as OpenAIStreamChunk;
+          const token = chunk.choices?.[0]?.delta?.content;
+          if (token) {
+            yield token;
+          }
+        } catch {
+          // Ignore malformed stream chunks and continue.
+        }
+      }
+    }
+
+    const trailing = buffer.trim();
+    if (trailing.startsWith("data:")) {
+      const payload = trailing.slice(5).trim();
+      if (payload && payload !== "[DONE]") {
+        try {
+          const chunk = JSON.parse(payload) as OpenAIStreamChunk;
+          const token = chunk.choices?.[0]?.delta?.content;
+          if (token) {
+            yield token;
+          }
+        } catch {
+          // Ignore trailing parse failures.
+        }
+      }
     }
   }
 }

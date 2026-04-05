@@ -15,6 +15,7 @@ import {
   OrchestratorResponse,
   ProviderId,
   ProposedEdit,
+  RequestAttachment,
 } from "./types";
 import { MemoryManager } from "./memory/memoryManager";
 import { PromptStore } from "./prompts/promptStore";
@@ -37,6 +38,8 @@ export interface NexcodeOrchestratorOptions {
   ollamaBaseUrl?: string;
   openAIBaseUrl?: string;
   openAIApiKey?: string;
+  tavilyApiKey?: string;
+  tavilyBaseUrl?: string;
 }
 
 export class NexcodeOrchestrator {
@@ -66,6 +69,10 @@ export class NexcodeOrchestrator {
         openAIBaseUrl: options.openAIBaseUrl ?? "https://api.openai.com/v1",
         openAIApiKey: options.openAIApiKey ?? process.env.OPENAI_API_KEY,
       },
+      toolDefaults: {
+        tavilyApiKey: options.tavilyApiKey ?? process.env.TAVILY_API_KEY,
+        tavilyBaseUrl: options.tavilyBaseUrl ?? "https://api.tavily.com/search",
+      },
     });
 
     this.router = new ModelRouter(
@@ -85,7 +92,10 @@ export class NexcodeOrchestrator {
 
     this.prompts = new PromptStore(this.config.promptsDir);
     this.memory = new MemoryManager(this.config.memoryDir);
-    this.tools = new ToolRegistry(this.config.workspaceRoot);
+    this.tools = new ToolRegistry(this.config.workspaceRoot, {
+      tavilyApiKey: this.config.toolDefaults.tavilyApiKey,
+      tavilyBaseUrl: this.config.toolDefaults.tavilyBaseUrl,
+    });
 
     this.planner = new PlannerAgent(this.router, this.prompts);
     this.coder = new CoderAgent(this.router, this.prompts);
@@ -117,17 +127,31 @@ export class NexcodeOrchestrator {
       message: `Mode: ${mode} | Provider: ${provider} | Model: ${model}`,
     };
 
+    yield {
+      type: "status",
+      message: "Collecting workspace and memory context...",
+    };
+
     try {
       const memoryContext = await this.memory.getRelevantContext(
         request.prompt,
       );
       const workspaceContext = await this.buildWorkspaceContext(request);
 
+      yield {
+        type: "status",
+        message: "Context ready. Routing request...",
+      };
+
       let response: OrchestratorResponse;
       if (
         request.prompt.trimStart().startsWith("/tool ") &&
         request.allowTools !== false
       ) {
+        yield {
+          type: "status",
+          message: "Executing tool command...",
+        };
         response = await this.handleToolRequest(
           request.prompt,
           mode,
@@ -136,6 +160,10 @@ export class NexcodeOrchestrator {
           diagnostics,
         );
       } else if (request.prompt.trimStart().startsWith("/edit ")) {
+        yield {
+          type: "status",
+          message: "Preparing edit proposal for approval...",
+        };
         response = await this.handleEditRequest(
           request.prompt,
           mode,
@@ -146,6 +174,11 @@ export class NexcodeOrchestrator {
           diagnostics,
         );
       } else if (mode === "auto") {
+        yield {
+          type: "status",
+          message:
+            "Running multi-agent workflow (planner, coder, reviewer, qa, security)...",
+        };
         response = await this.runAutoMode(
           request.prompt,
           provider,
@@ -155,6 +188,10 @@ export class NexcodeOrchestrator {
           diagnostics,
         );
       } else {
+        yield {
+          type: "status",
+          message: `Running ${mode} specialist agent...`,
+        };
         response = await this.runSingleMode(
           mode,
           request.prompt,
@@ -609,7 +646,47 @@ export class NexcodeOrchestrator {
       }
     }
 
+    if ((request.attachments?.length ?? 0) > 0) {
+      sections.push(this.buildAttachmentContext(request.attachments ?? []));
+    }
+
     return sections.join("\n\n");
+  }
+
+  private buildAttachmentContext(attachments: RequestAttachment[]): string {
+    const lines: string[] = ["User attachments:"];
+    const bounded = attachments.slice(0, 8);
+
+    for (const attachment of bounded) {
+      const sizeLabel = attachment.byteSize
+        ? ` (${attachment.byteSize} bytes)`
+        : "";
+      lines.push(
+        `- ${attachment.fileName} [${attachment.kind}, ${attachment.mimeType}]${sizeLabel}`,
+      );
+
+      if (attachment.kind === "text" && attachment.textContent) {
+        const snippet = attachment.textContent.slice(0, 3000);
+        lines.push(`  Text snippet:\n${snippet}`);
+      } else if (attachment.kind === "image" && attachment.base64Data) {
+        const preview = attachment.base64Data.slice(0, 320);
+        lines.push(
+          `  Image base64 preview (first 320 chars): ${preview}${attachment.base64Data.length > 320 ? "..." : ""}`,
+        );
+      } else if (attachment.base64Data) {
+        lines.push(
+          `  Binary base64 preview (first 160 chars): ${attachment.base64Data.slice(0, 160)}${attachment.base64Data.length > 160 ? "..." : ""}`,
+        );
+      }
+    }
+
+    if (attachments.length > bounded.length) {
+      lines.push(
+        `- ... ${attachments.length - bounded.length} more attachment(s) omitted`,
+      );
+    }
+
+    return lines.join("\n");
   }
 }
 

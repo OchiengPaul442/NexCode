@@ -13,7 +13,11 @@
   "scripts": {
     "build": "npm run -w agent-core build && npm run -w extension build",
     "test": "npm run -w agent-core test",
-    "lint": "npm run -w agent-core lint && npm run -w extension lint",
-    "package:vsix": "npm run -w extension package"
+    "lint": "npm run -w agent-core build && npm run -w agent-core lint && npm run -w extension lint",
+    "package:vsix": "npm run -w extension package",
+    "clean": "node tools/clean-workspace.mjs",
+    "extension:release": "node tools/extension-release.mjs",
+    "extension:package": "node tools/extension-release.mjs --no-install",
+    "extension:bump": "node tools/extension-release.mjs --bump-only"
   }
 }

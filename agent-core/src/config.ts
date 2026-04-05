@@ -12,6 +12,10 @@ export interface RuntimeConfig {
     openAIBaseUrl: string;
     openAIApiKey?: string;
   };
+  toolDefaults: {
+    tavilyApiKey?: string;
+    tavilyBaseUrl: string;
+  };
 }
 
 export function createRuntimeConfig(
@@ -32,6 +36,12 @@ export function createRuntimeConfig(
         partial.providerDefaults?.openAIBaseUrl ?? "https://api.openai.com/v1",
       openAIApiKey:
         partial.providerDefaults?.openAIApiKey ?? process.env.OPENAI_API_KEY,
+    },
+    toolDefaults: {
+      tavilyApiKey:
+        partial.toolDefaults?.tavilyApiKey ?? process.env.TAVILY_API_KEY,
+      tavilyBaseUrl:
+        partial.toolDefaults?.tavilyBaseUrl ?? "https://api.tavily.com/search",
     },
   };
 }

@@ -82,4 +82,46 @@ describe("NexcodeOrchestrator", () => {
 
     expect(finalEvent.response.proposedEdits.length).toBeGreaterThanOrEqual(1);
   });
+
+  it("accepts attachment-rich prompts without failure", async () => {
+    const orchestrator = createNexcodeOrchestrator({ workspaceRoot });
+
+    const events = await collectEvents(
+      orchestrator.stream({
+        prompt: "Summarize the attached context briefly.",
+        mode: "planner",
+        provider: "openai-compatible",
+        workspaceRoot,
+        attachments: [
+          {
+            id: "att-1",
+            fileName: "notes.txt",
+            mimeType: "text/plain",
+            kind: "text",
+            textContent:
+              "This is a test attachment for orchestrator context injection.",
+            byteSize: 62,
+          },
+          {
+            id: "att-2",
+            fileName: "diagram.png",
+            mimeType: "image/png",
+            kind: "image",
+            base64Data: "iVBORw0KGgoAAAANSUhEUgAA",
+            byteSize: 24,
+          },
+        ],
+      }),
+    );
+
+    const finalEvent = events.find((event) => event.type === "final");
+    expect(finalEvent).toBeDefined();
+
+    if (!finalEvent || finalEvent.type !== "final") {
+      return;
+    }
+
+    expect(finalEvent.response.text.length).toBeGreaterThan(10);
+    expect(finalEvent.response.modeUsed).toBe("planner");
+  });
 });

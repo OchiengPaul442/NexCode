@@ -1,0 +1,151 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply m-0 min-h-screen overflow-hidden bg-slate-950 text-slate-100 antialiased;
+    font-family: var(--vscode-font-family, "Segoe UI", sans-serif);
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(100, 116, 139, 0.65) transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background-color: rgba(100, 116, 139, 0.65);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@layer components {
+  .nexcode-shell {
+    @apply grid h-screen min-h-screen grid-cols-[220px_1fr] overflow-hidden bg-slate-950;
+    background-image:
+      radial-gradient(
+        circle at top right,
+        rgba(71, 85, 105, 0.22),
+        transparent 38%
+      ),
+      radial-gradient(
+        circle at bottom left,
+        rgba(51, 65, 85, 0.2),
+        transparent 36%
+      ),
+      linear-gradient(
+        180deg,
+        rgba(15, 23, 42, 0.97) 0%,
+        rgba(9, 12, 20, 0.98) 100%
+      );
+  }
+
+  .panel-edge {
+    @apply border-r border-slate-800/80 bg-slate-950/85 backdrop-blur;
+  }
+
+  .slate-card {
+    @apply rounded-2xl border border-slate-700/70 bg-slate-900/55 shadow-glow backdrop-blur;
+  }
+
+  .label-caps {
+    @apply text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400;
+  }
+
+  .input-base {
+    @apply w-full rounded-xl border border-slate-700/80 bg-slate-900/75 px-3 py-2 text-sm text-slate-100 outline-none transition duration-150 placeholder:text-slate-500 focus:border-slate-500 focus:ring-2 focus:ring-slate-500/35;
+  }
+
+  .ghost-btn {
+    @apply rounded-xl border border-slate-700/80 bg-slate-900/60 px-3 py-2 text-xs font-medium text-slate-200 transition hover:border-slate-500 hover:bg-slate-800/80;
+  }
+
+  .primary-btn {
+    @apply rounded-xl border border-cyan-500/55 bg-cyan-600/35 px-3 py-2 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-500/45;
+  }
+
+  .danger-btn {
+    @apply rounded-xl border border-rose-500/45 bg-rose-500/20 px-3 py-2 text-xs font-medium text-rose-100 transition hover:bg-rose-500/35;
+  }
+
+  .thinking-shimmer {
+    background: linear-gradient(
+      100deg,
+      rgba(15, 23, 42, 0.15) 20%,
+      rgba(125, 211, 252, 0.2) 45%,
+      rgba(15, 23, 42, 0.15) 70%
+    );
+    background-size: 240% 100%;
+    @apply animate-shimmer;
+  }
+
+  .markdown-body h1,
+  .markdown-body h2,
+  .markdown-body h3 {
+    @apply mb-2 mt-3 font-semibold text-slate-100;
+  }
+
+  .markdown-body h1 {
+    @apply text-base;
+  }
+
+  .markdown-body h2 {
+    @apply text-sm;
+  }
+
+  .markdown-body h3 {
+    @apply text-sm;
+  }
+
+  .markdown-body p {
+    @apply my-2 leading-relaxed text-slate-200;
+  }
+
+  .markdown-body ul,
+  .markdown-body ol {
+    @apply my-2 ml-5 space-y-1;
+  }
+
+  .markdown-body li {
+    @apply text-slate-200;
+  }
+
+  .markdown-body code {
+    @apply rounded bg-slate-900/90 px-1.5 py-0.5 text-[12px] text-cyan-200;
+  }
+
+  .markdown-body pre {
+    @apply my-3 overflow-auto rounded-xl border border-slate-700/70 bg-slate-950/85 p-3 text-[12px] text-slate-100;
+  }
+
+  .markdown-body pre code {
+    @apply bg-transparent p-0 text-inherit;
+  }
+}
+
+@media (max-width: 860px) {
+  .nexcode-shell {
+    grid-template-columns: 168px 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .nexcode-shell {
+    grid-template-columns: 1fr;
+  }
+}

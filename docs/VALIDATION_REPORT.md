@@ -26,18 +26,18 @@ Test categories per model:
 - Total test cases: `36`
 - Passed: `36`
 - Failed: `0`
-- Memory entries before: `4`
-- Memory entries after: `40`
+- Memory entries before: `121`
+- Memory entries after: `157`
 - Memory delta (interaction learning persistence): `+36`
 
 Machine-readable details are in `docs/VALIDATION_REPORT.json`.
 
 ## Timing Highlights
 
-- Kimi real-world auto: `258400 ms`
-- Qwen3 480b cloud real-world auto: `456674 ms`
-- Qwen2.5 coder 7b real-world auto: `82674 ms`
-- Nemotron-mini real-world auto: `9965 ms`
+- Kimi real-world auto: `326203 ms`
+- Qwen3 480b cloud real-world auto: `528802 ms`
+- Qwen2.5 coder 7b real-world auto: `135898 ms`
+- Nemotron-mini real-world auto: `14279 ms`
 
 Tool execution and filesystem operations consistently completed in low latency ranges for all models.
 

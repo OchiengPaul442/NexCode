@@ -47,6 +47,7 @@ export interface OrchestratorRequest {
   provider?: ProviderId;
   model?: string;
   mode?: AgentMode;
+  temperature?: number;
   workspaceRoot?: string;
   activeFilePath?: string;
   selectedText?: string;
@@ -96,6 +97,7 @@ export interface ModelResponse {
 export interface ProviderGenerateOptions {
   provider?: ProviderId;
   model?: string;
+  temperature?: number;
   complexity?: "small" | "large";
 }
 

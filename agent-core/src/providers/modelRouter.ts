@@ -49,6 +49,7 @@ export class ModelRouter {
     return provider.generate({
       model,
       messages,
+      temperature: options.temperature,
     });
   }
 
@@ -61,6 +62,7 @@ export class ModelRouter {
       const result = await provider.generate({
         model,
         messages,
+        temperature: options.temperature,
       });
       yield result.text;
       return;
@@ -69,6 +71,7 @@ export class ModelRouter {
     for await (const token of provider.stream({
       model,
       messages,
+      temperature: options.temperature,
     })) {
       yield token;
     }

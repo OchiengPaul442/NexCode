@@ -5,6 +5,7 @@ Local-first, multi-agent AI coding assistant for VS Code.
 ## What You Get
 
 - VS Code sidebar extension with chat, streaming, attachments, and controlled edit approvals.
+- Copilot-style sidebar UX with session history, per-session model/provider/mode controls, and settings drawer.
 - Provider connection badge with live health checks and latency display.
 - Automatic model suggestions from Ollama/OpenAI-compatible `/models` endpoints.
 - Multi-agent core with `auto`, `planner`, `coder`, `reviewer`, `qa`, and `security` modes.

@@ -3,7 +3,7 @@
   "displayName": "NEXCODE-KIBOKO",
   "description": "Local-first, multi-agent AI coding assistant for VS Code.",
   "publisher": "nexcode",
-  "version": "0.1.21",
+  "version": "0.1.22",
   "private": true,
   "icon": "media/icon.png",
   "engines": {
@@ -115,12 +115,32 @@
           "type": "boolean",
           "default": true,
           "description": "Require explicit confirmation in the sidebar before running /tool terminal commands."
+        },
+        "nexcodeKiboko.temperature": {
+          "type": "number",
+          "default": 0.2,
+          "minimum": 0,
+          "maximum": 2,
+          "description": "Default temperature for provider requests."
+        },
+        "nexcodeKiboko.showReasoning": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable reasoning details panel in chat responses."
+        },
+        "nexcodeKiboko.autoApplyChanges": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically apply generated edit proposals."
         }
       }
     }
   },
   "scripts": {
-    "build": "tsc -p .",
+    "build:webview:js": "esbuild webview/src/main.tsx --bundle --format=iife --platform=browser --target=es2020 --outfile=media/main.js --minify",
+    "build:webview:css": "tailwindcss -i ./webview/src/styles.css -o ./media/main.css --minify",
+    "build:webview": "npm run build:webview:js && npm run build:webview:css",
+    "build": "npm run build:webview && tsc -p .",
     "watch": "tsc -watch -p .",
     "lint": "tsc -p . --noEmit",
     "package": "vsce package --allow-missing-repository"
@@ -129,9 +149,18 @@
     "@nexcode/agent-core": "^0.1.0"
   },
   "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
     "@types/node": "^22.13.0",
     "@types/vscode": "^1.95.0",
     "@vscode/vsce": "^3.2.2",
+    "esbuild": "^0.25.11",
+    "framer-motion": "^12.23.24",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-markdown": "^9.0.1",
+    "tailwindcss": "^3.4.17",
+    "zustand": "^5.0.8",
     "typescript": "^5.8.3"
   }
 }

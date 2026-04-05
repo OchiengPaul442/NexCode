@@ -10,6 +10,7 @@ export interface AgentRunInput {
   implementationDraft?: string;
   provider?: ProviderId;
   model?: string;
+  temperature?: number;
 }
 
 export async function runSpecialistAgent(
@@ -46,6 +47,7 @@ export async function runSpecialistAgent(
   const response = await router.generate(messages, {
     provider: input.provider,
     model: input.model,
+    temperature: input.temperature,
     complexity: input.userPrompt.length > 1200 ? "large" : "small",
   });
 

@@ -7,7 +7,8 @@
 3. Run `npm run build`.
 4. Run `npm run lint`.
 5. Run `npm run test`.
-6. Launch the extension host from `extension/` with `F5`.
+6. Run `npm run validate:models` for full multi-model regression.
+7. Launch the extension host from `extension/` with `F5`.
 
 ## 2) Model And Provider Operations
 
@@ -97,6 +98,7 @@ This will:
 - [ ] `npm run build`
 - [ ] `npm run lint`
 - [ ] `npm run test`
+- [ ] `npm run validate:models`
 - [ ] `npm run extension:package`
 - [ ] Manual smoke test in Extension Development Host
 - [ ] Validate tool commands, edit approvals, and attachment flow

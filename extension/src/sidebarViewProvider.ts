@@ -16,6 +16,7 @@ interface WebviewSendPromptMessage {
   provider?: ProviderId;
   model?: string;
   mode?: AgentMode;
+  temperature?: number;
   attachmentIds?: string[];
 }
 
@@ -26,6 +27,19 @@ interface WebviewPickAttachmentsMessage {
 interface WebviewRemoveAttachmentMessage {
   type: "removeAttachment";
   attachmentId: string;
+}
+
+interface WebviewAddAttachmentMessage {
+  type: "addAttachment";
+  attachment: {
+    id?: string;
+    fileName: string;
+    mimeType: string;
+    kind: RequestAttachment["kind"];
+    textContent?: string;
+    base64Data?: string;
+    byteSize?: number;
+  };
 }
 
 interface WebviewApplyEditMessage {
@@ -65,6 +79,7 @@ type InboundWebviewMessage =
   | WebviewClearMessage
   | WebviewPickAttachmentsMessage
   | WebviewRemoveAttachmentMessage
+  | WebviewAddAttachmentMessage
   | WebviewRefreshProviderStatusMessage
   | WebviewRequestModelSuggestionsMessage;
 
@@ -149,6 +164,9 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       case "pickAttachments":
         await this.pickAttachments();
         return;
+      case "addAttachment":
+        this.addAttachmentFromWebview(message);
+        return;
       case "removeAttachment":
         this.pendingAttachments.delete(message.attachmentId);
         this.postAttachments();
@@ -184,6 +202,10 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         provider: message.provider ?? this.getRuntimeSettings().provider,
         model: message.model ?? this.getRuntimeSettings().model,
         mode: message.mode ?? this.getRuntimeSettings().mode,
+        temperature:
+          typeof message.temperature === "number"
+            ? message.temperature
+            : this.getRuntimeSettings().temperature,
         allowTools: this.getRuntimeSettings().allowTools,
         workspaceRoot,
         activeFilePath: activeEditor?.document.uri.fsPath,
@@ -239,6 +261,44 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       }
     }
 
+    this.postAttachments();
+  }
+
+  private addAttachmentFromWebview(message: WebviewAddAttachmentMessage): void {
+    const payload = message.attachment;
+    if (!payload || !payload.fileName || !payload.mimeType || !payload.kind) {
+      this.postMessage({
+        type: "error",
+        message: "Attachment payload is invalid.",
+      });
+      return;
+    }
+
+    const id =
+      payload.id && payload.id.trim().length > 0
+        ? payload.id.trim()
+        : `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+
+    const byteSize = payload.byteSize ?? 0;
+    if (byteSize > 3_000_000) {
+      this.postMessage({
+        type: "error",
+        message: `Attachment ${payload.fileName} is too large. Limit is 3MB.`,
+      });
+      return;
+    }
+
+    const attachment: RequestAttachment = {
+      id,
+      fileName: payload.fileName,
+      mimeType: payload.mimeType,
+      kind: payload.kind,
+      byteSize,
+      textContent: payload.textContent,
+      base64Data: payload.base64Data,
+    };
+
+    this.pendingAttachments.set(id, attachment);
     this.postAttachments();
   }
 
@@ -518,6 +578,9 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     tavilyApiKey: string;
     allowTools: boolean;
     requireTerminalApproval: boolean;
+    temperature: number;
+    showReasoning: boolean;
+    autoApplyChanges: boolean;
   } {
     const config = vscode.workspace.getConfiguration("nexcodeKiboko");
 
@@ -540,6 +603,9 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         "requireTerminalApproval",
         true,
       ),
+      temperature: config.get<number>("temperature", 0.2),
+      showReasoning: config.get<boolean>("showReasoning", true),
+      autoApplyChanges: config.get<boolean>("autoApplyChanges", false),
     };
   }
 
@@ -725,55 +791,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
   <title>NEXCODE-KIBOKO</title>
 </head>
 <body>
-  <main class="layout">
-    <header class="toolbar">
-      <div class="brand">NEXCODE-KIBOKO</div>
-      <div class="toolbar-actions">
-        <span id="providerBadge" class="provider-badge pending">Checking provider...</span>
-        <button id="refreshProviderBtn" class="secondary">Refresh</button>
-        <button id="clearBtn" class="secondary">Clear</button>
-      </div>
-    </header>
-
-    <section class="controls">
-      <label>Provider
-        <select id="providerSelect">
-          <option value="ollama">ollama</option>
-          <option value="openai-compatible">openai-compatible</option>
-        </select>
-      </label>
-      <label>Model
-        <input id="modelInput" list="modelOptions" type="text" placeholder="qwen2.5-coder:7b" />
-        <datalist id="modelOptions"></datalist>
-      </label>
-      <label>Mode
-        <select id="modeSelect">
-          <option value="auto">auto</option>
-          <option value="planner">planner</option>
-          <option value="coder">coder</option>
-          <option value="reviewer">reviewer</option>
-          <option value="qa">qa</option>
-          <option value="security">security</option>
-        </select>
-      </label>
-    </section>
-
-    <section id="chat" class="chat"></section>
-
-    <section class="composer">
-      <div class="composer-actions">
-        <button id="attachBtn" class="secondary" type="button">Attach</button>
-      </div>
-      <ul id="attachmentList" class="attachment-list"></ul>
-      <textarea id="promptInput" rows="4" placeholder="Ask Nexcode Kiboko...\nExamples:\n- Build login endpoint with tests\n- /tool search orchestrator\n- /tool web-search OWASP API Security Top 10\n- /edit src/file.ts :: improve error handling"></textarea>
-      <button id="sendBtn">Send</button>
-    </section>
-
-    <section class="history">
-      <h2>History</h2>
-      <ul id="historyList"></ul>
-    </section>
-  </main>
+  <div id="root"></div>
 
   <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>

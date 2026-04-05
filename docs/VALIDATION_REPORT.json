@@ -9,8 +9,8 @@
     "total": 36,
     "passed": 36,
     "failed": 0,
-    "memoryBefore": 4,
-    "memoryAfter": 40,
+    "memoryBefore": 121,
+    "memoryAfter": 157,
     "memoryDelta": 36
   },
   "results": [
@@ -18,217 +18,217 @@
       "model": "kimi-k2.5:cloud",
       "case": "real-world-auto",
       "ok": true,
-      "durationMs": 258400
+      "durationMs": 326203
     },
     {
       "model": "kimi-k2.5:cloud",
       "case": "tool-search",
       "ok": true,
-      "durationMs": 30070
+      "durationMs": 2815
     },
     {
       "model": "kimi-k2.5:cloud",
       "case": "tool-read",
       "ok": true,
-      "durationMs": 38
+      "durationMs": 2442
     },
     {
       "model": "kimi-k2.5:cloud",
       "case": "tool-web-search",
       "ok": true,
-      "durationMs": 2173
+      "durationMs": 4465
     },
     {
       "model": "kimi-k2.5:cloud",
       "case": "terminal-create-file",
       "ok": true,
-      "durationMs": 127
+      "durationMs": 2500
     },
     {
       "model": "kimi-k2.5:cloud",
       "case": "terminal-move-file",
       "ok": true,
-      "durationMs": 74
+      "durationMs": 2437
     },
     {
       "model": "kimi-k2.5:cloud",
       "case": "terminal-delete-file",
       "ok": true,
-      "durationMs": 109
+      "durationMs": 2503
     },
     {
       "model": "kimi-k2.5:cloud",
       "case": "terminal-security-block",
       "ok": true,
-      "durationMs": 42
+      "durationMs": 2451
     },
     {
       "model": "kimi-k2.5:cloud",
       "case": "edit-proposal-apply",
       "ok": true,
-      "durationMs": 6573
+      "durationMs": 8604
     },
     {
       "model": "qwen3-coder:480b-cloud",
       "case": "real-world-auto",
       "ok": true,
-      "durationMs": 456674
+      "durationMs": 528802
     },
     {
       "model": "qwen3-coder:480b-cloud",
       "case": "tool-search",
       "ok": true,
-      "durationMs": 4730
+      "durationMs": 3368
     },
     {
       "model": "qwen3-coder:480b-cloud",
       "case": "tool-read",
       "ok": true,
-      "durationMs": 234
+      "durationMs": 2765
     },
     {
       "model": "qwen3-coder:480b-cloud",
       "case": "tool-web-search",
       "ok": true,
-      "durationMs": 2061
+      "durationMs": 4651
     },
     {
       "model": "qwen3-coder:480b-cloud",
       "case": "terminal-create-file",
       "ok": true,
-      "durationMs": 209
+      "durationMs": 2684
     },
     {
       "model": "qwen3-coder:480b-cloud",
       "case": "terminal-move-file",
       "ok": true,
-      "durationMs": 163
+      "durationMs": 2774
     },
     {
       "model": "qwen3-coder:480b-cloud",
       "case": "terminal-delete-file",
       "ok": true,
-      "durationMs": 168
+      "durationMs": 2798
     },
     {
       "model": "qwen3-coder:480b-cloud",
       "case": "terminal-security-block",
       "ok": true,
-      "durationMs": 88
+      "durationMs": 2710
     },
     {
       "model": "qwen3-coder:480b-cloud",
       "case": "edit-proposal-apply",
       "ok": true,
-      "durationMs": 43169
+      "durationMs": 24839
     },
     {
       "model": "qwen2.5-coder:7b",
       "case": "real-world-auto",
       "ok": true,
-      "durationMs": 82674
+      "durationMs": 135898
     },
     {
       "model": "qwen2.5-coder:7b",
       "case": "tool-search",
       "ok": true,
-      "durationMs": 4160
+      "durationMs": 3406
     },
     {
       "model": "qwen2.5-coder:7b",
       "case": "tool-read",
       "ok": true,
-      "durationMs": 431
+      "durationMs": 3098
     },
     {
       "model": "qwen2.5-coder:7b",
       "case": "tool-web-search",
       "ok": true,
-      "durationMs": 1910
+      "durationMs": 4939
     },
     {
       "model": "qwen2.5-coder:7b",
       "case": "terminal-create-file",
       "ok": true,
-      "durationMs": 294
+      "durationMs": 3208
     },
     {
       "model": "qwen2.5-coder:7b",
       "case": "terminal-move-file",
       "ok": true,
-      "durationMs": 226
+      "durationMs": 3280
     },
     {
       "model": "qwen2.5-coder:7b",
       "case": "terminal-delete-file",
       "ok": true,
-      "durationMs": 275
+      "durationMs": 3238
     },
     {
       "model": "qwen2.5-coder:7b",
       "case": "terminal-security-block",
       "ok": true,
-      "durationMs": 133
+      "durationMs": 3112
     },
     {
       "model": "qwen2.5-coder:7b",
       "case": "edit-proposal-apply",
       "ok": true,
-      "durationMs": 2581
+      "durationMs": 6340
     },
     {
       "model": "nemotron-mini:latest",
       "case": "real-world-auto",
       "ok": true,
-      "durationMs": 9965
+      "durationMs": 14279
     },
     {
       "model": "nemotron-mini:latest",
       "case": "tool-search",
       "ok": true,
-      "durationMs": 4317
+      "durationMs": 3549
     },
     {
       "model": "nemotron-mini:latest",
       "case": "tool-read",
       "ok": true,
-      "durationMs": 562
+      "durationMs": 3088
     },
     {
       "model": "nemotron-mini:latest",
       "case": "tool-web-search",
       "ok": true,
-      "durationMs": 2106
+      "durationMs": 4688
     },
     {
       "model": "nemotron-mini:latest",
       "case": "terminal-create-file",
       "ok": true,
-      "durationMs": 498
+      "durationMs": 3202
     },
     {
       "model": "nemotron-mini:latest",
       "case": "terminal-move-file",
       "ok": true,
-      "durationMs": 446
+      "durationMs": 3276
     },
     {
       "model": "nemotron-mini:latest",
       "case": "terminal-delete-file",
       "ok": true,
-      "durationMs": 458
+      "durationMs": 3229
     },
     {
       "model": "nemotron-mini:latest",
       "case": "terminal-security-block",
       "ok": true,
-      "durationMs": 360
+      "durationMs": 3243
     },
     {
       "model": "nemotron-mini:latest",
       "case": "edit-proposal-apply",
       "ok": true,
-      "durationMs": 1525
+      "durationMs": 4120
     }
   ]
 }

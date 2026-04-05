@@ -3,7 +3,7 @@
   "displayName": "NEXCODE-KIBOKO",
   "description": "Local-first, multi-agent AI coding assistant for VS Code.",
   "publisher": "nexcode",
-  "version": "0.1.16",
+  "version": "0.1.21",
   "private": true,
   "icon": "media/icon.png",
   "engines": {
@@ -123,10 +123,10 @@
     "build": "tsc -p .",
     "watch": "tsc -watch -p .",
     "lint": "tsc -p . --noEmit",
-    "package": "vsce package --allow-missing-repository --no-dependencies"
+    "package": "vsce package --allow-missing-repository"
   },
   "dependencies": {
-    "@nexcode/agent-core": "file:../agent-core"
+    "@nexcode/agent-core": "^0.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.13.0",

@@ -5,6 +5,8 @@ NEXCODE-KIBOKO is a local-first, multi-agent coding assistant for VS Code.
 ## Features
 
 - Sidebar chat interface with streaming responses.
+- Live provider status badge (connected/disconnected + latency).
+- Model suggestions fetched from selected provider endpoint.
 - Multi-agent modes: `auto`, `planner`, `coder`, `reviewer`, `qa`, `security`.
 - Attachment support for text/image/binary context.
 - Safe edit workflow with `Preview Diff`, `Apply Edit`, and `Reject`.
@@ -51,3 +53,4 @@ All extension settings are under `nexcodeKiboko.*`:
 
 - Edit proposals are never auto-applied; explicit approval is always required.
 - High-risk terminal patterns are blocked by policy in the core runtime.
+- Streaming updates are buffered to avoid excessive DOM churn on long responses.

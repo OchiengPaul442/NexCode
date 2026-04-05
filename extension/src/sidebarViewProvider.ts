@@ -47,6 +47,16 @@ interface WebviewClearMessage {
   type: "clearConversation";
 }
 
+interface WebviewRefreshProviderStatusMessage {
+  type: "refreshProviderStatus";
+  provider?: ProviderId;
+}
+
+interface WebviewRequestModelSuggestionsMessage {
+  type: "requestModelSuggestions";
+  provider?: ProviderId;
+}
+
 type InboundWebviewMessage =
   | WebviewSendPromptMessage
   | WebviewApplyEditMessage
@@ -54,7 +64,9 @@ type InboundWebviewMessage =
   | WebviewRejectEditMessage
   | WebviewClearMessage
   | WebviewPickAttachmentsMessage
-  | WebviewRemoveAttachmentMessage;
+  | WebviewRemoveAttachmentMessage
+  | WebviewRefreshProviderStatusMessage
+  | WebviewRequestModelSuggestionsMessage;
 
 interface AttachmentChip {
   id: string;
@@ -93,6 +105,8 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
 
     this.postMessage({ type: "config", value: this.getRuntimeSettings() });
     this.postAttachments();
+    void this.refreshProviderStatus();
+    void this.provideModelSuggestions();
   }
 
   public notifyConfigChanged(): void {
@@ -125,6 +139,12 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         return;
       case "clearConversation":
         this.clearConversation();
+        return;
+      case "refreshProviderStatus":
+        await this.refreshProviderStatus(message.provider);
+        return;
+      case "requestModelSuggestions":
+        await this.provideModelSuggestions(message.provider);
         return;
       case "pickAttachments":
         await this.pickAttachments();
@@ -523,6 +543,169 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     };
   }
 
+  private async refreshProviderStatus(
+    providerOverride?: ProviderId,
+  ): Promise<void> {
+    const settings = this.getRuntimeSettings();
+    const provider = providerOverride ?? settings.provider;
+    const startedAt = Date.now();
+
+    try {
+      if (provider === "ollama") {
+        const response = await this.fetchWithTimeout(
+          `${settings.ollamaBaseUrl.replace(/\/$/, "")}/api/tags`,
+          {
+            method: "GET",
+            headers: {
+              Accept: "application/json",
+            },
+          },
+          4000,
+        );
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+      } else {
+        const headers: Record<string, string> = {
+          Accept: "application/json",
+        };
+
+        if (settings.openAIApiKey.trim()) {
+          headers.Authorization = `Bearer ${settings.openAIApiKey.trim()}`;
+        }
+
+        const response = await this.fetchWithTimeout(
+          `${settings.openAIBaseUrl.replace(/\/$/, "")}/models`,
+          {
+            method: "GET",
+            headers,
+          },
+          5000,
+        );
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+      }
+
+      this.postMessage({
+        type: "providerStatus",
+        value: {
+          provider,
+          connected: true,
+          latencyMs: Date.now() - startedAt,
+        },
+      });
+    } catch (error) {
+      this.postMessage({
+        type: "providerStatus",
+        value: {
+          provider,
+          connected: false,
+          latencyMs: Date.now() - startedAt,
+          error: String(error),
+        },
+      });
+    }
+  }
+
+  private async provideModelSuggestions(
+    providerOverride?: ProviderId,
+  ): Promise<void> {
+    const settings = this.getRuntimeSettings();
+    const provider = providerOverride ?? settings.provider;
+
+    try {
+      let models: string[] = [];
+
+      if (provider === "ollama") {
+        const response = await this.fetchWithTimeout(
+          `${settings.ollamaBaseUrl.replace(/\/$/, "")}/api/tags`,
+          {
+            method: "GET",
+            headers: {
+              Accept: "application/json",
+            },
+          },
+          5000,
+        );
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const payload = (await response.json()) as {
+          models?: Array<{ name?: string }>;
+        };
+
+        models = (payload.models ?? [])
+          .map((model) => (typeof model.name === "string" ? model.name : ""))
+          .filter((name) => name.length > 0);
+      } else {
+        const headers: Record<string, string> = {
+          Accept: "application/json",
+        };
+
+        if (settings.openAIApiKey.trim()) {
+          headers.Authorization = `Bearer ${settings.openAIApiKey.trim()}`;
+        }
+
+        const response = await this.fetchWithTimeout(
+          `${settings.openAIBaseUrl.replace(/\/$/, "")}/models`,
+          {
+            method: "GET",
+            headers,
+          },
+          6000,
+        );
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const payload = (await response.json()) as {
+          data?: Array<{ id?: string }>;
+        };
+
+        models = (payload.data ?? [])
+          .map((model) => (typeof model.id === "string" ? model.id : ""))
+          .filter((id) => id.length > 0);
+      }
+
+      const uniqueModels = [...new Set(models)].slice(0, 40);
+      this.postMessage({
+        type: "modelSuggestions",
+        provider,
+        models: uniqueModels,
+      });
+    } catch {
+      this.postMessage({
+        type: "modelSuggestions",
+        provider,
+        models: [],
+      });
+    }
+  }
+
+  private async fetchWithTimeout(
+    input: string,
+    init: RequestInit,
+    timeoutMs: number,
+  ): Promise<Response> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      return await fetch(input, {
+        ...init,
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
   private getHtml(webview: vscode.Webview): string {
     const scriptUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this.context.extensionUri, "media", "main.js"),
@@ -545,7 +728,11 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
   <main class="layout">
     <header class="toolbar">
       <div class="brand">NEXCODE-KIBOKO</div>
-      <button id="clearBtn" class="secondary">Clear</button>
+      <div class="toolbar-actions">
+        <span id="providerBadge" class="provider-badge pending">Checking provider...</span>
+        <button id="refreshProviderBtn" class="secondary">Refresh</button>
+        <button id="clearBtn" class="secondary">Clear</button>
+      </div>
     </header>
 
     <section class="controls">
@@ -556,7 +743,8 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         </select>
       </label>
       <label>Model
-        <input id="modelInput" type="text" placeholder="qwen2.5-coder:7b" />
+        <input id="modelInput" list="modelOptions" type="text" placeholder="qwen2.5-coder:7b" />
+        <datalist id="modelOptions"></datalist>
       </label>
       <label>Mode
         <select id="modeSelect">

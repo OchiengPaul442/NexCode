@@ -16,6 +16,7 @@
     "lint": "npm run -w agent-core build && npm run -w agent-core lint && npm run -w extension lint",
     "package:vsix": "npm run -w extension package",
     "clean": "node tools/clean-workspace.mjs",
+    "validate:models": "node tools/validate-model-matrix.js",
     "extension:release": "node tools/extension-release.mjs",
     "extension:package": "node tools/extension-release.mjs --no-install",
     "extension:bump": "node tools/extension-release.mjs --bump-only"

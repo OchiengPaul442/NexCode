@@ -1,0 +1,234 @@
+{
+  "summary": {
+    "models": [
+      "kimi-k2.5:cloud",
+      "qwen3-coder:480b-cloud",
+      "qwen2.5-coder:7b",
+      "nemotron-mini:latest"
+    ],
+    "total": 36,
+    "passed": 36,
+    "failed": 0,
+    "memoryBefore": 4,
+    "memoryAfter": 40,
+    "memoryDelta": 36
+  },
+  "results": [
+    {
+      "model": "kimi-k2.5:cloud",
+      "case": "real-world-auto",
+      "ok": true,
+      "durationMs": 258400
+    },
+    {
+      "model": "kimi-k2.5:cloud",
+      "case": "tool-search",
+      "ok": true,
+      "durationMs": 30070
+    },
+    {
+      "model": "kimi-k2.5:cloud",
+      "case": "tool-read",
+      "ok": true,
+      "durationMs": 38
+    },
+    {
+      "model": "kimi-k2.5:cloud",
+      "case": "tool-web-search",
+      "ok": true,
+      "durationMs": 2173
+    },
+    {
+      "model": "kimi-k2.5:cloud",
+      "case": "terminal-create-file",
+      "ok": true,
+      "durationMs": 127
+    },
+    {
+      "model": "kimi-k2.5:cloud",
+      "case": "terminal-move-file",
+      "ok": true,
+      "durationMs": 74
+    },
+    {
+      "model": "kimi-k2.5:cloud",
+      "case": "terminal-delete-file",
+      "ok": true,
+      "durationMs": 109
+    },
+    {
+      "model": "kimi-k2.5:cloud",
+      "case": "terminal-security-block",
+      "ok": true,
+      "durationMs": 42
+    },
+    {
+      "model": "kimi-k2.5:cloud",
+      "case": "edit-proposal-apply",
+      "ok": true,
+      "durationMs": 6573
+    },
+    {
+      "model": "qwen3-coder:480b-cloud",
+      "case": "real-world-auto",
+      "ok": true,
+      "durationMs": 456674
+    },
+    {
+      "model": "qwen3-coder:480b-cloud",
+      "case": "tool-search",
+      "ok": true,
+      "durationMs": 4730
+    },
+    {
+      "model": "qwen3-coder:480b-cloud",
+      "case": "tool-read",
+      "ok": true,
+      "durationMs": 234
+    },
+    {
+      "model": "qwen3-coder:480b-cloud",
+      "case": "tool-web-search",
+      "ok": true,
+      "durationMs": 2061
+    },
+    {
+      "model": "qwen3-coder:480b-cloud",
+      "case": "terminal-create-file",
+      "ok": true,
+      "durationMs": 209
+    },
+    {
+      "model": "qwen3-coder:480b-cloud",
+      "case": "terminal-move-file",
+      "ok": true,
+      "durationMs": 163
+    },
+    {
+      "model": "qwen3-coder:480b-cloud",
+      "case": "terminal-delete-file",
+      "ok": true,
+      "durationMs": 168
+    },
+    {
+      "model": "qwen3-coder:480b-cloud",
+      "case": "terminal-security-block",
+      "ok": true,
+      "durationMs": 88
+    },
+    {
+      "model": "qwen3-coder:480b-cloud",
+      "case": "edit-proposal-apply",
+      "ok": true,
+      "durationMs": 43169
+    },
+    {
+      "model": "qwen2.5-coder:7b",
+      "case": "real-world-auto",
+      "ok": true,
+      "durationMs": 82674
+    },
+    {
+      "model": "qwen2.5-coder:7b",
+      "case": "tool-search",
+      "ok": true,
+      "durationMs": 4160
+    },
+    {
+      "model": "qwen2.5-coder:7b",
+      "case": "tool-read",
+      "ok": true,
+      "durationMs": 431
+    },
+    {
+      "model": "qwen2.5-coder:7b",
+      "case": "tool-web-search",
+      "ok": true,
+      "durationMs": 1910
+    },
+    {
+      "model": "qwen2.5-coder:7b",
+      "case": "terminal-create-file",
+      "ok": true,
+      "durationMs": 294
+    },
+    {
+      "model": "qwen2.5-coder:7b",
+      "case": "terminal-move-file",
+      "ok": true,
+      "durationMs": 226
+    },
+    {
+      "model": "qwen2.5-coder:7b",
+      "case": "terminal-delete-file",
+      "ok": true,
+      "durationMs": 275
+    },
+    {
+      "model": "qwen2.5-coder:7b",
+      "case": "terminal-security-block",
+      "ok": true,
+      "durationMs": 133
+    },
+    {
+      "model": "qwen2.5-coder:7b",
+      "case": "edit-proposal-apply",
+      "ok": true,
+      "durationMs": 2581
+    },
+    {
+      "model": "nemotron-mini:latest",
+      "case": "real-world-auto",
+      "ok": true,
+      "durationMs": 9965
+    },
+    {
+      "model": "nemotron-mini:latest",
+      "case": "tool-search",
+      "ok": true,
+      "durationMs": 4317
+    },
+    {
+      "model": "nemotron-mini:latest",
+      "case": "tool-read",
+      "ok": true,
+      "durationMs": 562
+    },
+    {
+      "model": "nemotron-mini:latest",
+      "case": "tool-web-search",
+      "ok": true,
+      "durationMs": 2106
+    },
+    {
+      "model": "nemotron-mini:latest",
+      "case": "terminal-create-file",
+      "ok": true,
+      "durationMs": 498
+    },
+    {
+      "model": "nemotron-mini:latest",
+      "case": "terminal-move-file",
+      "ok": true,
+      "durationMs": 446
+    },
+    {
+      "model": "nemotron-mini:latest",
+      "case": "terminal-delete-file",
+      "ok": true,
+      "durationMs": 458
+    },
+    {
+      "model": "nemotron-mini:latest",
+      "case": "terminal-security-block",
+      "ok": true,
+      "durationMs": 360
+    },
+    {
+      "model": "nemotron-mini:latest",
+      "case": "edit-proposal-apply",
+      "ok": true,
+      "durationMs": 1525
+    }
+  ]
+}

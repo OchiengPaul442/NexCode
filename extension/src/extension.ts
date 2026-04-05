@@ -53,6 +53,14 @@ export function activate(context: vscode.ExtensionContext): void {
       provider.clearConversation();
     }),
   );
+
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      if (event.affectsConfiguration("nexcodeKiboko")) {
+        provider.notifyConfigChanged();
+      }
+    }),
+  );
 }
 
 export function deactivate(): void {

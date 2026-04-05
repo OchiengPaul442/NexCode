@@ -9,6 +9,7 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = path.resolve(scriptDir, "..");
 const extensionDir = path.join(workspaceRoot, "extension");
 const extensionPackageJsonPath = path.join(extensionDir, "package.json");
+const stageDir = path.join(workspaceRoot, ".nexcode", "vsix-stage");
 
 const argv = process.argv.slice(2);
 const installExtension = !argv.includes("--no-install");
@@ -20,6 +21,16 @@ if (!["patch", "minor", "major"].includes(bumpType)) {
   console.error(`Unsupported bump type: ${bumpType}`);
   process.exit(1);
 }
+
+const stageEntries = [
+  "package.json",
+  "README.md",
+  "CHANGELOG.md",
+  "LICENSE",
+  ".vscodeignore",
+  "out",
+  "media",
+];
 
 function readArgValue(flag) {
   const index = argv.indexOf(flag);
@@ -153,35 +164,31 @@ async function bumpExtensionPackageVersion(type) {
   return nextVersion;
 }
 
-async function findLatestVsix() {
-  const entries = await fs.readdir(extensionDir, { withFileTypes: true });
-  const vsixEntries = entries.filter(
-    (entry) => entry.isFile() && entry.name.endsWith(".vsix"),
-  );
+async function prepareStageDirectory() {
+  await fs.rm(stageDir, { recursive: true, force: true });
+  await fs.mkdir(stageDir, { recursive: true });
 
-  if (vsixEntries.length === 0) {
-    throw new Error("No .vsix package found in extension/ after packaging.");
+  for (const entry of stageEntries) {
+    const sourcePath = path.join(extensionDir, entry);
+    if (!existsSync(sourcePath)) {
+      continue;
+    }
+
+    const destinationPath = path.join(stageDir, entry);
+    const stats = await fs.stat(sourcePath);
+
+    if (stats.isDirectory()) {
+      await fs.cp(sourcePath, destinationPath, { recursive: true });
+    } else {
+      await fs.copyFile(sourcePath, destinationPath);
+    }
   }
-
-  const withStats = await Promise.all(
-    vsixEntries.map(async (entry) => {
-      const filePath = path.join(extensionDir, entry.name);
-      const stats = await fs.stat(filePath);
-      return {
-        filePath,
-        mtimeMs: stats.mtimeMs,
-      };
-    }),
-  );
-
-  withStats.sort((left, right) => right.mtimeMs - left.mtimeMs);
-  return withStats[0].filePath;
 }
 
-async function preparePackagedAgentCoreDependency() {
+async function createAgentCoreTarball() {
   const packed = runCapture(
     "npm",
-    ["pack", "./agent-core", "--pack-destination", extensionDir],
+    ["pack", "./agent-core", "--pack-destination", stageDir],
     workspaceRoot,
   );
 
@@ -195,26 +202,71 @@ async function preparePackagedAgentCoreDependency() {
     throw new Error("npm pack did not produce a tarball name.");
   }
 
-  const tarballPath = path.join(extensionDir, tarballName);
+  return path.join(stageDir, tarballName);
+}
 
-  await fs.rm(path.join(extensionDir, "node_modules"), {
+async function installStageDependencies(agentCoreTarballPath) {
+  await fs.rm(path.join(stageDir, "node_modules"), {
     recursive: true,
     force: true,
   });
 
   run(
     "npm",
-    [
-      "install",
-      "--workspaces=false",
-      "--no-save",
-      "--omit=dev",
-      `./${tarballName}`,
-    ],
-    extensionDir,
+    ["install", "--no-save", "--omit=dev", agentCoreTarballPath],
+    stageDir,
+  );
+}
+
+function resolveVsceCli() {
+  const candidates = [
+    path.join(extensionDir, "node_modules", "@vscode", "vsce", "vsce"),
+    path.join(workspaceRoot, "node_modules", "@vscode", "vsce", "vsce"),
+  ];
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  throw new Error("Unable to find local @vscode/vsce binary.");
+}
+
+function packageStage() {
+  const vsceCli = resolveVsceCli();
+  run("node", [vsceCli, "package", "--allow-missing-repository"], stageDir);
+}
+
+async function findLatestVsix(directory) {
+  const entries = await fs.readdir(directory, { withFileTypes: true });
+  const vsixEntries = entries.filter(
+    (entry) => entry.isFile() && entry.name.endsWith(".vsix"),
   );
 
-  return tarballPath;
+  if (vsixEntries.length === 0) {
+    throw new Error(`No .vsix package found in ${directory}.`);
+  }
+
+  const withStats = await Promise.all(
+    vsixEntries.map(async (entry) => {
+      const filePath = path.join(directory, entry.name);
+      const stats = await fs.stat(filePath);
+      return {
+        filePath,
+        mtimeMs: stats.mtimeMs,
+      };
+    }),
+  );
+
+  withStats.sort((left, right) => right.mtimeMs - left.mtimeMs);
+  return withStats[0].filePath;
+}
+
+async function copyVsixToExtension(stageVsixPath) {
+  const targetPath = path.join(extensionDir, path.basename(stageVsixPath));
+  await fs.copyFile(stageVsixPath, targetPath);
+  return targetPath;
 }
 
 function resolveCodeCommand() {
@@ -288,6 +340,63 @@ function escapeSingleQuotedPowerShell(value) {
   return value.replace(/'/g, "''");
 }
 
+function listVsixEntries(vsixPath) {
+  if (process.platform === "win32") {
+    const script = [
+      "Add-Type -AssemblyName System.IO.Compression.FileSystem",
+      `$zip = [System.IO.Compression.ZipFile]::OpenRead('${escapeSingleQuotedPowerShell(vsixPath)}')`,
+      "$zip.Entries | ForEach-Object { $_.FullName }",
+      "$zip.Dispose()",
+    ].join("; ");
+
+    const result = spawnSync(
+      "powershell.exe",
+      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+      {
+        cwd: workspaceRoot,
+        stdio: ["ignore", "pipe", "pipe"],
+        shell: false,
+        encoding: "utf8",
+      },
+    );
+
+    if (result.error) {
+      throw result.error;
+    }
+
+    if (result.status !== 0) {
+      throw new Error(`Failed to inspect VSIX: ${result.stderr ?? ""}`);
+    }
+
+    return (result.stdout ?? "")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+  }
+
+  const listed = runCapture("unzip", ["-Z1", vsixPath], workspaceRoot);
+  return listed.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+function assertVsixDependencies(vsixPath) {
+  const entries = listVsixEntries(vsixPath);
+  const requiredEntries = [
+    "extension/node_modules/@nexcode/agent-core/package.json",
+    "extension/node_modules/diff-match-patch/index.js",
+  ];
+
+  for (const requiredEntry of requiredEntries) {
+    if (!entries.includes(requiredEntry)) {
+      throw new Error(
+        `VSIX is missing runtime dependency: ${requiredEntry}. Packaging aborted to prevent a broken install.`,
+      );
+    }
+  }
+}
+
 async function main() {
   if (!noBump) {
     const newVersion = await bumpExtensionPackageVersion(bumpType);
@@ -300,25 +409,31 @@ async function main() {
   }
 
   run("npm", ["run", "build"]);
-  const tarballPath = await preparePackagedAgentCoreDependency();
+  await prepareStageDirectory();
 
+  let tarballPath;
   try {
-    run("npm", ["run", "package"], extensionDir);
+    tarballPath = await createAgentCoreTarball();
+    await installStageDependencies(tarballPath);
+    packageStage();
+
+    const stageVsixPath = await findLatestVsix(stageDir);
+    const vsixPath = await copyVsixToExtension(stageVsixPath);
+    assertVsixDependencies(vsixPath);
+
+    console.log(`Packaged extension: ${vsixPath}`);
+
+    if (!installExtension) {
+      console.log("Skipping install because --no-install was provided.");
+      return;
+    }
+
+    const codeCommand = resolveCodeCommand();
+    installVsixWithCode(codeCommand, vsixPath);
+    console.log("Extension installed into VS Code successfully.");
   } finally {
-    await fs.rm(tarballPath, { force: true });
+    await fs.rm(stageDir, { recursive: true, force: true });
   }
-
-  const vsixPath = await findLatestVsix();
-  console.log(`Packaged extension: ${vsixPath}`);
-
-  if (!installExtension) {
-    console.log("Skipping install because --no-install was provided.");
-    return;
-  }
-
-  const codeCommand = resolveCodeCommand();
-  installVsixWithCode(codeCommand, vsixPath);
-  console.log("Extension installed into VS Code successfully.");
 }
 
 main().catch((error) => {

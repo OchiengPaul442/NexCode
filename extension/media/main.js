@@ -4,10 +4,13 @@ const ui = {
   chat: document.getElementById("chat"),
   sendBtn: document.getElementById("sendBtn"),
   clearBtn: document.getElementById("clearBtn"),
+  refreshProviderBtn: document.getElementById("refreshProviderBtn"),
+  providerBadge: document.getElementById("providerBadge"),
   attachBtn: document.getElementById("attachBtn"),
   promptInput: document.getElementById("promptInput"),
   providerSelect: document.getElementById("providerSelect"),
   modelInput: document.getElementById("modelInput"),
+  modelOptions: document.getElementById("modelOptions"),
   modeSelect: document.getElementById("modeSelect"),
   historyList: document.getElementById("historyList"),
   attachmentList: document.getElementById("attachmentList"),
@@ -20,6 +23,8 @@ const state = {
   attachments: [],
   currentStatuses: [],
   requireTerminalApproval: true,
+  streamBuffer: "",
+  flushHandle: null,
 };
 
 bindEvents();
@@ -31,6 +36,16 @@ function bindEvents() {
 
   ui.clearBtn.addEventListener("click", () => {
     vscode.postMessage({ type: "clearConversation" });
+  });
+
+  ui.refreshProviderBtn.addEventListener("click", () => {
+    requestProviderStatus();
+    requestModelSuggestions();
+  });
+
+  ui.providerSelect.addEventListener("change", () => {
+    requestProviderStatus();
+    requestModelSuggestions();
   });
 
   ui.attachBtn.addEventListener("click", () => {
@@ -154,6 +169,12 @@ function handleIncoming(message) {
         : [];
       renderAttachments();
       break;
+    case "providerStatus":
+      renderProviderBadge(message.value);
+      break;
+    case "modelSuggestions":
+      renderModelSuggestions(message.provider, message.models);
+      break;
   }
 }
 
@@ -166,6 +187,8 @@ function applyConfig(config) {
   ui.modelInput.value = config.model;
   ui.modeSelect.value = config.mode;
   state.requireTerminalApproval = config.requireTerminalApproval !== false;
+  requestProviderStatus();
+  requestModelSuggestions();
 }
 
 function appendMessage(kind, text) {
@@ -184,14 +207,13 @@ function appendMessage(kind, text) {
   wrapper.appendChild(body);
 
   ui.chat.appendChild(wrapper);
+  trimChatMessages();
   ui.chat.scrollTop = ui.chat.scrollHeight;
 }
 
 function appendStreamToken(token) {
-  const message = ensureStreamingMessage();
-  const body = message.querySelector(".message-body");
-  body.textContent += token;
-  ui.chat.scrollTop = ui.chat.scrollHeight;
+  state.streamBuffer += token;
+  scheduleStreamFlush();
 }
 
 function ensureStreamingMessage() {
@@ -218,6 +240,7 @@ function ensureStreamingMessage() {
 }
 
 function finalizeAssistantMessage(response, statuses) {
+  flushStreamBuffer();
   const message = ensureStreamingMessage();
   const body = message.querySelector(".message-body");
 
@@ -318,7 +341,88 @@ function finalizeAssistantMessage(response, statuses) {
   }
 
   state.streamNode = null;
+  state.streamBuffer = "";
+  if (state.flushHandle !== null) {
+    cancelAnimationFrame(state.flushHandle);
+    state.flushHandle = null;
+  }
+  trimChatMessages();
   ui.chat.scrollTop = ui.chat.scrollHeight;
+}
+
+function requestProviderStatus() {
+  vscode.postMessage({
+    type: "refreshProviderStatus",
+    provider: ui.providerSelect.value,
+  });
+}
+
+function requestModelSuggestions() {
+  vscode.postMessage({
+    type: "requestModelSuggestions",
+    provider: ui.providerSelect.value,
+  });
+}
+
+function renderProviderBadge(status) {
+  if (!ui.providerBadge) {
+    return;
+  }
+
+  const provider = status?.provider || ui.providerSelect.value || "provider";
+  if (status?.connected) {
+    ui.providerBadge.className = "provider-badge connected";
+    ui.providerBadge.textContent = `${provider}: connected (${status.latencyMs}ms)`;
+    return;
+  }
+
+  ui.providerBadge.className = "provider-badge disconnected";
+  ui.providerBadge.textContent = `${provider}: disconnected`;
+}
+
+function renderModelSuggestions(provider, models) {
+  if (!ui.modelOptions || provider !== ui.providerSelect.value) {
+    return;
+  }
+
+  const nextModels = Array.isArray(models) ? models.slice(0, 40) : [];
+  ui.modelOptions.textContent = "";
+
+  for (const model of nextModels) {
+    const option = document.createElement("option");
+    option.value = model;
+    ui.modelOptions.appendChild(option);
+  }
+}
+
+function scheduleStreamFlush() {
+  if (state.flushHandle !== null) {
+    return;
+  }
+
+  state.flushHandle = requestAnimationFrame(() => {
+    state.flushHandle = null;
+    flushStreamBuffer();
+  });
+}
+
+function flushStreamBuffer() {
+  if (!state.streamBuffer) {
+    return;
+  }
+
+  const message = ensureStreamingMessage();
+  const body = message.querySelector(".message-body");
+  body.textContent += state.streamBuffer;
+  state.streamBuffer = "";
+  ui.chat.scrollTop = ui.chat.scrollHeight;
+}
+
+function trimChatMessages(maxMessages = 220) {
+  const children = ui.chat.children;
+  while (children.length > maxMessages) {
+    ui.chat.removeChild(children[0]);
+  }
 }
 
 function markEditApplied(editId, filePath) {

@@ -63,11 +63,44 @@ body {
   gap: 8px;
 }
 
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .brand {
   font-weight: 700;
   letter-spacing: 0.06em;
   font-size: 12px;
   text-transform: uppercase;
+}
+
+.provider-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  padding: 3px 8px;
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.provider-badge.pending {
+  background: color-mix(in srgb, var(--surface-strong) 85%, #0f172a 15%);
+  color: var(--text-muted);
+}
+
+.provider-badge.connected {
+  background: color-mix(in srgb, #10b981 18%, transparent);
+  border-color: color-mix(in srgb, #10b981 52%, var(--border) 48%);
+}
+
+.provider-badge.disconnected {
+  background: color-mix(in srgb, #ef4444 16%, transparent);
+  border-color: color-mix(in srgb, #ef4444 52%, var(--border) 48%);
 }
 
 .controls {
@@ -78,6 +111,18 @@ body {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
+}
+
+@media (max-width: 420px) {
+  .toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .toolbar-actions {
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
 }
 
 label {

@@ -5,6 +5,8 @@ Local-first, multi-agent AI coding assistant for VS Code.
 ## What You Get
 
 - VS Code sidebar extension with chat, streaming, attachments, and controlled edit approvals.
+- Provider connection badge with live health checks and latency display.
+- Automatic model suggestions from Ollama/OpenAI-compatible `/models` endpoints.
 - Multi-agent core with `auto`, `planner`, `coder`, `reviewer`, `qa`, and `security` modes.
 - Provider routing for local Ollama and OpenAI-compatible endpoints.
 - Tooling layer for filesystem, terminal, git, tests, local code search, and online web search.
@@ -101,6 +103,8 @@ All settings are under `nexcodeKiboko.*`:
   - `npm run lint`
 - Tests:
   - `npm run test`
+- Full model and tools validation matrix:
+  - `npm run validate:models`
 - Raw VSIX package:
   - `npm run package:vsix`
 
@@ -137,3 +141,11 @@ Ignored/generated content includes:
 ## Runtime Memory Notes
 
 Generated runtime memory files are written to `memory/` during use. These are intentionally excluded from source control to keep commits clean.
+
+## Validation And Best Practices Docs
+
+- Validation matrix report:
+  - `docs/VALIDATION_REPORT.md`
+  - `docs/VALIDATION_REPORT.json`
+- Webview/performance/security implementation checklist:
+  - `docs/BEST_PRACTICES.md`

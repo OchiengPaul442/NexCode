@@ -76,7 +76,7 @@ body {
   justify-content: space-between;
   gap: 6px;
   height: var(--nk-topbar-h);
-  padding: 0 4px;
+  padding: 0 2px;
   border-bottom: 1px solid var(--nk-border2);
   background: var(--nk-bg);
   flex-shrink: 0;
@@ -87,8 +87,8 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   border-radius: 5px;
   border: none;
   background: transparent;
@@ -146,7 +146,7 @@ body {
 
 /* Messages list */
 .nk-messages-list {
-  padding: 8px 4px 4px;
+  padding: 7px 2px 2px;
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -263,28 +263,33 @@ body {
 }
 .nk-thinking-label {
   font-size: 11px;
-  color: #b8c4d4;
+  color: #c4d2e6;
   font-weight: 500;
 }
 .nk-thinking-label--shimmer {
-  position: relative;
-  overflow: hidden;
+  display: inline-block;
   white-space: nowrap;
   max-width: 100%;
   text-overflow: ellipsis;
-}
-.nk-thinking-label--shimmer::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    100deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0.22) 45%,
-    transparent 70%
+  background-image: linear-gradient(
+    110deg,
+    #7598bc 0%,
+    #d6e8ff 28%,
+    #89abc8 55%,
+    #d6e8ff 74%,
+    #7598bc 100%
   );
-  transform: translateX(-120%);
-  animation: nk-shimmer-text 1.8s ease-in-out infinite;
+  background-size: 240% 100%;
+  background-position: 180% 50%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: nk-shimmer-text 2.2s linear infinite;
+}
+.nk-thinking-subline {
+  font-size: 10px;
+  color: #6f7f93;
+  padding-left: 18px;
 }
 .nk-thinking-trace {
   list-style: none;
@@ -308,11 +313,49 @@ body {
 }
 @keyframes nk-shimmer-text {
   0% {
-    transform: translateX(-120%);
+    background-position: 180% 50%;
   }
   100% {
-    transform: translateX(140%);
+    background-position: -20% 50%;
   }
+}
+
+.nk-msg-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 1px;
+}
+.nk-msg-actions--user {
+  justify-content: flex-end;
+}
+.nk-msg-actions--bot {
+  justify-content: flex-start;
+}
+.nk-msg-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #70839a;
+  cursor: pointer;
+  transition:
+    color 0.12s,
+    background 0.12s,
+    border-color 0.12s;
+}
+.nk-msg-action-btn:hover:not(:disabled) {
+  color: #c5d5eb;
+  background: #232a36;
+  border-color: #2f3a4b;
+}
+.nk-msg-action-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* ── Details / reasoning ───────────────────────────────────────────────────── */
@@ -491,7 +534,7 @@ body {
 /* ── Input area ────────────────────────────────────────────────────────────── */
 .nk-input-area {
   flex-shrink: 0;
-  padding: 5px 4px 6px;
+  padding: 4px 2px 4px;
   background: var(--nk-bg);
   border-top: 1px solid var(--nk-border2);
 }
@@ -507,7 +550,7 @@ body {
 .nk-input-card {
   background: var(--nk-bg2);
   border: 1px solid var(--nk-border);
-  border-radius: 10px;
+  border-radius: 9px;
   display: flex;
   flex-direction: column;
   transition:
@@ -529,10 +572,10 @@ body {
   font-family: inherit;
   font-size: 13px;
   line-height: 1.5;
-  padding: 9px 12px 5px;
+  padding: 8px 10px 4px;
   outline: none;
   min-height: 38px;
-  max-height: 160px;
+  max-height: 220px;
   overflow-y: auto;
 }
 .nk-textarea::placeholder {
@@ -544,7 +587,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 6px 5px;
+  padding: 4px 5px 5px;
   gap: 4px;
   border-top: 1px solid var(--nk-border2);
 }
@@ -555,14 +598,20 @@ body {
   flex-wrap: wrap;
   min-width: 0;
 }
+.nk-input-toolbar-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
 
 /* + Attach button */
 .nk-toolbar-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   border-radius: 5px;
   border: 1px solid var(--nk-border);
   background: var(--nk-bg3);
@@ -592,14 +641,14 @@ body {
   appearance: none;
   background: var(--nk-bg3);
   border: 1px solid var(--nk-border);
-  border-radius: 20px;
+  border-radius: 16px;
   color: var(--nk-muted);
   font-size: 11px;
-  padding: 2px 20px 2px 8px;
+  padding: 1px 18px 1px 7px;
   cursor: pointer;
   outline: none;
   max-width: 120px;
-  height: 22px;
+  height: 20px;
   line-height: 1;
   transition:
     border-color 0.12s,
@@ -634,9 +683,9 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 7px;
+  width: 25px;
+  height: 25px;
+  border-radius: 6px;
   border: none;
   background: var(--nk-accent);
   color: #fff;
@@ -656,6 +705,62 @@ body {
 .nk-send-btn--busy {
   background: var(--nk-bg3);
   color: var(--nk-muted);
+}
+.nk-send-btn--queue {
+  background: rgba(2, 132, 199, 0.16);
+  border: 1px solid rgba(2, 132, 199, 0.35);
+  color: #9cdcff;
+}
+
+.nk-stop-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  border: 1px solid rgba(248, 81, 73, 0.34);
+  background: rgba(248, 81, 73, 0.12);
+  color: #f8a5a0;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.nk-stop-btn:hover {
+  background: rgba(248, 81, 73, 0.2);
+}
+
+.nk-queue-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(2, 132, 199, 0.34);
+  background: rgba(2, 132, 199, 0.14);
+  color: #9ddcff;
+  font-size: 10px;
+  padding: 0 7px;
+  letter-spacing: 0.01em;
+}
+
+.nk-scroll-bottom-btn {
+  position: sticky;
+  bottom: 8px;
+  margin-left: auto;
+  margin-right: 6px;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  border: 1px solid rgba(2, 132, 199, 0.38);
+  background: rgba(16, 21, 28, 0.92);
+  color: #9ddcff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 5;
+}
+.nk-scroll-bottom-btn:hover {
+  background: rgba(2, 132, 199, 0.18);
 }
 
 /* Attachment chip */

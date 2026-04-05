@@ -137,10 +137,13 @@ export class NexcodeOrchestrator {
     };
 
     try {
+      this.ensureNotAborted(request.abortSignal);
       const memoryContext = await this.memory.getRelevantContext(
         request.prompt,
       );
+      this.ensureNotAborted(request.abortSignal);
       const workspaceContext = await this.buildWorkspaceContext(request);
+      this.ensureNotAborted(request.abortSignal);
 
       yield {
         type: "status",
@@ -178,6 +181,7 @@ export class NexcodeOrchestrator {
           workspaceContext,
           memoryContext,
           diagnostics,
+          request.abortSignal,
         );
       } else if (mode === "auto") {
         yield {
@@ -193,6 +197,7 @@ export class NexcodeOrchestrator {
           workspaceContext,
           memoryContext,
           diagnostics,
+          request.abortSignal,
         );
       } else {
         yield {
@@ -208,8 +213,11 @@ export class NexcodeOrchestrator {
           workspaceContext,
           memoryContext,
           diagnostics,
+          request.abortSignal,
         );
       }
+
+      this.ensureNotAborted(request.abortSignal);
 
       response.diagnostics = diagnostics;
       response.text = this.prependExecutionSummary(response, {
@@ -265,6 +273,14 @@ export class NexcodeOrchestrator {
         response,
       };
     } catch (error) {
+      if (this.isAbortError(error)) {
+        yield {
+          type: "stopped",
+          message: "Request stopped by user.",
+        };
+        return;
+      }
+
       yield {
         type: "error",
         message: `Orchestration failed: ${String(error)}`,
@@ -288,7 +304,9 @@ export class NexcodeOrchestrator {
     workspaceContext: string,
     memoryContext: string,
     diagnostics: string[],
+    abortSignal?: AbortSignal,
   ): Promise<OrchestratorResponse> {
+    this.ensureNotAborted(abortSignal);
     const plan = await this.runAgentSafely(
       "planner",
       () =>
@@ -299,10 +317,12 @@ export class NexcodeOrchestrator {
           temperature,
           workspaceContext,
           memoryContext,
+          signal: abortSignal,
         }),
       diagnostics,
     );
 
+    this.ensureNotAborted(abortSignal);
     const code = await this.runAgentSafely(
       "coder",
       () =>
@@ -314,10 +334,12 @@ export class NexcodeOrchestrator {
           workspaceContext,
           memoryContext,
           plan: plan.content,
+          signal: abortSignal,
         }),
       diagnostics,
     );
 
+    this.ensureNotAborted(abortSignal);
     const [review, qa, security] = await Promise.all([
       this.runAgentSafely(
         "reviewer",
@@ -331,6 +353,7 @@ export class NexcodeOrchestrator {
             memoryContext,
             plan: plan.content,
             implementationDraft: code.content,
+            signal: abortSignal,
           }),
         diagnostics,
       ),
@@ -346,6 +369,7 @@ export class NexcodeOrchestrator {
             memoryContext,
             plan: plan.content,
             implementationDraft: code.content,
+            signal: abortSignal,
           }),
         diagnostics,
       ),
@@ -361,10 +385,13 @@ export class NexcodeOrchestrator {
             memoryContext,
             plan: plan.content,
             implementationDraft: code.content,
+            signal: abortSignal,
           }),
         diagnostics,
       ),
     ]);
+
+    this.ensureNotAborted(abortSignal);
 
     const text = [
       "## Planner",
@@ -402,6 +429,7 @@ export class NexcodeOrchestrator {
     workspaceContext: string,
     memoryContext: string,
     diagnostics: string[],
+    abortSignal?: AbortSignal,
   ): Promise<OrchestratorResponse> {
     const runnerByMode: Record<
       Exclude<AgentMode, "auto">,
@@ -415,6 +443,7 @@ export class NexcodeOrchestrator {
           temperature,
           workspaceContext,
           memoryContext,
+          signal: abortSignal,
         }),
       coder: () =>
         this.coder.run({
@@ -424,6 +453,7 @@ export class NexcodeOrchestrator {
           temperature,
           workspaceContext,
           memoryContext,
+          signal: abortSignal,
         }),
       reviewer: () =>
         this.reviewer.run({
@@ -433,6 +463,7 @@ export class NexcodeOrchestrator {
           temperature,
           workspaceContext,
           memoryContext,
+          signal: abortSignal,
         }),
       qa: () =>
         this.qa.run({
@@ -442,6 +473,7 @@ export class NexcodeOrchestrator {
           temperature,
           workspaceContext,
           memoryContext,
+          signal: abortSignal,
         }),
       security: () =>
         this.security.run({
@@ -451,6 +483,7 @@ export class NexcodeOrchestrator {
           temperature,
           workspaceContext,
           memoryContext,
+          signal: abortSignal,
         }),
     };
 
@@ -532,6 +565,7 @@ export class NexcodeOrchestrator {
     workspaceContext: string,
     memoryContext: string,
     diagnostics: string[],
+    abortSignal?: AbortSignal,
   ): Promise<OrchestratorResponse> {
     const parsed = this.parseEditCommand(prompt);
     if (!parsed) {
@@ -569,6 +603,7 @@ export class NexcodeOrchestrator {
           temperature,
           workspaceContext,
           memoryContext,
+          signal: abortSignal,
         }),
       diagnostics,
     );
@@ -621,17 +656,37 @@ export class NexcodeOrchestrator {
     try {
       return await run();
     } catch (error) {
+      if (this.isAbortError(error)) {
+        throw error;
+      }
+
       const message = `${capitalize(mode)} agent fallback: ${String(error)}`;
       diagnostics.push(message);
       return {
         agent: mode,
         content: [
-          `The ${mode} agent could not reach the configured model endpoint.`,
+          `The ${mode} agent could not complete with the selected model endpoint.`,
+          `Details: ${String(error)}`,
           "Fallback suggestion:",
           this.fallbackByMode(mode),
         ].join("\n"),
       };
     }
+  }
+
+  private ensureNotAborted(signal?: AbortSignal): void {
+    if (signal?.aborted) {
+      throw new Error("Request aborted.");
+    }
+  }
+
+  private isAbortError(error: unknown): boolean {
+    if (typeof DOMException !== "undefined" && error instanceof DOMException) {
+      return error.name === "AbortError";
+    }
+
+    const message = String(error ?? "").toLowerCase();
+    return message.includes("abort");
   }
 
   private fallbackByMode(mode: Exclude<AgentMode, "auto">): string {

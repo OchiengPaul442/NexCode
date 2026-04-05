@@ -54,6 +54,7 @@ export interface OrchestratorRequest {
   attachments?: RequestAttachment[];
   allowTools?: boolean;
   allowWebSearch?: boolean;
+  abortSignal?: AbortSignal;
 }
 
 export interface OrchestratorResponse {
@@ -81,6 +82,10 @@ export type OrchestratorEvent =
   | {
       type: "error";
       message: string;
+    }
+  | {
+      type: "stopped";
+      message: string;
     };
 
 export interface ModelRequest {
@@ -88,6 +93,7 @@ export interface ModelRequest {
   messages: ChatMessage[];
   temperature?: number;
   maxTokens?: number;
+  signal?: AbortSignal;
 }
 
 export interface ModelResponse {
@@ -100,6 +106,7 @@ export interface ProviderGenerateOptions {
   model?: string;
   temperature?: number;
   complexity?: "small" | "large";
+  signal?: AbortSignal;
 }
 
 export interface ModelProvider {

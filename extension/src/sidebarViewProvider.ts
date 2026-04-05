@@ -13,12 +13,17 @@ import {
 interface WebviewSendPromptMessage {
   type: "sendPrompt";
   prompt: string;
+  sessionId?: string;
   provider?: ProviderId;
   model?: string;
   mode?: AgentMode;
   temperature?: number;
   allowWebSearch?: boolean;
   attachmentIds?: string[];
+}
+
+interface WebviewCancelPromptMessage {
+  type: "cancelPrompt";
 }
 
 interface WebviewPickAttachmentsMessage {
@@ -78,6 +83,7 @@ interface WebviewRequestModelSuggestionsMessage {
 
 type InboundWebviewMessage =
   | WebviewSendPromptMessage
+  | WebviewCancelPromptMessage
   | WebviewApplyEditMessage
   | WebviewPreviewEditMessage
   | WebviewRejectEditMessage
@@ -106,6 +112,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
   private readonly pendingEdits = new Map<string, ProposedEdit>();
   private readonly pendingAttachments = new Map<string, RequestAttachment>();
   private isBusy = false;
+  private currentAbortController?: AbortController;
 
   public constructor(private readonly context: vscode.ExtensionContext) {}
 
@@ -148,6 +155,9 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     switch (message.type) {
       case "sendPrompt":
         await this.handlePrompt(message);
+        return;
+      case "cancelPrompt":
+        this.cancelPrompt();
         return;
       case "applyEdit":
         await this.applyProposedEdit(message.editId);
@@ -198,6 +208,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     }
 
     this.isBusy = true;
+    this.currentAbortController = new AbortController();
     const selectedAttachmentIds = message.attachmentIds ?? [];
 
     try {
@@ -223,10 +234,12 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         activeFilePath: activeEditor?.document.uri.fsPath,
         selectedText: activeEditor?.document.getText(activeEditor.selection),
         attachments: this.resolveAttachmentsForPrompt(selectedAttachmentIds),
+        abortSignal: this.currentAbortController.signal,
       };
 
       this.postMessage({
         type: "start",
+        sessionId: message.sessionId,
         provider: request.provider,
         model: request.model,
         mode: request.mode,
@@ -242,18 +255,35 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         this.postMessage(event);
       }
     } catch (error) {
-      this.postMessage({
-        type: "error",
-        message: String(error),
-      });
+      const messageText = String(error ?? "");
+      if (messageText.toLowerCase().includes("abort")) {
+        this.postMessage({
+          type: "stopped",
+          message: "Request stopped by user.",
+        });
+      } else {
+        this.postMessage({
+          type: "error",
+          message: messageText,
+        });
+      }
     } finally {
       for (const attachmentId of selectedAttachmentIds) {
         this.pendingAttachments.delete(attachmentId);
       }
       this.postAttachments();
       this.isBusy = false;
+      this.currentAbortController = undefined;
       this.postMessage({ type: "end" });
     }
+  }
+
+  private cancelPrompt(): void {
+    if (!this.isBusy || !this.currentAbortController) {
+      return;
+    }
+
+    this.currentAbortController.abort("cancelled-by-user");
   }
 
   private async pickAttachments(): Promise<void> {
@@ -449,7 +479,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       this.orchestrator = createNexcodeOrchestrator({
         workspaceRoot,
         promptsDir: path.join(workspaceRoot, "prompts"),
-        memoryDir: path.join(workspaceRoot, "memory"),
+        memoryDir: path.join(this.context.globalStorageUri.fsPath, "memory"),
         defaultProvider: settings.provider,
         defaultModel: settings.model,
         ollamaBaseUrl: settings.ollamaBaseUrl,

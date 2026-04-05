@@ -11,6 +11,7 @@ export interface AgentRunInput {
   provider?: ProviderId;
   model?: string;
   temperature?: number;
+  signal?: AbortSignal;
 }
 
 export async function runSpecialistAgent(
@@ -49,6 +50,7 @@ export async function runSpecialistAgent(
     model: input.model,
     temperature: input.temperature,
     complexity: input.userPrompt.length > 1200 ? "large" : "small",
+    signal: input.signal,
   });
 
   return {

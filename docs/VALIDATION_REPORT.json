@@ -6,8 +6,8 @@
     "total": 9,
     "passed": 9,
     "failed": 0,
-    "memoryBefore": 175,
-    "memoryAfter": 184,
+    "memoryBefore": 188,
+    "memoryAfter": 197,
     "memoryDelta": 9
   },
   "results": [
@@ -15,55 +15,55 @@
       "model": "gpt-oss:120b-cloud",
       "case": "real-world-auto",
       "ok": true,
-      "durationMs": 97492
+      "durationMs": 87813
     },
     {
       "model": "gpt-oss:120b-cloud",
       "case": "tool-search",
       "ok": true,
-      "durationMs": 5296
+      "durationMs": 13468
     },
     {
       "model": "gpt-oss:120b-cloud",
       "case": "tool-read",
       "ok": true,
-      "durationMs": 3648
+      "durationMs": 3875
     },
     {
       "model": "gpt-oss:120b-cloud",
       "case": "tool-web-search",
       "ok": true,
-      "durationMs": 6786
+      "durationMs": 6332
     },
     {
       "model": "gpt-oss:120b-cloud",
       "case": "terminal-create-file",
       "ok": true,
-      "durationMs": 4226
+      "durationMs": 4099
     },
     {
       "model": "gpt-oss:120b-cloud",
       "case": "terminal-move-file",
       "ok": true,
-      "durationMs": 3928
+      "durationMs": 3934
     },
     {
       "model": "gpt-oss:120b-cloud",
       "case": "terminal-delete-file",
       "ok": true,
-      "durationMs": 4125
+      "durationMs": 3935
     },
     {
       "model": "gpt-oss:120b-cloud",
       "case": "terminal-security-block",
       "ok": true,
-      "durationMs": 4106
+      "durationMs": 3809
     },
     {
       "model": "gpt-oss:120b-cloud",
       "case": "edit-proposal-apply",
       "ok": true,
-      "durationMs": 6645
+      "durationMs": 6124
     }
   ]
 }

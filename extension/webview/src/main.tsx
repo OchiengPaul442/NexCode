@@ -14,22 +14,20 @@ import {
   MessageSquarePlus,
   PanelLeft,
   Settings,
-  Send,
   Plus,
   RefreshCw,
   Trash2,
   X,
   ChevronDown,
   ExternalLink,
-  Loader2,
   CheckCircle2,
-  AlertCircle,
   ChevronRight,
   FileText,
   Image,
   File,
   Eraser,
   ArrowUp,
+  ArrowDown,
   Cpu,
   Zap,
   Globe,
@@ -37,7 +35,11 @@ import {
   GitBranch,
   Search,
   Terminal,
-  Wrench,
+  Copy,
+  Check,
+  Square,
+  Pencil,
+  RotateCcw,
 } from "lucide-react";
 
 declare const acquireVsCodeApi: <T = unknown>() => {
@@ -80,9 +82,23 @@ interface ChatMessage {
   streaming?: boolean;
   thinking?: boolean;
   error?: boolean;
+  stopped?: boolean;
   reasoning: string[];
   debug: string[];
   proposedEdits: ProposedEdit[];
+}
+
+interface QueuedPrompt {
+  id: string;
+  sessionId: string;
+  rawPrompt: string;
+  prompt: string;
+  provider: ProviderId;
+  model: string;
+  mode: AgentMode;
+  temperature: number;
+  allowWebSearch: boolean;
+  attachmentIds: string[];
 }
 
 interface Session {
@@ -158,12 +174,15 @@ interface StoreState {
     update: Partial<Pick<Session, "provider" | "model" | "mode">>,
   ) => void;
   clearActiveSession: () => void;
-  addUserMessage: (text: string) => void;
-  beginAssistantMessage: (meta?: {
-    provider?: ProviderId;
-    model?: string;
-    mode?: AgentMode;
-  }) => { sessionId: string; messageId: string } | null;
+  addUserMessageToSession: (sessionId: string, text: string) => void;
+  beginAssistantMessage: (
+    sessionId: string,
+    meta?: {
+      provider?: ProviderId;
+      model?: string;
+      mode?: AgentMode;
+    },
+  ) => { sessionId: string; messageId: string } | null;
   appendAssistantToken: (
     sessionId: string,
     messageId: string,
@@ -182,6 +201,11 @@ interface StoreState {
     reasoning: string[],
     debug: string[],
     edits: ProposedEdit[],
+  ) => void;
+  stopAssistantMessage: (
+    sessionId: string,
+    messageId: string,
+    messageText: string,
   ) => void;
   failAssistantMessage: (
     sessionId: string,
@@ -522,6 +546,25 @@ function parseSlashCommand(
   }
 }
 
+function findRetryPromptForMessage(
+  session: Session,
+  messageId: string,
+): string | null {
+  const idx = session.messages.findIndex((message) => message.id === messageId);
+  if (idx < 0) {
+    return null;
+  }
+
+  for (let pointer = idx; pointer >= 0; pointer -= 1) {
+    const candidate = session.messages[pointer];
+    if (candidate.role === "user" && candidate.text.trim()) {
+      return candidate.text;
+    }
+  }
+
+  return null;
+}
+
 const useStore = create<StoreState>((set, get) => {
   const initialDefaults = {
     provider: "ollama" as ProviderId,
@@ -701,16 +744,11 @@ const useStore = create<StoreState>((set, get) => {
         };
       });
     },
-    addUserMessage: (text) => {
+    addUserMessageToSession: (sessionId, text) => {
       set((state) => {
-        const activeSessionId = state.activeSessionId;
-        if (!activeSessionId) {
-          return state;
-        }
-
         return {
           sessions: state.sessions.map((session) => {
-            if (session.id !== activeSessionId) {
+            if (session.id !== sessionId) {
               return session;
             }
 
@@ -738,9 +776,9 @@ const useStore = create<StoreState>((set, get) => {
         };
       });
     },
-    beginAssistantMessage: (meta) => {
-      const activeSessionId = get().activeSessionId;
-      if (!activeSessionId) {
+    beginAssistantMessage: (sessionId, meta) => {
+      const exists = get().sessions.some((session) => session.id === sessionId);
+      if (!exists) {
         return null;
       }
 
@@ -748,7 +786,7 @@ const useStore = create<StoreState>((set, get) => {
 
       set((state) => ({
         sessions: state.sessions.map((session) =>
-          session.id === activeSessionId
+          session.id === sessionId
             ? {
                 ...session,
                 updatedAt: Date.now(),
@@ -775,7 +813,7 @@ const useStore = create<StoreState>((set, get) => {
       }));
 
       return {
-        sessionId: activeSessionId,
+        sessionId,
         messageId,
       };
     },
@@ -854,6 +892,32 @@ const useStore = create<StoreState>((set, get) => {
         ),
       }));
     },
+    stopAssistantMessage: (sessionId, messageId, messageText) => {
+      set((state) => ({
+        sessions: state.sessions.map((session) =>
+          session.id === sessionId
+            ? {
+                ...session,
+                updatedAt: Date.now(),
+                messages: session.messages.map((message) =>
+                  message.id === messageId
+                    ? {
+                        ...message,
+                        text:
+                          message.text.trim().length > 0
+                            ? `${message.text}\n\n_${messageText}_`
+                            : messageText,
+                        streaming: false,
+                        thinking: false,
+                        stopped: true,
+                      }
+                    : message,
+                ),
+              }
+            : session,
+        ),
+      }));
+    },
     failAssistantMessage: (sessionId, messageId, errorText) => {
       set((state) => ({
         sessions: state.sessions.map((session) =>
@@ -868,6 +932,7 @@ const useStore = create<StoreState>((set, get) => {
                         text: errorText,
                         streaming: false,
                         thinking: false,
+                        stopped: false,
                         error: true,
                       }
                     : message,
@@ -1014,58 +1079,24 @@ function ThinkingIndicator({
   model?: string;
   mode?: AgentMode;
 }) {
-  const phrases = useMemo(() => {
-    const dynamic = reasoning.slice(-4);
-    const modelLabel = model?.trim() ? model.trim() : "selected model";
-    const providerLabel = provider ?? "provider";
-    const modeLabel = formatAgentMode(mode).toLowerCase();
-
-    return [
-      `Thinking with ${modelLabel}`,
-      `Running ${modeLabel} flow on ${providerLabel}`,
-      ...dynamic,
-    ];
-  }, [reasoning, provider, model, mode]);
-
-  const [phraseIndex, setPhraseIndex] = useState(0);
-
-  useEffect(() => {
-    if (phrases.length <= 1) {
-      setPhraseIndex(0);
-      return;
-    }
-
-    const timer = window.setInterval(() => {
-      setPhraseIndex((current) => {
-        if (phrases.length <= 1) {
-          return 0;
-        }
-
-        let next = current;
-        let guard = 0;
-        while (next === current && guard < 8) {
-          next = Math.floor(Math.random() * phrases.length);
-          guard += 1;
-        }
-        return next;
-      });
-    }, 1800);
-
-    return () => clearInterval(timer);
-  }, [phrases]);
-
-  const visibleSteps = reasoning.slice(-5);
+  const modelLabel = model?.trim() ? model.trim() : "selected model";
+  const providerLabel = provider ?? "provider";
+  const modeLabel = formatAgentMode(mode).toLowerCase();
+  const latestStep = reasoning.at(-1);
+  const visibleSteps = Array.from(new Set(reasoning)).slice(-3);
+  const primaryText = latestStep || `Thinking with ${modelLabel}`;
 
   return (
     <div className="nk-thinking-wrap">
       <div className="nk-thinking-row">
         <Cpu size={12} className="nk-thinking-icon" />
-        <span
-          key={`${phrases[phraseIndex]}-${phraseIndex}`}
-          className="nk-thinking-label nk-thinking-label--shimmer"
-        >
-          {phrases[phraseIndex]}
+        <span className="nk-thinking-label nk-thinking-label--shimmer">
+          {primaryText}
         </span>
+      </div>
+
+      <div className="nk-thinking-subline">
+        {providerLabel} • {modeLabel} mode
       </div>
 
       {visibleSteps.length > 0 && (
@@ -1093,7 +1124,8 @@ function CompletionSummary({ message }: { message: ChatMessage }) {
     message.role !== "assistant" ||
     message.streaming ||
     message.thinking ||
-    message.error
+    message.error ||
+    message.stopped
   ) {
     return null;
   }
@@ -1125,6 +1157,12 @@ function MessageBubble({
   message,
   showReasoning,
   showDebug,
+  canRetry,
+  copied,
+  isBusy,
+  onCopy,
+  onRetry,
+  onEdit,
   onPreview,
   onApply,
   onReject,
@@ -1132,11 +1170,19 @@ function MessageBubble({
   message: ChatMessage;
   showReasoning: boolean;
   showDebug: boolean;
+  canRetry: boolean;
+  copied: boolean;
+  isBusy: boolean;
+  onCopy: (message: ChatMessage) => void;
+  onRetry: (message: ChatMessage) => void;
+  onEdit: (message: ChatMessage) => void;
   onPreview: (editId: string) => void;
   onApply: (editId: string) => void;
   onReject: (editId: string) => void;
 }) {
   const isUser = message.role === "user";
+  const showActions =
+    !message.streaming && !message.thinking && message.text.trim().length > 0;
 
   return (
     <motion.div
@@ -1186,41 +1232,80 @@ function MessageBubble({
         )}
 
         {/* Reasoning */}
-        {!isUser && showReasoning && message.reasoning.length > 0 && (
-          <div
-            className={`nk-reasoning-panel ${message.streaming || message.thinking ? "nk-reasoning-panel--live" : ""}`}
-          >
-            <div className="nk-reasoning-panel-header">
-              <span>
-                {message.streaming || message.thinking
-                  ? "Reasoning (live)"
-                  : "Reasoning steps"}
-              </span>
-              {(message.model || message.mode) && (
-                <span className="nk-reasoning-meta">
-                  {[
-                    message.model,
-                    message.mode ? formatAgentMode(message.mode) : "",
-                  ]
-                    .filter(Boolean)
-                    .join(" • ")}
+        {!isUser &&
+          showReasoning &&
+          message.reasoning.length > 0 &&
+          !(message.thinking && !message.text) && (
+            <div
+              className={`nk-reasoning-panel ${message.streaming || message.thinking ? "nk-reasoning-panel--live" : ""}`}
+            >
+              <div className="nk-reasoning-panel-header">
+                <span>
+                  {message.streaming || message.thinking
+                    ? "Reasoning (live)"
+                    : "Reasoning steps"}
                 </span>
-              )}
+                {(message.model || message.mode) && (
+                  <span className="nk-reasoning-meta">
+                    {[
+                      message.model,
+                      message.mode ? formatAgentMode(message.mode) : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" • ")}
+                  </span>
+                )}
+              </div>
+              <ol className="nk-reasoning-list">
+                {message.reasoning.map((item, i) => {
+                  const isLatest = i === message.reasoning.length - 1;
+                  return (
+                    <li
+                      key={`${message.id}-r-${i}`}
+                      className={`nk-reasoning-item ${isLatest && (message.streaming || message.thinking) ? "nk-reasoning-item--active" : ""}`}
+                    >
+                      <Zap
+                        size={9}
+                        style={{ color: "#0284c7", flexShrink: 0 }}
+                      />
+                      <span>{item}</span>
+                    </li>
+                  );
+                })}
+              </ol>
             </div>
-            <ol className="nk-reasoning-list">
-              {message.reasoning.map((item, i) => {
-                const isLatest = i === message.reasoning.length - 1;
-                return (
-                  <li
-                    key={`${message.id}-r-${i}`}
-                    className={`nk-reasoning-item ${isLatest && (message.streaming || message.thinking) ? "nk-reasoning-item--active" : ""}`}
-                  >
-                    <Zap size={9} style={{ color: "#0284c7", flexShrink: 0 }} />
-                    <span>{item}</span>
-                  </li>
-                );
-              })}
-            </ol>
+          )}
+
+        {showActions && (
+          <div
+            className={`nk-msg-actions ${isUser ? "nk-msg-actions--user" : "nk-msg-actions--bot"}`}
+          >
+            <button
+              className="nk-msg-action-btn"
+              title={copied ? "Copied" : "Copy message"}
+              onClick={() => onCopy(message)}
+            >
+              {copied ? <Check size={11} /> : <Copy size={11} />}
+            </button>
+            {isUser && (
+              <button
+                className="nk-msg-action-btn"
+                title="Edit prompt"
+                onClick={() => onEdit(message)}
+              >
+                <Pencil size={11} />
+              </button>
+            )}
+            {canRetry && (
+              <button
+                className="nk-msg-action-btn"
+                title="Retry"
+                onClick={() => onRetry(message)}
+                disabled={isBusy}
+              >
+                <RotateCcw size={11} />
+              </button>
+            )}
           </div>
         )}
 
@@ -1616,6 +1701,10 @@ function App() {
   const [deleteTargetSessionId, setDeleteTargetSessionId] = useState<
     string | null
   >(null);
+  const [queuedPrompts, setQueuedPrompts] = useState<QueuedPrompt[]>([]);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const [followStream, setFollowStream] = useState(true);
 
   // Fixed DnD: counter-based to avoid nested element false leaves
   const dragCounterRef = useRef(0);
@@ -1630,6 +1719,8 @@ function App() {
   const debugRef = useRef<string[]>([]);
   const tokenQueueRef = useRef<string[]>([]);
   const flushHandleRef = useRef<number | null>(null);
+  const copyResetTimerRef = useRef<number | null>(null);
+  const queuedPromptsRef = useRef<QueuedPrompt[]>([]);
 
   const activeSession = useMemo(
     () => sessions.find((s) => s.id === activeSessionId),
@@ -1648,6 +1739,218 @@ function App() {
       ]),
     ];
   }, [activeSession, modelSuggestions]);
+
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
+    const scroller = chatScrollerRef.current;
+    if (!scroller) {
+      return;
+    }
+
+    scroller.scrollTo({
+      top: scroller.scrollHeight,
+      behavior,
+    });
+    setShowScrollToBottom(false);
+  }, []);
+
+  const syncScrollState = useCallback(() => {
+    const scroller = chatScrollerRef.current;
+    if (!scroller) {
+      return;
+    }
+
+    const distanceFromBottom =
+      scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+    const nearBottom = distanceFromBottom < 56;
+    setFollowStream(nearBottom);
+    setShowScrollToBottom(!nearBottom);
+  }, []);
+
+  const dispatchPromptRequest = useCallback((request: QueuedPrompt) => {
+    const sessionExists = useStore
+      .getState()
+      .sessions.some((session) => session.id === request.sessionId);
+    if (!sessionExists) {
+      return;
+    }
+
+    useStore.getState().setBusy(true);
+    vscode.postMessage({
+      type: "sendPrompt",
+      sessionId: request.sessionId,
+      prompt: request.prompt,
+      provider: request.provider,
+      model: request.model,
+      mode: request.mode,
+      temperature: request.temperature,
+      allowWebSearch: request.allowWebSearch,
+      attachmentIds: request.attachmentIds,
+    });
+  }, []);
+
+  const enqueuePromptRequest = useCallback((request: QueuedPrompt) => {
+    setQueuedPrompts((current) => {
+      const next = [...current, request];
+      queuedPromptsRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const dequeuePromptRequest = useCallback((): QueuedPrompt | undefined => {
+    while (queuedPromptsRef.current.length > 0) {
+      const [next, ...rest] = queuedPromptsRef.current;
+      queuedPromptsRef.current = rest;
+      setQueuedPrompts(rest);
+
+      const sessionExists = useStore
+        .getState()
+        .sessions.some((session) => session.id === next.sessionId);
+      if (sessionExists) {
+        return next;
+      }
+    }
+
+    return undefined;
+  }, []);
+
+  const submitPrompt = useCallback(
+    (rawPrompt: string, session: Session, attachmentIds: string[] = []) => {
+      const trimmed = rawPrompt.trim();
+      if (!trimmed) {
+        return false;
+      }
+
+      const parsed = parseSlashCommand(trimmed, session.mode);
+      if (
+        settings.requireTerminalApproval &&
+        /^\/tool\s+terminal\s+/i.test(parsed.prompt)
+      ) {
+        const cmd = parsed.prompt.replace(/^\/tool\s+terminal\s+/i, "");
+        if (
+          !window.confirm(
+            `Approval required for terminal command:\n\n${cmd}\n\nContinue?`,
+          )
+        ) {
+          return false;
+        }
+      }
+
+      if (
+        !settings.enableWebSearch &&
+        /^\/tool\s+(web-search|search-web|online-search)\b/i.test(parsed.prompt)
+      ) {
+        window.alert(
+          "Web search is disabled. Enable 'Enable web search tool' in Settings to use this command.",
+        );
+        return false;
+      }
+
+      useStore.getState().addUserMessageToSession(session.id, trimmed);
+      const request: QueuedPrompt = {
+        id: makeId("queue"),
+        sessionId: session.id,
+        rawPrompt: trimmed,
+        prompt: parsed.prompt,
+        provider: session.provider,
+        model: session.model,
+        mode: parsed.mode,
+        temperature: settings.temperature,
+        allowWebSearch: settings.enableWebSearch,
+        attachmentIds,
+      };
+
+      if (useStore.getState().isBusy) {
+        enqueuePromptRequest(request);
+      } else {
+        dispatchPromptRequest(request);
+      }
+
+      setFollowStream(true);
+      window.requestAnimationFrame(() => scrollToBottom("smooth"));
+      return true;
+    },
+    [
+      dispatchPromptRequest,
+      enqueuePromptRequest,
+      scrollToBottom,
+      settings.enableWebSearch,
+      settings.requireTerminalApproval,
+      settings.temperature,
+    ],
+  );
+
+  const handleStopRequest = useCallback(() => {
+    if (!useStore.getState().isBusy) {
+      return;
+    }
+    vscode.postMessage({ type: "cancelPrompt" });
+  }, []);
+
+  const handleCopyMessage = useCallback(async (message: ChatMessage) => {
+    const value = message.text.trim();
+    if (!value) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch {
+      const fallback = document.createElement("textarea");
+      fallback.value = value;
+      fallback.style.position = "fixed";
+      fallback.style.opacity = "0";
+      document.body.appendChild(fallback);
+      fallback.focus();
+      fallback.select();
+      document.execCommand("copy");
+      document.body.removeChild(fallback);
+    }
+
+    setCopiedMessageId(message.id);
+    if (copyResetTimerRef.current !== null) {
+      window.clearTimeout(copyResetTimerRef.current);
+    }
+    copyResetTimerRef.current = window.setTimeout(() => {
+      setCopiedMessageId(null);
+      copyResetTimerRef.current = null;
+    }, 1200);
+  }, []);
+
+  const handleEditMessage = useCallback(
+    (message: ChatMessage) => {
+      if (!activeSession || message.role !== "user") {
+        return;
+      }
+
+      useStore.getState().setDraft(activeSession.id, message.text);
+      window.requestAnimationFrame(() => {
+        const textarea = textareaRef.current;
+        if (!textarea) {
+          return;
+        }
+
+        textarea.focus();
+        textarea.setSelectionRange(message.text.length, message.text.length);
+      });
+    },
+    [activeSession],
+  );
+
+  const handleRetryMessage = useCallback(
+    (message: ChatMessage) => {
+      if (!activeSession) {
+        return;
+      }
+
+      const retryPrompt = findRetryPromptForMessage(activeSession, message.id);
+      if (!retryPrompt) {
+        return;
+      }
+
+      submitPrompt(retryPrompt, activeSession, []);
+    },
+    [activeSession, submitPrompt],
+  );
 
   // Persist state to VS Code webview state
   useEffect(() => {
@@ -1681,6 +1984,15 @@ function App() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [settingsPanelOpen, sessionsOpen]);
+
+  useEffect(() => {
+    return () => {
+      if (copyResetTimerRef.current !== null) {
+        window.clearTimeout(copyResetTimerRef.current);
+        copyResetTimerRef.current = null;
+      }
+    };
+  }, []);
 
   // Token flush machinery
   useEffect(() => {
@@ -1766,25 +2078,40 @@ function App() {
           reasoningRef.current = [];
           debugRef.current = [];
           tokenQueueRef.current = [];
-          pendingRef.current = useStore.getState().beginAssistantMessage({
-            provider:
-              typeof payload.provider === "string"
-                ? (payload.provider as ProviderId)
-                : undefined,
-            model:
-              typeof payload.model === "string" ? payload.model : undefined,
-            mode:
-              typeof payload.mode === "string"
-                ? (payload.mode as AgentMode)
-                : undefined,
-          });
+          {
+            const startSessionId =
+              typeof payload.sessionId === "string"
+                ? payload.sessionId
+                : useStore.getState().activeSessionId;
+
+            if (!startSessionId) {
+              pendingRef.current = null;
+              return;
+            }
+
+            pendingRef.current = useStore
+              .getState()
+              .beginAssistantMessage(startSessionId, {
+                provider:
+                  typeof payload.provider === "string"
+                    ? (payload.provider as ProviderId)
+                    : undefined,
+                model:
+                  typeof payload.model === "string" ? payload.model : undefined,
+                mode:
+                  typeof payload.mode === "string"
+                    ? (payload.mode as AgentMode)
+                    : undefined,
+              });
+          }
           return;
         case "status": {
           const raw = String(payload.message ?? "");
           if (!raw) return;
           debugRef.current.push(raw);
           const cleaned = sanitizeReasoningStatus(raw);
-          if (reasoningRef.current.at(-1) !== cleaned) {
+          const recent = reasoningRef.current.slice(-6);
+          if (!recent.includes(cleaned)) {
             reasoningRef.current.push(cleaned);
           }
 
@@ -1844,6 +2171,22 @@ function App() {
           }
           return;
         }
+        case "stopped": {
+          flushAll();
+          const cur = pendingRef.current;
+          if (!cur) {
+            return;
+          }
+
+          useStore
+            .getState()
+            .stopAssistantMessage(
+              cur.sessionId,
+              cur.messageId,
+              String(payload.message ?? "Stopped by user."),
+            );
+          return;
+        }
         case "error": {
           const cur = pendingRef.current;
           if (cur)
@@ -1865,6 +2208,10 @@ function App() {
           if (flushHandleRef.current !== null) {
             clearTimeout(flushHandleRef.current);
             flushHandleRef.current = null;
+          }
+          const queued = dequeuePromptRequest();
+          if (queued) {
+            dispatchPromptRequest(queued);
           }
           return;
         case "editApplied": {
@@ -1916,19 +2263,27 @@ function App() {
     });
   }, [activeSession?.id, activeSession?.provider]);
 
-  // Auto-scroll
+  // Auto-scroll only when following live output
   useEffect(() => {
-    if (chatScrollerRef.current) {
-      chatScrollerRef.current.scrollTop = chatScrollerRef.current.scrollHeight;
+    if (followStream) {
+      scrollToBottom("auto");
+    } else {
+      syncScrollState();
     }
-  }, [activeSession?.messages]);
+  }, [activeSession?.messages, followStream, scrollToBottom, syncScrollState]);
+
+  // On session switch, jump to latest message
+  useEffect(() => {
+    setFollowStream(true);
+    window.requestAnimationFrame(() => scrollToBottom("auto"));
+  }, [activeSession?.id, scrollToBottom]);
 
   // Auto-resize textarea
   useEffect(() => {
     const ta = textareaRef.current;
     if (!ta) return;
     ta.style.height = "0px";
-    ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+    ta.style.height = `${Math.min(ta.scrollHeight, 240)}px`;
   }, [activeDraft]);
 
   // DnD file handler
@@ -1971,45 +2326,20 @@ function App() {
   // Send
   function onSendPrompt(): void {
     const sess = getActiveSession(useStore.getState());
-    if (!sess || isBusy) return;
+    if (!sess) return;
     const rawPrompt = (useStore.getState().drafts[sess.id] ?? "").trim();
     if (!rawPrompt) return;
-    const parsed = parseSlashCommand(rawPrompt, sess.mode);
-    if (
-      settings.requireTerminalApproval &&
-      /^\/tool\s+terminal\s+/i.test(parsed.prompt)
-    ) {
-      const cmd = parsed.prompt.replace(/^\/tool\s+terminal\s+/i, "");
-      if (
-        !window.confirm(
-          `Approval required for terminal command:\n\n${cmd}\n\nContinue?`,
-        )
-      )
-        return;
-    }
 
-    if (
-      !settings.enableWebSearch &&
-      /^\/tool\s+(web-search|search-web|online-search)\b/i.test(parsed.prompt)
-    ) {
-      window.alert(
-        "Web search is disabled. Enable 'Enable web search tool' in Settings to use this command.",
-      );
+    const attachmentIds = useStore.getState().attachments.map((a) => a.id);
+    const accepted = submitPrompt(rawPrompt, sess, attachmentIds);
+    if (!accepted) {
       return;
     }
 
-    useStore.getState().addUserMessage(rawPrompt);
     useStore.getState().setDraft(sess.id, "");
-    vscode.postMessage({
-      type: "sendPrompt",
-      prompt: parsed.prompt,
-      provider: sess.provider,
-      model: sess.model,
-      mode: parsed.mode,
-      temperature: settings.temperature,
-      allowWebSearch: settings.enableWebSearch,
-      attachmentIds: useStore.getState().attachments.map((a) => a.id),
-    });
+    if (attachmentIds.length > 0) {
+      useStore.getState().setAttachments([]);
+    }
   }
 
   function onProviderChange(provider: ProviderId): void {
@@ -2094,6 +2424,7 @@ function App() {
       <div
         ref={chatScrollerRef}
         className={`nk-chat-scroller ${isDragOver ? "nk-drag-active" : ""}`}
+        onScroll={syncScrollState}
         onDragEnter={(e) => {
           e.preventDefault();
           dragCounterRef.current += 1;
@@ -2160,6 +2491,18 @@ function App() {
                   message={msg}
                   showReasoning={settings.showReasoning}
                   showDebug={settings.showDebugPanel}
+                  canRetry={
+                    Boolean(findRetryPromptForMessage(activeSession, msg.id)) &&
+                    !msg.streaming &&
+                    !msg.thinking
+                  }
+                  copied={copiedMessageId === msg.id}
+                  isBusy={isBusy}
+                  onCopy={(message) => {
+                    void handleCopyMessage(message);
+                  }}
+                  onRetry={(message) => handleRetryMessage(message)}
+                  onEdit={(message) => handleEditMessage(message)}
                   onPreview={(editId) =>
                     vscode.postMessage({ type: "previewEdit", editId })
                   }
@@ -2173,6 +2516,19 @@ function App() {
               ))}
             </AnimatePresence>
           </div>
+        )}
+
+        {showScrollToBottom && (
+          <button
+            className="nk-scroll-bottom-btn"
+            title="Scroll to latest"
+            onClick={() => {
+              setFollowStream(true);
+              scrollToBottom("smooth");
+            }}
+          >
+            <ArrowDown size={12} />
+          </button>
         )}
       </div>
 
@@ -2279,19 +2635,35 @@ function App() {
               <TokenRing text={activeDraft} />
             </div>
 
-            {/* Right: send */}
-            <button
-              className={`nk-send-btn ${isBusy ? "nk-send-btn--busy" : ""}`}
-              disabled={isBusy || !activeDraft.trim()}
-              title={isBusy ? "Responding…" : "Send (Enter)"}
-              onClick={onSendPrompt}
-            >
-              {isBusy ? (
-                <Loader2 size={14} className="animate-spin" />
-              ) : (
-                <ArrowUp size={14} />
+            {/* Right: queue status + stop + send */}
+            <div className="nk-input-toolbar-right">
+              {queuedPrompts.length > 0 && (
+                <span className="nk-queue-pill">
+                  {queuedPrompts.length} queued
+                </span>
               )}
-            </button>
+              {isBusy && (
+                <button
+                  className="nk-stop-btn"
+                  title="Stop current response"
+                  onClick={handleStopRequest}
+                >
+                  <Square size={11} />
+                </button>
+              )}
+              <button
+                className={`nk-send-btn ${isBusy ? "nk-send-btn--queue" : ""}`}
+                disabled={!activeDraft.trim()}
+                title={
+                  isBusy && activeDraft.trim()
+                    ? "Queue prompt (Enter)"
+                    : "Send (Enter)"
+                }
+                onClick={onSendPrompt}
+              >
+                {isBusy ? <Plus size={13} /> : <ArrowUp size={14} />}
+              </button>
+            </div>
           </div>
         </div>
       </div>

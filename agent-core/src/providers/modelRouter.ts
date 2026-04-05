@@ -50,6 +50,7 @@ export class ModelRouter {
       model,
       messages,
       temperature: options.temperature,
+      signal: options.signal,
     });
   }
 
@@ -63,6 +64,7 @@ export class ModelRouter {
         model,
         messages,
         temperature: options.temperature,
+        signal: options.signal,
       });
       yield result.text;
       return;
@@ -72,6 +74,7 @@ export class ModelRouter {
       model,
       messages,
       temperature: options.temperature,
+      signal: options.signal,
     })) {
       yield token;
     }

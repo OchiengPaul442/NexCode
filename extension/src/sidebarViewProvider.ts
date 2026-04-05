@@ -17,6 +17,7 @@ interface WebviewSendPromptMessage {
   model?: string;
   mode?: AgentMode;
   temperature?: number;
+  allowWebSearch?: boolean;
   attachmentIds?: string[];
 }
 
@@ -197,7 +198,6 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     }
 
     this.isBusy = true;
-    this.postMessage({ type: "start" });
     const selectedAttachmentIds = message.attachmentIds ?? [];
 
     try {
@@ -215,11 +215,22 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
             ? message.temperature
             : this.getRuntimeSettings().temperature,
         allowTools: this.getRuntimeSettings().allowTools,
+        allowWebSearch:
+          typeof message.allowWebSearch === "boolean"
+            ? message.allowWebSearch
+            : this.getRuntimeSettings().allowWebSearch,
         workspaceRoot,
         activeFilePath: activeEditor?.document.uri.fsPath,
         selectedText: activeEditor?.document.getText(activeEditor.selection),
         attachments: this.resolveAttachmentsForPrompt(selectedAttachmentIds),
       };
+
+      this.postMessage({
+        type: "start",
+        provider: request.provider,
+        model: request.model,
+        mode: request.mode,
+      });
 
       for await (const event of orchestrator.stream(request)) {
         if (event.type === "final") {
@@ -589,6 +600,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     temperature: number;
     showReasoning: boolean;
     autoApplyChanges: boolean;
+    allowWebSearch: boolean;
   } {
     const config = vscode.workspace.getConfiguration("nexcodeKiboko");
 
@@ -614,6 +626,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       temperature: config.get<number>("temperature", 0.2),
       showReasoning: config.get<boolean>("showReasoning", true),
       autoApplyChanges: config.get<boolean>("autoApplyChanges", false),
+      allowWebSearch: config.get<boolean>("allowWebSearch", true),
     };
   }
 

@@ -162,6 +162,7 @@ export class NexcodeOrchestrator {
           provider,
           model,
           diagnostics,
+          request.allowWebSearch !== false,
         );
       } else if (request.prompt.trimStart().startsWith("/edit ")) {
         yield {
@@ -211,6 +212,12 @@ export class NexcodeOrchestrator {
       }
 
       response.diagnostics = diagnostics;
+      response.text = this.prependExecutionSummary(response, {
+        mode,
+        provider,
+        model,
+      });
+
       for (const token of chunkText(response.text, 32)) {
         yield {
           type: "token",
@@ -470,8 +477,29 @@ export class NexcodeOrchestrator {
     provider: ProviderId,
     model: string,
     diagnostics: string[],
+    allowWebSearch: boolean,
   ): Promise<OrchestratorResponse> {
     const toolCommand = prompt.replace(/^\s*\/tool\s+/, "").trim();
+
+    if (
+      /^(web-search|search-web|online-search)\b/i.test(toolCommand) &&
+      !allowWebSearch
+    ) {
+      return {
+        text: [
+          "## Tool Execution",
+          `Command: ${toolCommand}`,
+          "",
+          "Web search is disabled in settings. Enable it and try again.",
+        ].join("\n"),
+        modeUsed: mode,
+        providerUsed: provider,
+        modelUsed: model,
+        proposedEdits: [],
+        diagnostics,
+      };
+    }
+
     const result = await this.tools.runToolCall(toolCommand);
 
     if (!result.ok) {
@@ -625,6 +653,47 @@ export class NexcodeOrchestrator {
     return workspaceRoot
       ? `workspace:${workspaceRoot}`
       : `session:${randomUUID()}`;
+  }
+
+  private prependExecutionSummary(
+    response: OrchestratorResponse,
+    context: {
+      mode: AgentMode;
+      provider: ProviderId;
+      model: string;
+    },
+  ): string {
+    if (/^##\s+summary\b/im.test(response.text.trimStart())) {
+      return response.text;
+    }
+
+    const summaryLines = [
+      "## Summary",
+      `- Mode: ${context.mode}`,
+      `- Provider: ${context.provider}`,
+      `- Model: ${context.model}`,
+      `- Proposed edits: ${response.proposedEdits.length}`,
+      `- Diagnostics: ${response.diagnostics.length}`,
+      `- Outcome: ${this.deriveOutcomeLine(response.text)}`,
+    ];
+
+    return `${summaryLines.join("\n")}\n\n${response.text}`;
+  }
+
+  private deriveOutcomeLine(text: string): string {
+    const flattened = text
+      .replace(/```[\s\S]*?```/g, " ")
+      .replace(/[>#*_`]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    if (!flattened) {
+      return "Completed response generation.";
+    }
+
+    const sentenceMatch = flattened.match(/^(.{20,180}?[.!?])(?:\s|$)/);
+    const outcome = sentenceMatch ? sentenceMatch[1] : flattened.slice(0, 180);
+    return outcome.length > 180 ? `${outcome.slice(0, 177)}...` : outcome;
   }
 
   private async buildWorkspaceContext(

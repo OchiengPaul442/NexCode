@@ -53,6 +53,7 @@ export interface OrchestratorRequest {
   selectedText?: string;
   attachments?: RequestAttachment[];
   allowTools?: boolean;
+  allowWebSearch?: boolean;
 }
 
 export interface OrchestratorResponse {

@@ -76,7 +76,7 @@ body {
   justify-content: space-between;
   gap: 6px;
   height: var(--nk-topbar-h);
-  padding: 0 6px;
+  padding: 0 4px;
   border-bottom: 1px solid var(--nk-border2);
   background: var(--nk-bg);
   flex-shrink: 0;
@@ -146,7 +146,7 @@ body {
 
 /* Messages list */
 .nk-messages-list {
-  padding: 8px 8px 4px;
+  padding: 8px 4px 4px;
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -169,7 +169,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-width: 88%;
+  max-width: 92%;
 }
 .nk-msg-content--user {
   align-items: flex-end;
@@ -186,7 +186,7 @@ body {
   align-items: center;
   justify-content: center;
   min-height: 220px;
-  padding: 24px 12px 16px;
+  padding: 24px 8px 16px;
   text-align: center;
 }
 .nk-empty-hints {
@@ -248,8 +248,8 @@ body {
 .nk-thinking-wrap {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 8px 0 4px;
+  gap: 6px;
+  padding: 6px 0 4px;
 }
 .nk-thinking-row {
   display: flex;
@@ -263,47 +263,55 @@ body {
 }
 .nk-thinking-label {
   font-size: 11px;
-  color: var(--nk-muted);
+  color: #b8c4d4;
   font-weight: 500;
 }
-.nk-thinking-step {
+.nk-thinking-label--shimmer {
+  position: relative;
+  overflow: hidden;
+  white-space: nowrap;
+  max-width: 100%;
+  text-overflow: ellipsis;
+}
+.nk-thinking-label--shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.22) 45%,
+    transparent 70%
+  );
+  transform: translateX(-120%);
+  animation: nk-shimmer-text 1.8s ease-in-out infinite;
+}
+.nk-thinking-trace {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.nk-thinking-trace-item {
   display: flex;
   align-items: center;
   gap: 5px;
   font-size: 10px;
-  color: var(--nk-faint);
+  color: #788394;
   padding-left: 2px;
   line-height: 1.4;
 }
-.nk-thinking-dots {
-  display: flex;
-  gap: 3px;
-  align-items: center;
+.nk-thinking-trace-item--active {
+  color: #a8b3c5;
 }
-.nk-thinking-dots span {
-  display: inline-block;
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--nk-accent);
-  opacity: 0.3;
-  animation: nk-dot-pulse 1.2s ease-in-out infinite;
-}
-.nk-thinking-dots span:nth-child(2) {
-  animation-delay: 0.2s;
-}
-.nk-thinking-dots span:nth-child(3) {
-  animation-delay: 0.4s;
-}
-@keyframes nk-dot-pulse {
-  0%,
-  100% {
-    opacity: 0.25;
-    transform: scale(0.75);
+@keyframes nk-shimmer-text {
+  0% {
+    transform: translateX(-120%);
   }
-  50% {
-    opacity: 1;
-    transform: scale(1);
+  100% {
+    transform: translateX(140%);
   }
 }
 
@@ -329,6 +337,92 @@ body {
 .details-arrow {
   transition: transform 0.15s;
   display: inline-block;
+}
+
+.nk-reasoning-panel {
+  width: 100%;
+  background: linear-gradient(180deg, #202228 0%, #1b1d23 100%);
+  border: 1px solid #2b2f38;
+  border-radius: 8px;
+  padding: 7px 9px;
+  color: #9da8bb;
+}
+.nk-reasoning-panel--live {
+  border-color: rgba(2, 132, 199, 0.45);
+  box-shadow: inset 0 0 0 1px rgba(2, 132, 199, 0.08);
+}
+.nk-reasoning-panel-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: #b9c5d7;
+  margin-bottom: 5px;
+}
+.nk-reasoning-meta {
+  font-weight: 500;
+  color: #7f8aa0;
+  text-align: right;
+}
+.nk-reasoning-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.nk-reasoning-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #94a0b4;
+}
+.nk-reasoning-item--active {
+  color: #c0d0e8;
+}
+
+.nk-summary-card {
+  width: 100%;
+  margin-top: 2px;
+  background: #1d2026;
+  border: 1px solid #2f3540;
+  border-radius: 8px;
+  padding: 7px 9px;
+}
+.nk-summary-title {
+  margin: 0;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #9eabc0;
+}
+.nk-summary-line {
+  margin: 5px 0 4px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #ced5e3;
+}
+.nk-summary-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.nk-summary-list li {
+  font-size: 10px;
+  color: #8f9cb2;
+  background: #232832;
+  border: 1px solid #323947;
+  border-radius: 999px;
+  padding: 1px 7px;
 }
 
 /* ── Edit card ─────────────────────────────────────────────────────────────── */
@@ -397,7 +491,7 @@ body {
 /* ── Input area ────────────────────────────────────────────────────────────── */
 .nk-input-area {
   flex-shrink: 0;
-  padding: 6px 8px 8px;
+  padding: 5px 4px 6px;
   background: var(--nk-bg);
   border-top: 1px solid var(--nk-border2);
 }

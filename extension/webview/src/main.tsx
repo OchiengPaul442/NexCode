@@ -74,6 +74,9 @@ interface ChatMessage {
   role: "user" | "assistant";
   text: string;
   createdAt: number;
+  provider?: ProviderId;
+  model?: string;
+  mode?: AgentMode;
   streaming?: boolean;
   thinking?: boolean;
   error?: boolean;
@@ -107,6 +110,7 @@ interface SidebarSettings {
   autoApplyChanges: boolean;
   requireTerminalApproval: boolean;
   showDebugPanel: boolean;
+  enableWebSearch: boolean;
 }
 
 interface PersistedState {
@@ -124,6 +128,7 @@ interface BackendConfig {
   temperature: number;
   showReasoning: boolean;
   autoApplyChanges: boolean;
+  allowWebSearch: boolean;
 }
 
 interface StoreState {
@@ -154,11 +159,21 @@ interface StoreState {
   ) => void;
   clearActiveSession: () => void;
   addUserMessage: (text: string) => void;
-  beginAssistantMessage: () => { sessionId: string; messageId: string } | null;
+  beginAssistantMessage: (meta?: {
+    provider?: ProviderId;
+    model?: string;
+    mode?: AgentMode;
+  }) => { sessionId: string; messageId: string } | null;
   appendAssistantToken: (
     sessionId: string,
     messageId: string,
     token: string,
+  ) => void;
+  updateAssistantTrace: (
+    sessionId: string,
+    messageId: string,
+    reasoning: string[],
+    debug: string[],
   ) => void;
   finalizeAssistantMessage: (
     sessionId: string,
@@ -311,7 +326,16 @@ function createSession(defaults: {
 }
 
 function sanitizeReasoningStatus(raw: string): string {
-  const normalized = raw.toLowerCase();
+  const clean = raw.replace(/\s+/g, " ").trim();
+  const modeMeta = clean.match(
+    /^mode:\s*([^|]+)\|\s*provider:\s*([^|]+)\|\s*model:\s*(.+)$/i,
+  );
+  if (modeMeta) {
+    const [, mode, provider, model] = modeMeta;
+    return `Using ${model.trim()} on ${provider.trim()} (${mode.trim()} mode)`;
+  }
+
+  const normalized = clean.toLowerCase();
   if (
     normalized.includes("collecting workspace") ||
     normalized.includes("memory context")
@@ -336,7 +360,43 @@ function sanitizeReasoningStatus(raw: string): string {
   if (normalized.includes("specialist agent")) {
     return "Running specialist analysis";
   }
-  return raw;
+  return clean;
+}
+
+function formatAgentMode(mode?: AgentMode): string {
+  switch (mode) {
+    case "planner":
+      return "Planner";
+    case "coder":
+      return "Coder";
+    case "reviewer":
+      return "Reviewer";
+    case "qa":
+      return "QA";
+    case "security":
+      return "Security";
+    case "auto":
+      return "Auto";
+    default:
+      return "Agent";
+  }
+}
+
+function extractCompletionSummary(text: string): string {
+  const flattened = text
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`[^`]+`/g, " ")
+    .replace(/[>#*_]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!flattened) {
+    return "Response completed.";
+  }
+
+  const sentenceMatch = flattened.match(/^(.{20,220}?[.!?])(?:\s|$)/);
+  const sentence = sentenceMatch ? sentenceMatch[1] : flattened.slice(0, 220);
+  return sentence.length > 220 ? `${sentence.slice(0, 217)}...` : sentence;
 }
 
 function formatRelativeTime(timestamp: number): string {
@@ -469,6 +529,15 @@ const useStore = create<StoreState>((set, get) => {
     mode: "architect" as UiMode,
   };
 
+  const defaultSidebarSettings: SidebarSettings = {
+    temperature: 0.2,
+    showReasoning: true,
+    autoApplyChanges: false,
+    requireTerminalApproval: true,
+    showDebugPanel: false,
+    enableWebSearch: true,
+  };
+
   const initialSessions = persisted?.sessions?.length
     ? persisted.sessions
     : [createSession(initialDefaults)];
@@ -482,12 +551,9 @@ const useStore = create<StoreState>((set, get) => {
     isBusy: false,
     settingsPanelOpen: false,
     defaults: initialDefaults,
-    settings: persisted?.settings ?? {
-      temperature: 0.2,
-      showReasoning: true,
-      autoApplyChanges: false,
-      requireTerminalApproval: true,
-      showDebugPanel: false,
+    settings: {
+      ...defaultSidebarSettings,
+      ...(persisted?.settings ?? {}),
     },
     providerStatus: {
       ollama: undefined,
@@ -525,6 +591,10 @@ const useStore = create<StoreState>((set, get) => {
             typeof config.requireTerminalApproval === "boolean"
               ? config.requireTerminalApproval
               : state.settings.requireTerminalApproval,
+          enableWebSearch:
+            typeof config.allowWebSearch === "boolean"
+              ? config.allowWebSearch
+              : state.settings.enableWebSearch,
         };
 
         return {
@@ -668,7 +738,7 @@ const useStore = create<StoreState>((set, get) => {
         };
       });
     },
-    beginAssistantMessage: () => {
+    beginAssistantMessage: (meta) => {
       const activeSessionId = get().activeSessionId;
       if (!activeSessionId) {
         return null;
@@ -689,6 +759,9 @@ const useStore = create<StoreState>((set, get) => {
                     role: "assistant",
                     text: "",
                     createdAt: Date.now(),
+                    provider: meta?.provider,
+                    model: meta?.model,
+                    mode: meta?.mode,
                     streaming: true,
                     thinking: true,
                     reasoning: [],
@@ -705,6 +778,27 @@ const useStore = create<StoreState>((set, get) => {
         sessionId: activeSessionId,
         messageId,
       };
+    },
+    updateAssistantTrace: (sessionId, messageId, reasoning, debug) => {
+      set((state) => ({
+        sessions: state.sessions.map((session) =>
+          session.id === sessionId
+            ? {
+                ...session,
+                updatedAt: Date.now(),
+                messages: session.messages.map((message) =>
+                  message.id === messageId
+                    ? {
+                        ...message,
+                        reasoning,
+                        debug,
+                      }
+                    : message,
+                ),
+              }
+            : session,
+        ),
+      }));
     },
     appendAssistantToken: (sessionId, messageId, token) => {
       set((state) => ({
@@ -909,44 +1003,119 @@ function StatusDot({
 }
 
 // ─── Thinking Indicator ───────────────────────────────────────────────────────
-const THINK_PHASES = [
-  { icon: Cpu, label: "Understanding request" },
-  { icon: Search, label: "Analyzing codebase" },
-  { icon: GitBranch, label: "Planning approach" },
-  { icon: Code2, label: "Formulating response" },
-];
+function ThinkingIndicator({
+  reasoning,
+  provider,
+  model,
+  mode,
+}: {
+  reasoning: string[];
+  provider?: ProviderId;
+  model?: string;
+  mode?: AgentMode;
+}) {
+  const phrases = useMemo(() => {
+    const dynamic = reasoning.slice(-4);
+    const modelLabel = model?.trim() ? model.trim() : "selected model";
+    const providerLabel = provider ?? "provider";
+    const modeLabel = formatAgentMode(mode).toLowerCase();
 
-function ThinkingIndicator({ reasoning }: { reasoning: string[] }) {
-  const [phaseIdx, setPhaseIdx] = useState(0);
+    return [
+      `Thinking with ${modelLabel}`,
+      `Running ${modeLabel} flow on ${providerLabel}`,
+      ...dynamic,
+    ];
+  }, [reasoning, provider, model, mode]);
+
+  const [phraseIndex, setPhraseIndex] = useState(0);
 
   useEffect(() => {
-    const t = setInterval(() => {
-      setPhaseIdx((p) => (p + 1) % THINK_PHASES.length);
-    }, 900);
-    return () => clearInterval(t);
-  }, []);
+    if (phrases.length <= 1) {
+      setPhraseIndex(0);
+      return;
+    }
 
-  const phase = THINK_PHASES[phaseIdx];
-  const PhaseIcon = phase.icon;
-  const latestStep = reasoning.at(-1);
+    const timer = window.setInterval(() => {
+      setPhraseIndex((current) => {
+        if (phrases.length <= 1) {
+          return 0;
+        }
+
+        let next = current;
+        let guard = 0;
+        while (next === current && guard < 8) {
+          next = Math.floor(Math.random() * phrases.length);
+          guard += 1;
+        }
+        return next;
+      });
+    }, 1800);
+
+    return () => clearInterval(timer);
+  }, [phrases]);
+
+  const visibleSteps = reasoning.slice(-5);
 
   return (
     <div className="nk-thinking-wrap">
       <div className="nk-thinking-row">
-        <span className="nk-thinking-dots">
-          <span />
-          <span />
-          <span />
+        <Cpu size={12} className="nk-thinking-icon" />
+        <span
+          key={`${phrases[phraseIndex]}-${phraseIndex}`}
+          className="nk-thinking-label nk-thinking-label--shimmer"
+        >
+          {phrases[phraseIndex]}
         </span>
-        <PhaseIcon size={12} className="nk-thinking-icon" />
-        <span className="nk-thinking-label">{phase.label}</span>
       </div>
-      {latestStep && (
-        <div className="nk-thinking-step">
-          <Zap size={9} style={{ color: "#0284c7", flexShrink: 0 }} />
-          <span>{latestStep}</span>
-        </div>
+
+      {visibleSteps.length > 0 && (
+        <ol className="nk-thinking-trace">
+          {visibleSteps.map((step, index) => {
+            const isLatest = index === visibleSteps.length - 1;
+            return (
+              <li
+                key={`thinking-step-${index}-${step}`}
+                className={`nk-thinking-trace-item ${isLatest ? "nk-thinking-trace-item--active" : ""}`}
+              >
+                <Zap size={9} style={{ color: "#0284c7", flexShrink: 0 }} />
+                <span>{step}</span>
+              </li>
+            );
+          })}
+        </ol>
       )}
+    </div>
+  );
+}
+
+function CompletionSummary({ message }: { message: ChatMessage }) {
+  if (
+    message.role !== "assistant" ||
+    message.streaming ||
+    message.thinking ||
+    message.error
+  ) {
+    return null;
+  }
+
+  const bullets = [
+    message.mode ? `Mode: ${formatAgentMode(message.mode)}` : null,
+    message.model ? `Model: ${message.model}` : null,
+    `${message.proposedEdits.length} edit proposal${message.proposedEdits.length === 1 ? "" : "s"}`,
+    `${message.reasoning.length} reasoning step${message.reasoning.length === 1 ? "" : "s"}`,
+  ].filter((entry): entry is string => Boolean(entry));
+
+  return (
+    <div className="nk-summary-card">
+      <p className="nk-summary-title">Summary</p>
+      <p className="nk-summary-line">
+        {extractCompletionSummary(message.text)}
+      </p>
+      <ul className="nk-summary-list">
+        {bullets.map((item) => (
+          <li key={`${message.id}-${item}`}>{item}</li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -983,7 +1152,12 @@ function MessageBubble({
       >
         {/* Thinking state */}
         {message.thinking && !message.text && (
-          <ThinkingIndicator reasoning={message.reasoning} />
+          <ThinkingIndicator
+            reasoning={message.reasoning}
+            provider={message.provider}
+            model={message.model}
+            mode={message.mode}
+          />
         )}
 
         {/* Main text */}
@@ -1013,17 +1187,41 @@ function MessageBubble({
 
         {/* Reasoning */}
         {!isUser && showReasoning && message.reasoning.length > 0 && (
-          <details className="nk-details-block w-full">
-            <summary className="cursor-pointer flex items-center gap-1.5 text-[11px] font-medium select-none">
-              <ChevronRight size={11} className="details-arrow" />
-              Steps
-            </summary>
-            <ol className="mt-2 list-decimal space-y-1 pl-5 text-[11px]">
-              {message.reasoning.map((item, i) => (
-                <li key={`${message.id}-r-${i}`}>{item}</li>
-              ))}
+          <div
+            className={`nk-reasoning-panel ${message.streaming || message.thinking ? "nk-reasoning-panel--live" : ""}`}
+          >
+            <div className="nk-reasoning-panel-header">
+              <span>
+                {message.streaming || message.thinking
+                  ? "Reasoning (live)"
+                  : "Reasoning steps"}
+              </span>
+              {(message.model || message.mode) && (
+                <span className="nk-reasoning-meta">
+                  {[
+                    message.model,
+                    message.mode ? formatAgentMode(message.mode) : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" • ")}
+                </span>
+              )}
+            </div>
+            <ol className="nk-reasoning-list">
+              {message.reasoning.map((item, i) => {
+                const isLatest = i === message.reasoning.length - 1;
+                return (
+                  <li
+                    key={`${message.id}-r-${i}`}
+                    className={`nk-reasoning-item ${isLatest && (message.streaming || message.thinking) ? "nk-reasoning-item--active" : ""}`}
+                  >
+                    <Zap size={9} style={{ color: "#0284c7", flexShrink: 0 }} />
+                    <span>{item}</span>
+                  </li>
+                );
+              })}
             </ol>
-          </details>
+          </div>
         )}
 
         {/* Debug */}
@@ -1110,6 +1308,8 @@ function MessageBubble({
             ))}
           </div>
         )}
+
+        {!isUser && <CompletionSummary message={message} />}
       </div>
     </motion.div>
   );
@@ -1342,6 +1542,7 @@ function SettingsDrawer({
             [
               ["Show reasoning", "showReasoning"],
               ["Show debug panel", "showDebugPanel"],
+              ["Enable web search tool", "enableWebSearch"],
               ["Auto-apply changes", "autoApplyChanges"],
               ["Require terminal approval", "requireTerminalApproval"],
             ] as [string, keyof SidebarSettings][]
@@ -1565,15 +1766,39 @@ function App() {
           reasoningRef.current = [];
           debugRef.current = [];
           tokenQueueRef.current = [];
-          pendingRef.current = useStore.getState().beginAssistantMessage();
+          pendingRef.current = useStore.getState().beginAssistantMessage({
+            provider:
+              typeof payload.provider === "string"
+                ? (payload.provider as ProviderId)
+                : undefined,
+            model:
+              typeof payload.model === "string" ? payload.model : undefined,
+            mode:
+              typeof payload.mode === "string"
+                ? (payload.mode as AgentMode)
+                : undefined,
+          });
           return;
         case "status": {
           const raw = String(payload.message ?? "");
           if (!raw) return;
           debugRef.current.push(raw);
           const cleaned = sanitizeReasoningStatus(raw);
-          if (reasoningRef.current.at(-1) !== cleaned)
+          if (reasoningRef.current.at(-1) !== cleaned) {
             reasoningRef.current.push(cleaned);
+          }
+
+          const cur = pendingRef.current;
+          if (cur) {
+            useStore
+              .getState()
+              .updateAssistantTrace(
+                cur.sessionId,
+                cur.messageId,
+                [...reasoningRef.current],
+                [...debugRef.current],
+              );
+          }
           return;
         }
         case "token": {
@@ -1762,6 +1987,17 @@ function App() {
       )
         return;
     }
+
+    if (
+      !settings.enableWebSearch &&
+      /^\/tool\s+(web-search|search-web|online-search)\b/i.test(parsed.prompt)
+    ) {
+      window.alert(
+        "Web search is disabled. Enable 'Enable web search tool' in Settings to use this command.",
+      );
+      return;
+    }
+
     useStore.getState().addUserMessage(rawPrompt);
     useStore.getState().setDraft(sess.id, "");
     vscode.postMessage({
@@ -1771,6 +2007,7 @@ function App() {
       model: sess.model,
       mode: parsed.mode,
       temperature: settings.temperature,
+      allowWebSearch: settings.enableWebSearch,
       attachmentIds: useStore.getState().attachments.map((a) => a.id),
     });
   }

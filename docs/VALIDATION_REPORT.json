@@ -1,69 +1,69 @@
 {
   "summary": {
     "models": [
-      "kimi-k2.5:cloud"
+      "gpt-oss:120b-cloud"
     ],
     "total": 9,
     "passed": 9,
     "failed": 0,
-    "memoryBefore": 160,
-    "memoryAfter": 169,
+    "memoryBefore": 175,
+    "memoryAfter": 184,
     "memoryDelta": 9
   },
   "results": [
     {
-      "model": "kimi-k2.5:cloud",
+      "model": "gpt-oss:120b-cloud",
       "case": "real-world-auto",
       "ok": true,
-      "durationMs": 322401
+      "durationMs": 97492
     },
     {
-      "model": "kimi-k2.5:cloud",
+      "model": "gpt-oss:120b-cloud",
       "case": "tool-search",
       "ok": true,
-      "durationMs": 3744
+      "durationMs": 5296
     },
     {
-      "model": "kimi-k2.5:cloud",
+      "model": "gpt-oss:120b-cloud",
       "case": "tool-read",
       "ok": true,
-      "durationMs": 3323
+      "durationMs": 3648
     },
     {
-      "model": "kimi-k2.5:cloud",
+      "model": "gpt-oss:120b-cloud",
       "case": "tool-web-search",
       "ok": true,
-      "durationMs": 4050
+      "durationMs": 6786
     },
     {
-      "model": "kimi-k2.5:cloud",
+      "model": "gpt-oss:120b-cloud",
       "case": "terminal-create-file",
       "ok": true,
-      "durationMs": 1673
+      "durationMs": 4226
     },
     {
-      "model": "kimi-k2.5:cloud",
+      "model": "gpt-oss:120b-cloud",
       "case": "terminal-move-file",
       "ok": true,
-      "durationMs": 1671
+      "durationMs": 3928
     },
     {
-      "model": "kimi-k2.5:cloud",
+      "model": "gpt-oss:120b-cloud",
       "case": "terminal-delete-file",
       "ok": true,
-      "durationMs": 1650
+      "durationMs": 4125
     },
     {
-      "model": "kimi-k2.5:cloud",
+      "model": "gpt-oss:120b-cloud",
       "case": "terminal-security-block",
       "ok": true,
-      "durationMs": 1586
+      "durationMs": 4106
     },
     {
-      "model": "kimi-k2.5:cloud",
+      "model": "gpt-oss:120b-cloud",
       "case": "edit-proposal-apply",
       "ok": true,
-      "durationMs": 11694
+      "durationMs": 6645
     }
   ]
 }

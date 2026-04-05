@@ -139,6 +139,11 @@
           "type": "boolean",
           "default": false,
           "description": "Automatically apply generated edit proposals."
+        },
+        "nexcodeKiboko.allowWebSearch": {
+          "type": "boolean",
+          "default": true,
+          "description": "Allow /tool web-search commands from the sidebar."
         }
       }
     }

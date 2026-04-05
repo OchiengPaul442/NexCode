@@ -1,0 +1,79 @@
+[
+  {
+    "id": "3be33f96-8a16-44de-8b03-99a0b560ec02",
+    "timestamp": "2026-04-05T13:46:11.514Z",
+    "type": "interaction",
+    "text": "/tool unknowncommand abc\n\n## Tool Execution\nCommand: unknowncommand abc\n\n```text\nUnknown tool command. Use one of: search, terminal, git-status, git-diff, git-branch, test, read\n```",
+    "tags": [
+      "auto",
+      "ollama",
+      "qwen2.5-coder:7b"
+    ]
+  },
+  {
+    "id": "8299ce78-82eb-4f0c-aedd-e441979157cd",
+    "timestamp": "2026-04-05T13:46:39.033Z",
+    "type": "interaction",
+    "text": "Design a small API endpoint plan.\n\n## Planner\nThe planner agent could not reach the configured model endpoint.\nFallback suggestion:\n1) Confirm target files and acceptance criteria. 2) Implement incrementally. 3) Run tests and review.\n\n## Coder\nThe coder agent could not reach the configured model endpoint.\nFallback suggestion:\nImplement the smallest safe change, keep interfaces stable, and add tests for the changed behavior.\n\n## Reviewer\nThe reviewer agent could not reach the configured model endpoint.\nFallback suggestion:\nCheck for regressions, null/edge handling, and missing tests around modified code paths.\n\n## QA\nThe qa agent could not reach the configured model endpoint.\nFallback suggestion:\nAdd one happy-path test, one edge-case test, and one regression test for prior behavior.\n\n## Security\nThe security agent could not reach the configured model endpoint.\nFallback suggestion:\nValidate input handling, avoid secret leakage, and pin/scan dependencies in CI.",
+    "tags": [
+      "auto",
+      "openai-compatible",
+      "qwen2.5-coder:7b"
+    ]
+  },
+  {
+    "id": "b3cad039-7557-45e5-ba15-f3b869a245c0",
+    "timestamp": "2026-04-05T13:46:39.056Z",
+    "type": "interaction",
+    "text": "/tool unknowncommand abc\n\n## Tool Execution\nCommand: unknowncommand abc\n\n```text\nUnknown tool command. Use one of: search, terminal, git-status, git-diff, git-branch, test, read\n```",
+    "tags": [
+      "auto",
+      "openai-compatible",
+      "qwen2.5-coder:7b"
+    ]
+  },
+  {
+    "id": "c0d17647-63e4-48ef-95b1-ca7ad84ee5e9",
+    "timestamp": "2026-04-05T13:46:39.098Z",
+    "type": "interaction",
+    "text": "/edit prompts/coder.system.md :: Add a line requesting concise code comments.\n\n## Proposed Edit\nFile: prompts/coder.system.md\nInstruction: Add a line requesting concise code comments.\n\nA patch preview is attached below. Apply it from the UI when ready.",
+    "tags": [
+      "auto",
+      "openai-compatible",
+      "qwen2.5-coder:7b"
+    ]
+  },
+  {
+    "id": "5b30ba24-9537-40b8-acf4-a7396f78942e",
+    "timestamp": "2026-04-05T13:48:56.560Z",
+    "type": "interaction",
+    "text": "Design a small API endpoint plan.\n\n## Planner\nThe planner agent could not reach the configured model endpoint.\nFallback suggestion:\n1) Confirm target files and acceptance criteria. 2) Implement incrementally. 3) Run tests and review.\n\n## Coder\nThe coder agent could not reach the configured model endpoint.\nFallback suggestion:\nImplement the smallest safe change, keep interfaces stable, and add tests for the changed behavior.\n\n## Reviewer\nThe reviewer agent could not reach the configured model endpoint.\nFallback suggestion:\nCheck for regressions, null/edge handling, and missing tests around modified code paths.\n\n## QA\nThe qa agent could not reach the configured model endpoint.\nFallback suggestion:\nAdd one happy-path test, one edge-case test, and one regression test for prior behavior.\n\n## Security\nThe security agent could not reach the configured model endpoint.\nFallback suggestion:\nValidate input handling, avoid secret leakage, and pin/scan dependencies in CI.",
+    "tags": [
+      "auto",
+      "openai-compatible",
+      "qwen2.5-coder:7b"
+    ]
+  },
+  {
+    "id": "a6dd4521-2bc4-4b6b-82a5-30b2e84795b9",
+    "timestamp": "2026-04-05T13:48:56.594Z",
+    "type": "interaction",
+    "text": "/tool unknowncommand abc\n\n## Tool Execution\nCommand: unknowncommand abc\n\n```text\nUnknown tool command. Use one of: search, terminal, git-status, git-diff, git-branch, test, read\n```",
+    "tags": [
+      "auto",
+      "openai-compatible",
+      "qwen2.5-coder:7b"
+    ]
+  },
+  {
+    "id": "a346e21b-0046-446c-890c-6af0bf859902",
+    "timestamp": "2026-04-05T13:48:56.632Z",
+    "type": "interaction",
+    "text": "/edit prompts/coder.system.md :: Add a line requesting concise code comments.\n\n## Proposed Edit\nFile: prompts/coder.system.md\nInstruction: Add a line requesting concise code comments.\n\nA patch preview is attached below. Apply it from the UI when ready.",
+    "tags": [
+      "auto",
+      "openai-compatible",
+      "qwen2.5-coder:7b"
+    ]
+  }
+]

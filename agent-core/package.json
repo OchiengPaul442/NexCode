@@ -1,0 +1,22 @@
+{
+  "name": "@nexcode/agent-core",
+  "version": "0.1.0",
+  "description": "Core orchestration runtime for NEXCODE-KIBOKO.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "commonjs",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "watch": "tsc -w -p tsconfig.json",
+    "test": "vitest run",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "diff-match-patch": "^1.0.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "typescript": "^5.8.3",
+    "vitest": "^2.1.8"
+  }
+}

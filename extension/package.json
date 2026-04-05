@@ -1,0 +1,116 @@
+{
+  "name": "nexcode-kiboko-extension",
+  "displayName": "NEXCODE-KIBOKO",
+  "description": "Local-first, multi-agent AI coding assistant for VS Code.",
+  "publisher": "nexcode",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "nexcodeKiboko",
+          "title": "NexCode",
+          "icon": "media/kiboko.svg"
+        }
+      ]
+    },
+    "views": {
+      "nexcodeKiboko": [
+        {
+          "id": "nexcodeKiboko.sidebarView",
+          "name": "NEXCODE-KIBOKO",
+          "icon": "media/kiboko.svg"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "nexcodeKiboko.openSidebar",
+        "title": "NEXCODE: Open Sidebar"
+      },
+      {
+        "command": "nexcodeKiboko.pickModel",
+        "title": "NEXCODE: Pick Model"
+      },
+      {
+        "command": "nexcodeKiboko.clearConversation",
+        "title": "NEXCODE: Clear Conversation"
+      }
+    ],
+    "configuration": {
+      "title": "NEXCODE-KIBOKO",
+      "properties": {
+        "nexcodeKiboko.defaultProvider": {
+          "type": "string",
+          "enum": [
+            "ollama",
+            "openai-compatible"
+          ],
+          "default": "ollama",
+          "description": "Default model provider used for requests."
+        },
+        "nexcodeKiboko.defaultModel": {
+          "type": "string",
+          "default": "qwen2.5-coder:7b",
+          "description": "Default model name to send to the selected provider."
+        },
+        "nexcodeKiboko.defaultMode": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "planner",
+            "coder",
+            "reviewer",
+            "qa",
+            "security"
+          ],
+          "default": "auto",
+          "description": "Default agent mode for orchestration."
+        },
+        "nexcodeKiboko.ollamaBaseUrl": {
+          "type": "string",
+          "default": "http://localhost:11434",
+          "description": "Base URL for local Ollama API."
+        },
+        "nexcodeKiboko.openAIBaseUrl": {
+          "type": "string",
+          "default": "https://api.openai.com/v1",
+          "description": "Base URL for OpenAI-compatible API endpoint."
+        },
+        "nexcodeKiboko.openAIApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "API key for OpenAI-compatible provider."
+        },
+        "nexcodeKiboko.allowToolCommands": {
+          "type": "boolean",
+          "default": true,
+          "description": "Allow /tool command execution from the sidebar chat."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc -p .",
+    "watch": "tsc -watch -p .",
+    "lint": "tsc -p . --noEmit",
+    "package": "vsce package"
+  },
+  "dependencies": {
+    "@nexcode/agent-core": "file:../agent-core"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "@types/vscode": "^1.95.0",
+    "@vscode/vsce": "^3.2.2",
+    "typescript": "^5.8.3"
+  }
+}

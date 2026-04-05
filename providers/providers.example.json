@@ -1,0 +1,11 @@
+{
+  "defaultProvider": "ollama",
+  "defaultModel": "qwen2.5-coder:7b",
+  "ollama": {
+    "baseUrl": "http://localhost:11434"
+  },
+  "openaiCompatible": {
+    "baseUrl": "https://api.openai.com/v1",
+    "apiKeyEnvVar": "OPENAI_API_KEY"
+  }
+}

@@ -1,0 +1,250 @@
+:root {
+  --panel-bg: color-mix(
+    in srgb,
+    var(--vscode-editor-background) 82%,
+    #0a7c74 18%
+  );
+  --surface: color-mix(
+    in srgb,
+    var(--vscode-sideBar-background) 90%,
+    #0d2826 10%
+  );
+  --surface-strong: color-mix(
+    in srgb,
+    var(--vscode-sideBar-background) 70%,
+    #11413d 30%
+  );
+  --text: var(--vscode-foreground);
+  --text-muted: color-mix(in srgb, var(--vscode-foreground) 70%, transparent);
+  --accent: #34b1a4;
+  --accent-2: #ef9f3f;
+  --danger: #de4b4b;
+  --border: color-mix(
+    in srgb,
+    var(--vscode-editorWidget-border) 70%,
+    #1b5b55 30%
+  );
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  color: var(--text);
+  background:
+    radial-gradient(
+      circle at top right,
+      color-mix(in srgb, var(--accent) 16%, transparent) 0%,
+      transparent 45%
+    ),
+    radial-gradient(
+      circle at bottom left,
+      color-mix(in srgb, var(--accent-2) 12%, transparent) 0%,
+      transparent 40%
+    ),
+    var(--panel-bg);
+  font-family: var(--vscode-font-family);
+}
+
+.layout {
+  display: grid;
+  grid-template-rows: auto auto minmax(180px, 1fr) auto auto;
+  height: 100vh;
+  padding: 10px;
+  gap: 10px;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.brand {
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.controls {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+label {
+  display: grid;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+select,
+input,
+textarea,
+button {
+  font: inherit;
+  color: inherit;
+}
+
+select,
+input,
+textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(
+    in srgb,
+    var(--surface-strong) 78%,
+    var(--vscode-editor-background) 22%
+  );
+  padding: 8px;
+}
+
+.chat {
+  overflow: auto;
+  display: grid;
+  gap: 8px;
+  padding-right: 2px;
+}
+
+.message {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px;
+  background: var(--surface);
+}
+
+.message.user {
+  border-left: 4px solid var(--accent);
+}
+
+.message.assistant {
+  border-left: 4px solid var(--accent-2);
+}
+
+.message.status {
+  border-left: 4px solid color-mix(in srgb, var(--accent) 60%, #fff 40%);
+  opacity: 0.9;
+}
+
+.message.error {
+  border-left: 4px solid var(--danger);
+}
+
+.message-label {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  opacity: 0.8;
+  margin-bottom: 6px;
+}
+
+.message-body {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--vscode-editor-font-family);
+  font-size: 12px;
+}
+
+.composer {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+button {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: color-mix(in srgb, var(--accent) 20%, var(--surface-strong) 80%);
+  cursor: pointer;
+}
+
+button.secondary {
+  background: color-mix(in srgb, var(--surface-strong) 84%, #1c1c1c 16%);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.history {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px;
+  background: var(--surface);
+}
+
+.history h2 {
+  margin: 0 0 8px 0;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.history ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+
+.history-item {
+  width: 100%;
+  text-align: left;
+  background: color-mix(in srgb, var(--surface-strong) 70%, #0f2a28 30%);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.edits {
+  margin-top: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.edit-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px;
+  background: color-mix(in srgb, var(--surface-strong) 72%, #172927 28%);
+}
+
+.edit-card summary {
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.patch {
+  margin: 8px 0;
+  max-height: 180px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 11px;
+  background: var(--vscode-editor-background);
+}
+
+.apply {
+  width: 100%;
+}

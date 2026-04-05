@@ -1,0 +1,19 @@
+{
+  "name": "nexcode-kiboko",
+  "version": "0.1.0",
+  "private": true,
+  "description": "NEXCODE-KIBOKO local-first multi-agent coding assistant for VS Code.",
+  "workspaces": [
+    "agent-core",
+    "extension"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "npm run -w agent-core build && npm run -w extension build",
+    "test": "npm run -w agent-core test",
+    "lint": "npm run -w agent-core lint && npm run -w extension lint",
+    "package:vsix": "npm run -w extension package"
+  }
+}

@@ -3,11 +3,11 @@
     "models": [
       "kimi-k2.5:cloud"
     ],
-    "total": 9,
-    "passed": 9,
+    "total": 11,
+    "passed": 11,
     "failed": 0,
-    "memoryBefore": 201,
-    "memoryAfter": 210,
+    "memoryBefore": 4,
+    "memoryAfter": 13,
     "memoryDelta": 9
   },
   "results": [
@@ -15,55 +15,67 @@
       "model": "kimi-k2.5:cloud",
       "case": "real-world-auto",
       "ok": true,
-      "durationMs": 142175
+      "durationMs": 345091
     },
     {
       "model": "kimi-k2.5:cloud",
       "case": "tool-search",
       "ok": true,
-      "durationMs": 9007
+      "durationMs": 30102
     },
     {
       "model": "kimi-k2.5:cloud",
       "case": "tool-read",
       "ok": true,
-      "durationMs": 7730
+      "durationMs": 33
     },
     {
       "model": "kimi-k2.5:cloud",
       "case": "tool-web-search",
       "ok": true,
-      "durationMs": 11175
+      "durationMs": 2679
     },
     {
       "model": "kimi-k2.5:cloud",
       "case": "terminal-create-file",
       "ok": true,
-      "durationMs": 7890
+      "durationMs": 107
     },
     {
       "model": "kimi-k2.5:cloud",
       "case": "terminal-move-file",
       "ok": true,
-      "durationMs": 7862
+      "durationMs": 110
     },
     {
       "model": "kimi-k2.5:cloud",
       "case": "terminal-delete-file",
       "ok": true,
-      "durationMs": 7920
+      "durationMs": 112
     },
     {
       "model": "kimi-k2.5:cloud",
       "case": "terminal-security-block",
       "ok": true,
-      "durationMs": 7840
+      "durationMs": 35
     },
     {
       "model": "kimi-k2.5:cloud",
       "case": "edit-proposal-apply",
       "ok": true,
-      "durationMs": 15332
+      "durationMs": 10016
+    },
+    {
+      "model": "kimi-k2.5:cloud",
+      "case": "empty-workspace-command-lifecycle",
+      "ok": true,
+      "durationMs": 5311
+    },
+    {
+      "model": "kimi-k2.5:cloud",
+      "case": "nextjs-blog-scaffold",
+      "ok": true,
+      "durationMs": 84787
     }
   ]
 }

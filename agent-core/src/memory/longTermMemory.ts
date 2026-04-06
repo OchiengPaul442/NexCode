@@ -52,8 +52,13 @@ export class LongTermMemoryStore {
   private async readAll(): Promise<LongTermMemoryEntry[]> {
     await this.ensureFile();
     const raw = await fs.readFile(this.filePath, "utf8");
-    const parsed = JSON.parse(raw) as LongTermMemoryEntry[];
-    return Array.isArray(parsed) ? parsed : [];
+    try {
+      const parsed = JSON.parse(raw) as LongTermMemoryEntry[];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      await this.recoverFromCorruption(raw);
+      return [];
+    }
   }
 
   private async writeAll(entries: LongTermMemoryEntry[]): Promise<void> {
@@ -69,5 +74,17 @@ export class LongTermMemoryStore {
     } catch {
       await fs.writeFile(this.filePath, "[]", "utf8");
     }
+  }
+
+  private async recoverFromCorruption(rawContent: string): Promise<void> {
+    const backupPath = `${this.filePath}.corrupt-${Date.now()}.bak`;
+
+    try {
+      await fs.writeFile(backupPath, rawContent, "utf8");
+    } catch {
+      // Best-effort backup only.
+    }
+
+    await fs.writeFile(this.filePath, "[]", "utf8");
   }
 }

@@ -32,6 +32,21 @@ function safeName(input) {
   return input.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
+function removePathIfExists(targetPath) {
+  if (fs.existsSync(targetPath)) {
+    fs.rmSync(targetPath, { recursive: true, force: true });
+  }
+}
+
+function firstExistingPath(candidates) {
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
+
 function readLongTermMemoryCount() {
   const memoryPath = path.join(
     workspaceRoot,
@@ -99,8 +114,22 @@ async function runModelSuite(orchestrator, model) {
     `tool-${modelTag}-b.txt`,
   );
   const editFile = path.join(workspaceRoot, ".nexcode", `edit-${modelTag}.md`);
+  const scaffoldWorkspaceRoot = path.join(
+    workspaceRoot,
+    ".nexcode",
+    `scaffold-${modelTag}`,
+  );
+  const universalWorkspaceRoot = path.join(
+    workspaceRoot,
+    ".nexcode",
+    `universal-${modelTag}`,
+  );
 
   fs.mkdirSync(path.join(workspaceRoot, ".nexcode"), { recursive: true });
+  removePathIfExists(scaffoldWorkspaceRoot);
+  fs.mkdirSync(scaffoldWorkspaceRoot, { recursive: true });
+  removePathIfExists(universalWorkspaceRoot);
+  fs.mkdirSync(universalWorkspaceRoot, { recursive: true });
 
   const caseResults = [];
 
@@ -273,6 +302,177 @@ async function runModelSuite(orchestrator, model) {
     assert(text.length > 0, "Edit output is empty");
   });
 
+  await runCase("empty-workspace-command-lifecycle", async () => {
+    removePathIfExists(universalWorkspaceRoot);
+    fs.mkdirSync(universalWorkspaceRoot, { recursive: true });
+
+    const universalOrchestrator = new NexcodeOrchestrator({
+      workspaceRoot: universalWorkspaceRoot,
+    });
+
+    const notePath = path.join(universalWorkspaceRoot, "note.txt");
+    const createCommand =
+      "node -e \"const fs=require('fs');fs.writeFileSync('note.txt','alpha\\n');\"";
+    const createResponse = await runRequest(universalOrchestrator, model, {
+      mode: "auto",
+      prompt: `Please run this command:\n${createCommand}`,
+    });
+
+    assert(
+      /tool execution/i.test(createResponse.text || ""),
+      "Natural-language command request was not executed as a tool command",
+    );
+    assert(
+      fs.existsSync(notePath),
+      "Natural-language command did not create note.txt",
+    );
+
+    const editResponse = await runRequest(universalOrchestrator, model, {
+      mode: "coder",
+      prompt: "/edit note.txt :: Append a new line with the text beta.",
+    });
+
+    assert(
+      Array.isArray(editResponse.proposedEdits) &&
+        editResponse.proposedEdits.length > 0,
+      "Inline edit test did not generate a proposed edit",
+    );
+
+    await universalOrchestrator.applyProposedEdit(
+      editResponse.proposedEdits[0],
+    );
+
+    const editedNote = fs.readFileSync(notePath, "utf8");
+    assert(
+      /alpha/i.test(editedNote),
+      "Edited note.txt lost the original content",
+    );
+    assert(
+      /beta/i.test(editedNote),
+      "Edited note.txt did not include beta line",
+    );
+
+    const deleteCommand =
+      "node -e \"const fs=require('fs');fs.rmSync('note.txt',{force:true});\"";
+    const deleteResponse = await runRequest(universalOrchestrator, model, {
+      mode: "auto",
+      prompt: `Run this command: ${deleteCommand}`,
+    });
+
+    assert(
+      /tool execution/i.test(deleteResponse.text || ""),
+      "Natural-language delete command was not executed as a tool command",
+    );
+    assert(
+      !fs.existsSync(notePath),
+      "Natural-language delete command did not remove note.txt",
+    );
+  });
+
+  await runCase("nextjs-blog-scaffold", async () => {
+    removePathIfExists(scaffoldWorkspaceRoot);
+    fs.mkdirSync(scaffoldWorkspaceRoot, { recursive: true });
+    const scaffoldOrchestrator = new NexcodeOrchestrator({
+      workspaceRoot: scaffoldWorkspaceRoot,
+    });
+
+    const scaffoldResponse = await runRequest(scaffoldOrchestrator, model, {
+      mode: "auto",
+      prompt: "/tool terminal pnpm create next-app@latest testapp --yes",
+    });
+
+    assert(
+      /tool execution/i.test(scaffoldResponse.text || ""),
+      "Scaffold command did not execute as a tool request",
+    );
+
+    const projectRoot = path.join(scaffoldWorkspaceRoot, "testapp");
+    const packageJsonPath = path.join(projectRoot, "package.json");
+    const pagePath = firstExistingPath([
+      path.join(projectRoot, "src", "app", "page.tsx"),
+      path.join(projectRoot, "app", "page.tsx"),
+      path.join(projectRoot, "src", "app", "page.jsx"),
+      path.join(projectRoot, "app", "page.jsx"),
+    ]);
+
+    assert(
+      fs.existsSync(packageJsonPath),
+      "Next.js package.json was not created",
+    );
+    assert(Boolean(pagePath), "Next.js app page was not created");
+
+    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
+    assert(
+      Boolean(
+        packageJson.dependencies?.next || packageJson.devDependencies?.next,
+      ),
+      "Next.js dependency missing from scaffolded project",
+    );
+
+    const supportResponse = await runRequest(scaffoldOrchestrator, model, {
+      mode: "auto",
+      prompt:
+        "/tool terminal node -e \"const fs=require('fs');const path=require('path');const base=fs.existsSync('testapp/src')?'testapp/src':'testapp';const contentDir=path.join(base,'content','posts');const componentsDir=path.join(base,'components');fs.mkdirSync(contentDir,{recursive:true});fs.mkdirSync(componentsDir,{recursive:true});fs.writeFileSync(path.join(contentDir,'welcome.md'),'---\\ntitle: Welcome\\ndate: 2026-04-06\\n---\\n\\nThis is the first post.\\n');fs.writeFileSync(path.join(componentsDir,'post-card.tsx'),'export function PostCard(){ return null; }\\n');\"",
+    });
+
+    assert(
+      /tool execution/i.test(supportResponse.text || ""),
+      "Support file command did not execute as a tool request",
+    );
+
+    const blogSupportPath = firstExistingPath([
+      path.join(projectRoot, "src", "content", "posts"),
+      path.join(projectRoot, "content", "posts"),
+      path.join(projectRoot, "src", "components"),
+      path.join(projectRoot, "components"),
+      path.join(projectRoot, "src", "lib"),
+      path.join(projectRoot, "lib"),
+    ]);
+
+    assert(Boolean(blogSupportPath), "Blog support structure was not created");
+
+    const editPrompt = await runRequest(scaffoldOrchestrator, model, {
+      mode: "coder",
+      prompt:
+        "/edit " +
+        path.relative(scaffoldWorkspaceRoot, pagePath).replace(/\\/g, "/") +
+        " :: Turn the homepage into a polished blog landing page with a hero, featured posts, and a recent posts section. Keep the file buildable.",
+    });
+
+    assert(
+      Array.isArray(editPrompt.proposedEdits) &&
+        editPrompt.proposedEdits.length > 0,
+      "Blog homepage edit did not generate a proposed edit",
+    );
+
+    await scaffoldOrchestrator.applyProposedEdit(editPrompt.proposedEdits[0]);
+
+    const editedPage = fs.readFileSync(pagePath, "utf8");
+    assert(
+      /blog|post|featured|recent/i.test(editedPage),
+      "Edited homepage did not look like a blog landing page",
+    );
+
+    const deleteScaffoldResponse = await runRequest(
+      scaffoldOrchestrator,
+      model,
+      {
+        mode: "auto",
+        prompt:
+          "Run this command: node -e \"const fs=require('fs');fs.rmSync('testapp',{recursive:true,force:true});\"",
+      },
+    );
+
+    assert(
+      /tool execution/i.test(deleteScaffoldResponse.text || ""),
+      "Agent-driven scaffold cleanup command did not execute",
+    );
+    assert(
+      !fs.existsSync(projectRoot),
+      "Agent-driven scaffold cleanup did not delete testapp",
+    );
+  });
+
   if (fs.existsSync(editFile)) {
     fs.unlinkSync(editFile);
   }
@@ -284,6 +484,9 @@ async function runModelSuite(orchestrator, model) {
   if (fs.existsSync(baseFileB)) {
     fs.unlinkSync(baseFileB);
   }
+
+  removePathIfExists(scaffoldWorkspaceRoot);
+  removePathIfExists(universalWorkspaceRoot);
 
   return caseResults;
 }

@@ -158,6 +158,11 @@ export class NexcodeOrchestrator {
         message: `Context ready – routing to ${mode} pipeline`,
       };
 
+      const inferredTerminalCommand =
+        request.allowTools !== false
+          ? this.extractTerminalCommandRequest(request.prompt)
+          : null;
+
       let response: OrchestratorResponse;
       if (
         request.prompt.trimStart().startsWith("/tool ") &&
@@ -169,6 +174,20 @@ export class NexcodeOrchestrator {
         };
         response = await this.handleToolRequest(
           request.prompt,
+          mode,
+          provider,
+          model,
+          diagnostics,
+          request.allowWebSearch !== false,
+        );
+      } else if (inferredTerminalCommand) {
+        const inferredPrompt = `/tool terminal ${inferredTerminalCommand}`;
+        yield {
+          type: "status",
+          message: `Executing inferred terminal command${taskHint}`,
+        };
+        response = await this.handleToolRequest(
+          inferredPrompt,
           mode,
           provider,
           model,
@@ -648,6 +667,76 @@ export class NexcodeOrchestrator {
       filePath: match[1].trim(),
       instruction: match[2].trim(),
     };
+  }
+
+  private extractTerminalCommandRequest(prompt: string): string | null {
+    const raw = prompt.trim();
+    if (!raw) {
+      return null;
+    }
+
+    const singleLineDirect = this.normalizeCommandCandidate(raw);
+    if (singleLineDirect) {
+      return singleLineDirect;
+    }
+
+    const lines = raw
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index];
+
+      const inline = line.match(
+        /^(?:please\s+)?(?:help\s+)?(?:run|execute)(?:\s+this)?(?:\s+command)?\s*[:\-]\s*(.+)$/i,
+      );
+      if (inline) {
+        const candidate = this.normalizeCommandCandidate(inline[1]);
+        if (candidate) {
+          return candidate;
+        }
+      }
+
+      if (
+        /^(?:please\s+)?(?:help\s+)?(?:run|execute)(?:\s+this)?(?:\s+command)?\s*[:\-]?$/i.test(
+          line,
+        )
+      ) {
+        const nextLine = lines[index + 1];
+        if (!nextLine) {
+          continue;
+        }
+
+        const candidate = this.normalizeCommandCandidate(nextLine);
+        if (candidate) {
+          return candidate;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  private normalizeCommandCandidate(candidate: string): string | null {
+    const trimmed = candidate
+      .trim()
+      .replace(/^`+/, "")
+      .replace(/`+$/, "")
+      .trim();
+
+    if (!trimmed || trimmed.length > 1_800) {
+      return null;
+    }
+
+    if (/\r|\n/.test(trimmed)) {
+      return null;
+    }
+
+    const commandStarter =
+      /^(pnpm|npm|npx|yarn|bun|node|python|pip|pip3|uv|poetry|go|cargo|dotnet|mvn|gradle|java|javac|git|docker|kubectl|terraform|make|cmake|pwsh|powershell|bash|sh|cmd|ls|dir|mkdir|touch|cp|mv|rm|del|cat|type)\b/i;
+
+    return commandStarter.test(trimmed) ? trimmed : null;
   }
 
   private async runAgentSafely(

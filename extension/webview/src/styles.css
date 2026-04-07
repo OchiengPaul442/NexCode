@@ -76,7 +76,7 @@ body {
   justify-content: space-between;
   gap: 6px;
   height: var(--nk-topbar-h);
-  padding: 0 2px;
+  padding: 0 4px;
   border-bottom: 1px solid var(--nk-border2);
   background: var(--nk-bg);
   flex-shrink: 0;
@@ -146,7 +146,7 @@ body {
 
 /* Messages list */
 .nk-messages-list {
-  padding: 4px 2px 2px;
+  padding: 4px 6px 2px;
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -534,7 +534,7 @@ body {
 /* ── Input area ────────────────────────────────────────────────────────────── */
 .nk-input-area {
   flex-shrink: 0;
-  padding: 4px 2px 4px;
+  padding: 4px 6px 6px;
   background: var(--nk-bg);
   border-top: 1px solid var(--nk-border2);
 }
@@ -575,8 +575,8 @@ body {
   padding: 8px 10px 4px;
   outline: none;
   min-height: 38px;
-  max-height: 400px;
-  overflow-y: auto;
+  max-height: 280px;
+  overflow-y: hidden;
 }
 .nk-textarea::placeholder {
   color: var(--nk-faint);
@@ -1135,4 +1135,70 @@ body {
 }
 .animate-pulse {
   animation: pulse 1.5s ease-in-out infinite;
+}
+
+/* ── Token ring with label ──────────────────────────────────────────────────── */
+.nk-token-ring-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: default;
+}
+.nk-token-label {
+  font-size: 10px;
+  color: var(--nk-faint);
+  white-space: nowrap;
+}
+
+/* ── Permission settings ────────────────────────────────────────────────────── */
+.nk-permission-section {
+  margin-top: 4px;
+}
+.nk-permission-options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+.nk-permission-option {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  text-align: left;
+  padding: 6px 8px;
+  border: 1px solid var(--nk-border);
+  border-radius: 6px;
+  background: var(--nk-bg3);
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+.nk-permission-option:hover {
+  border-color: #555;
+  background: var(--nk-bg2);
+}
+.nk-permission-option--active {
+  border-color: var(--nk-accent);
+  background: rgba(2, 132, 199, 0.08);
+}
+.nk-permission-option-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--nk-text);
+}
+.nk-permission-option-desc {
+  font-size: 10px;
+  color: var(--nk-muted);
+}
+.nk-permission-learn-more {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 10px;
+  color: var(--nk-accent);
+  text-decoration: none;
+  cursor: pointer;
+}
+.nk-permission-learn-more:hover {
+  text-decoration: underline;
 }

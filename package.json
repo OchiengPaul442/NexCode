@@ -19,7 +19,8 @@
     "validate:models": "node tools/validate-model-matrix.js",
     "extension:release": "node tools/extension-release.mjs --no-bump",
     "extension:package": "node tools/extension-release.mjs --no-bump --no-install",
-    "extension:rebuild-install": "node tools/extension-release.mjs --no-bump",
+    "extension:rebuild-install-no-bump": "node tools/extension-release.mjs --no-bump",
+    "extension:rebuild-install": "node tools/extension-release.mjs",
     "extension:bump": "node tools/extension-release.mjs --bump-only"
   }
 }

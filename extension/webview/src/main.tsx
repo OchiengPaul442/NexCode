@@ -50,7 +50,8 @@ declare const acquireVsCodeApi: <T = unknown>() => {
 
 type ProviderId = "ollama" | "openai-compatible";
 type AgentMode = "auto" | "planner" | "coder" | "reviewer" | "qa" | "security";
-type UiMode = "architect" | "coder" | "debug" | "review";
+type UiMode = "agent" | "plan" | "ask";
+type PermissionLevel = "default" | "bypass" | "autopilot";
 type EditStatus = "pending" | "applied" | "rejected";
 
 interface ProviderStatus {
@@ -127,6 +128,7 @@ interface SidebarSettings {
   requireTerminalApproval: boolean;
   showDebugPanel: boolean;
   enableWebSearch: boolean;
+  permissionLevel: PermissionLevel;
 }
 
 interface PersistedState {
@@ -307,27 +309,28 @@ function titleFromPrompt(prompt: string): string {
 
 function mapAgentModeToUi(mode: AgentMode): UiMode {
   switch (mode) {
+    case "planner":
+      return "plan";
     case "coder":
-      return "coder";
     case "reviewer":
-      return "review";
     case "qa":
-      return "debug";
+    case "security":
+      return "agent";
     default:
-      return "architect";
+      return "agent";
   }
 }
 
 function mapUiModeToAgent(mode: UiMode): AgentMode {
   switch (mode) {
-    case "coder":
-      return "coder";
-    case "review":
-      return "reviewer";
-    case "debug":
-      return "qa";
-    default:
+    case "agent":
+      return "auto";
+    case "plan":
       return "planner";
+    case "ask":
+      return "planner";
+    default:
+      return "auto";
   }
 }
 
@@ -545,7 +548,7 @@ const useStore = create<StoreState>((set, get) => {
   const initialDefaults = {
     provider: "ollama" as ProviderId,
     model: "qwen2.5-coder:7b",
-    mode: "architect" as UiMode,
+    mode: "agent" as UiMode,
   };
 
   const defaultSidebarSettings: SidebarSettings = {
@@ -555,6 +558,7 @@ const useStore = create<StoreState>((set, get) => {
     requireTerminalApproval: true,
     showDebugPanel: false,
     enableWebSearch: true,
+    permissionLevel: "default" as PermissionLevel,
   };
 
   const initialSessions = persisted?.sessions?.length
@@ -969,38 +973,60 @@ function getActiveSession(state: StoreState): Session | undefined {
 }
 
 // ─── Token Ring ──────────────────────────────────────────────────────────────
-function TokenRing({ text }: { text: string }) {
-  const estimated = Math.ceil(text.length / 4);
-  const max = 8192;
-  const pct = Math.min(estimated / max, 1);
+function TokenRing({
+  sessionMessages,
+  draftText,
+}: {
+  sessionMessages: ChatMessage[];
+  draftText: string;
+}) {
+  const sessionTokens = useMemo(() => {
+    let total = 0;
+    for (const msg of sessionMessages) {
+      total += Math.ceil((msg.text?.length ?? 0) / 4);
+    }
+    return total;
+  }, [sessionMessages]);
+  const draftTokens = Math.ceil(draftText.length / 4);
+  const totalTokens = sessionTokens + draftTokens;
+  const max = 128_000;
+  const pct = Math.min(totalTokens / max, 1);
   const r = 6;
   const circ = 2 * Math.PI * r;
   const dash = circ * pct;
   const color = pct > 0.85 ? "#f87171" : pct > 0.65 ? "#fb923c" : "#0284c7";
 
+  const label =
+    totalTokens >= 1000
+      ? `~${(totalTokens / 1000).toFixed(1)}k tokens`
+      : `~${totalTokens} tokens`;
+
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" className="shrink-0">
-      <circle
-        cx="8"
-        cy="8"
-        r={r}
-        fill="none"
-        stroke="#2a2a30"
-        strokeWidth="2"
-      />
-      <circle
-        cx="8"
-        cy="8"
-        r={r}
-        fill="none"
-        stroke={color}
-        strokeWidth="2"
-        strokeDasharray={`${dash} ${circ}`}
-        strokeLinecap="round"
-        transform="rotate(-90 8 8)"
-        style={{ transition: "stroke-dasharray 0.25s ease" }}
-      />
-    </svg>
+    <div className="nk-token-ring-wrap" title={label}>
+      <svg width="16" height="16" viewBox="0 0 16 16" className="shrink-0">
+        <circle
+          cx="8"
+          cy="8"
+          r={r}
+          fill="none"
+          stroke="#2a2a30"
+          strokeWidth="2"
+        />
+        <circle
+          cx="8"
+          cy="8"
+          r={r}
+          fill="none"
+          stroke={color}
+          strokeWidth="2"
+          strokeDasharray={`${dash} ${circ}`}
+          strokeLinecap="round"
+          transform="rotate(-90 8 8)"
+          style={{ transition: "stroke-dasharray 0.25s ease" }}
+        />
+      </svg>
+      <span className="nk-token-label">{label}</span>
+    </div>
   );
 }
 
@@ -1625,6 +1651,54 @@ function SettingsDrawer({
             </label>
           ))}
 
+          {/* Permission Level */}
+          <div className="nk-permission-section">
+            <label className="nk-label">Permissions</label>
+            <div className="nk-permission-options">
+              {(
+                [
+                  {
+                    value: "default" as PermissionLevel,
+                    title: "Default Approvals",
+                    desc: "Copilot uses your configured settings",
+                  },
+                  {
+                    value: "bypass" as PermissionLevel,
+                    title: "Bypass Approvals",
+                    desc: "All tool calls are auto-approved",
+                  },
+                  {
+                    value: "autopilot" as PermissionLevel,
+                    title: "Autopilot (Preview)",
+                    desc: "Autonomously iterates from start to finish",
+                  },
+                ] as const
+              ).map((opt) => (
+                <button
+                  key={opt.value}
+                  className={`nk-permission-option ${settings.permissionLevel === opt.value ? "nk-permission-option--active" : ""}`}
+                  onClick={() =>
+                    useStore
+                      .getState()
+                      .setSettings({ permissionLevel: opt.value })
+                  }
+                >
+                  <span className="nk-permission-option-title">
+                    {opt.title}
+                  </span>
+                  <span className="nk-permission-option-desc">{opt.desc}</span>
+                </button>
+              ))}
+            </div>
+            <a
+              className="nk-permission-learn-more"
+              href="https://code.visualstudio.com/docs/copilot/agents/agent-tools#_permission-levels"
+              title="Learn more about permissions"
+            >
+              Learn more about permissions
+            </a>
+          </div>
+
           {/* Open in tab */}
           <button
             className="nk-btn-ghost w-full flex items-center justify-center gap-2 mt-2"
@@ -1652,6 +1726,42 @@ function SettingsDrawer({
               <div key={cmd} className="flex gap-2 text-[11px] leading-relaxed">
                 <code className="nk-code-inline shrink-0">{cmd}</code>
                 <span style={{ color: "#8b8b9a" }}>{desc}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Modes reference */}
+          <div className="nk-info-box">
+            <p
+              className="text-[11px] font-semibold mb-1"
+              style={{ color: "#cccccc" }}
+            >
+              Agent modes
+            </p>
+            {[
+              [
+                "Agent",
+                "Full autonomous mode – plans, codes, reviews, and fixes. Uses all sub-agents to complete tasks end-to-end.",
+              ],
+              [
+                "Plan",
+                "Planning only – decomposes tasks into steps with dependencies and acceptance criteria. No code execution.",
+              ],
+              [
+                "Ask",
+                "Q&A mode – answers questions about code, architecture, and best practices. Read-only, no modifications.",
+              ],
+            ].map(([name, desc]) => (
+              <div key={name} className="mb-1.5">
+                <span
+                  className="text-[11px] font-medium"
+                  style={{ color: "#e2e2e2" }}
+                >
+                  {name}
+                </span>
+                <p className="text-[10px] mt-0.5" style={{ color: "#8b8b9a" }}>
+                  {desc}
+                </p>
               </div>
             ))}
           </div>
@@ -1797,7 +1907,9 @@ function App() {
       }
 
       const parsed = parseSlashCommand(trimmed, session.mode);
+      const permLevel = settings.permissionLevel;
       if (
+        permLevel === "default" &&
         settings.requireTerminalApproval &&
         /^\/tool\s+terminal\s+/i.test(parsed.prompt)
       ) {
@@ -2258,8 +2370,10 @@ function App() {
   useEffect(() => {
     const ta = textareaRef.current;
     if (!ta) return;
-    ta.style.height = "0px";
-    ta.style.height = `${Math.min(ta.scrollHeight, 420)}px`;
+    ta.style.height = "auto";
+    const scrollH = ta.scrollHeight;
+    ta.style.height = `${Math.min(scrollH, 280)}px`;
+    ta.style.overflowY = scrollH > 280 ? "auto" : "hidden";
   }, [activeDraft]);
 
   // DnD file handler
@@ -2599,16 +2713,18 @@ function App() {
                   onChange={(e) => onModeChange(e.target.value as UiMode)}
                   title="Agent mode"
                 >
-                  <option value="architect">Architect</option>
-                  <option value="coder">Coder</option>
-                  <option value="debug">Debug</option>
-                  <option value="review">Review</option>
+                  <option value="agent">Agent</option>
+                  <option value="plan">Plan</option>
+                  <option value="ask">Ask</option>
                 </select>
                 <ChevronDown size={10} className="nk-pill-arrow" />
               </div>
 
               {/* Token ring */}
-              <TokenRing text={activeDraft} />
+              <TokenRing
+                sessionMessages={activeSession.messages}
+                draftText={activeDraft}
+              />
             </div>
 
             {/* Right: queue status + stop + send */}

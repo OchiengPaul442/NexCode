@@ -996,13 +996,8 @@ function TokenRing({
   const dash = circ * pct;
   const color = pct > 0.85 ? "#f87171" : pct > 0.65 ? "#fb923c" : "#0284c7";
 
-  const label =
-    totalTokens >= 1000
-      ? `~${(totalTokens / 1000).toFixed(1)}k tokens`
-      : `~${totalTokens} tokens`;
-
   return (
-    <div className="nk-token-ring-wrap" title={label}>
+    <div className="nk-token-ring-wrap" title="Context usage">
       <svg width="16" height="16" viewBox="0 0 16 16" className="shrink-0">
         <circle
           cx="8"
@@ -1025,7 +1020,6 @@ function TokenRing({
           style={{ transition: "stroke-dasharray 0.25s ease" }}
         />
       </svg>
-      <span className="nk-token-label">{label}</span>
     </div>
   );
 }
@@ -1082,8 +1076,6 @@ function ThinkingIndicator({
   mode?: AgentMode;
 }) {
   const modelLabel = model?.trim() ? model.trim() : "selected model";
-  const providerLabel = provider ?? "provider";
-  const modeLabel = formatAgentMode(mode).toLowerCase();
   const latestStep = reasoning.at(-1);
   const visibleSteps = Array.from(new Set(reasoning)).slice(-3);
   const primaryText = latestStep || `Thinking with ${modelLabel}`;
@@ -1095,10 +1087,6 @@ function ThinkingIndicator({
         <span className="nk-thinking-label nk-thinking-label--shimmer">
           {primaryText}
         </span>
-      </div>
-
-      <div className="nk-thinking-subline">
-        {providerLabel} • {modeLabel} mode
       </div>
 
       {visibleSteps.length > 0 && (
@@ -1458,7 +1446,7 @@ function SessionsDrawer({
           </div>
         </div>
 
-        <div className="flex-1 overflow-auto px-2 pb-2 space-y-0.5">
+        <div className="flex-1 overflow-auto px-0 pb-0 space-y-0">
           <AnimatePresence initial={false}>
             {sessions.map((s) => (
               <motion.button
@@ -2657,7 +2645,7 @@ function App() {
             className="nk-textarea"
             placeholder="Ask Nexcode…"
             value={activeDraft}
-            rows={1}
+            rows={2}
             onChange={(e) =>
               useStore.getState().setDraft(activeSession.id, e.target.value)
             }

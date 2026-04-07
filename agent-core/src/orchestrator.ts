@@ -126,14 +126,6 @@ export class NexcodeOrchestrator {
       content: request.prompt,
     });
 
-    const promptSnippet = request.prompt
-      .replace(/\s+/g, " ")
-      .trim()
-      .slice(0, 70);
-    const taskHint = promptSnippet
-      ? ` – ${promptSnippet}${request.prompt.length > 70 ? "..." : ""}`
-      : "";
-
     yield {
       type: "status",
       message: `Mode: ${mode} | Provider: ${provider} | Model: ${model}`,
@@ -141,7 +133,7 @@ export class NexcodeOrchestrator {
 
     yield {
       type: "status",
-      message: `Collecting context${taskHint}`,
+      message: "Collecting context",
     };
 
     try {
@@ -170,7 +162,7 @@ export class NexcodeOrchestrator {
       ) {
         yield {
           type: "status",
-          message: `Executing tool command${taskHint}`,
+          message: "Executing tool command",
         };
         response = await this.handleToolRequest(
           request.prompt,
@@ -184,7 +176,7 @@ export class NexcodeOrchestrator {
         const inferredPrompt = `/tool terminal ${inferredTerminalCommand}`;
         yield {
           type: "status",
-          message: `Executing inferred terminal command${taskHint}`,
+          message: "Executing inferred terminal command",
         };
         response = await this.handleToolRequest(
           inferredPrompt,
@@ -197,7 +189,7 @@ export class NexcodeOrchestrator {
       } else if (request.prompt.trimStart().startsWith("/edit ")) {
         yield {
           type: "status",
-          message: `Preparing edit proposal${taskHint}`,
+          message: "Preparing edit proposal",
         };
         response = await this.handleEditRequest(
           request.prompt,
@@ -213,7 +205,7 @@ export class NexcodeOrchestrator {
       } else if (mode === "auto") {
         yield {
           type: "status",
-          message: `Orchestrating multi-agent pipeline${taskHint}`,
+          message: "Orchestrating multi-agent pipeline",
         };
         response = await this.runAutoMode(
           request.prompt,
@@ -228,7 +220,7 @@ export class NexcodeOrchestrator {
       } else {
         yield {
           type: "status",
-          message: `Calling ${mode} agent${taskHint}`,
+          message: `Calling ${mode} agent`,
         };
         response = await this.runSingleMode(
           mode,
@@ -687,6 +679,11 @@ export class NexcodeOrchestrator {
 
     for (let index = 0; index < lines.length; index += 1) {
       const line = lines[index];
+
+      const bareCandidate = this.normalizeCommandCandidate(line);
+      if (bareCandidate) {
+        return bareCandidate;
+      }
 
       const inline = line.match(
         /^(?:please\s+)?(?:help\s+)?(?:run|execute)(?:\s+this)?(?:\s+command)?\s*[:\-]\s*(.+)$/i,

@@ -60,6 +60,19 @@ describe("NexcodeOrchestrator", () => {
     expect(finalEvent.response.text).toContain("Tool Execution");
   });
 
+  it("infers bare terminal commands with follow-up instructions", () => {
+    const orchestrator = createNexcodeOrchestrator({ workspaceRoot });
+    const command = (
+      orchestrator as unknown as {
+        extractTerminalCommandRequest(prompt: string): string | null;
+      }
+    ).extractTerminalCommandRequest(
+      "pnpm create next-app@latest . --yes\n\nRUN THIS COMMAND AND SETUP FOR ME A WELL STRUCTURED NEXTJS PROJECT FOR A BLOG SITE PLEASE USE BEST PRACTICES",
+    );
+
+    expect(command).toBe("pnpm create next-app@latest . --yes");
+  });
+
   it("creates proposed edits for edit commands", async () => {
     const orchestrator = createNexcodeOrchestrator({ workspaceRoot });
 

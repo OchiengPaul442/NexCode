@@ -1,81 +1,282 @@
 {
   "summary": {
     "models": [
-      "kimi-k2.5:cloud"
+      "kimi-k2.5:cloud",
+      "qwen3-coder:480b-cloud",
+      "qwen2.5-coder:7b",
+      "nemotron-mini:latest"
     ],
-    "total": 11,
-    "passed": 11,
+    "total": 44,
+    "passed": 44,
     "failed": 0,
-    "memoryBefore": 4,
-    "memoryAfter": 13,
-    "memoryDelta": 9
+    "memoryBefore": 211,
+    "memoryAfter": 247,
+    "memoryDelta": 36
   },
   "results": [
     {
       "model": "kimi-k2.5:cloud",
       "case": "real-world-auto",
       "ok": true,
-      "durationMs": 345091
+      "durationMs": 34084
     },
     {
       "model": "kimi-k2.5:cloud",
       "case": "tool-search",
       "ok": true,
-      "durationMs": 30102
+      "durationMs": 29097
     },
     {
       "model": "kimi-k2.5:cloud",
       "case": "tool-read",
       "ok": true,
-      "durationMs": 33
+      "durationMs": 154
     },
     {
       "model": "kimi-k2.5:cloud",
       "case": "tool-web-search",
       "ok": true,
-      "durationMs": 2679
+      "durationMs": 1951
     },
     {
       "model": "kimi-k2.5:cloud",
       "case": "terminal-create-file",
       "ok": true,
-      "durationMs": 107
+      "durationMs": 250
     },
     {
       "model": "kimi-k2.5:cloud",
       "case": "terminal-move-file",
       "ok": true,
-      "durationMs": 110
+      "durationMs": 235
     },
     {
       "model": "kimi-k2.5:cloud",
       "case": "terminal-delete-file",
       "ok": true,
-      "durationMs": 112
+      "durationMs": 230
     },
     {
       "model": "kimi-k2.5:cloud",
       "case": "terminal-security-block",
       "ok": true,
-      "durationMs": 35
+      "durationMs": 163
     },
     {
       "model": "kimi-k2.5:cloud",
       "case": "edit-proposal-apply",
       "ok": true,
-      "durationMs": 10016
+      "durationMs": 3746
     },
     {
       "model": "kimi-k2.5:cloud",
       "case": "empty-workspace-command-lifecycle",
       "ok": true,
-      "durationMs": 5311
+      "durationMs": 6544
     },
     {
       "model": "kimi-k2.5:cloud",
       "case": "nextjs-blog-scaffold",
       "ok": true,
-      "durationMs": 84787
+      "durationMs": 45097
+    },
+    {
+      "model": "qwen3-coder:480b-cloud",
+      "case": "real-world-auto",
+      "ok": true,
+      "durationMs": 201522
+    },
+    {
+      "model": "qwen3-coder:480b-cloud",
+      "case": "tool-search",
+      "ok": true,
+      "durationMs": 30395
+    },
+    {
+      "model": "qwen3-coder:480b-cloud",
+      "case": "tool-read",
+      "ok": true,
+      "durationMs": 361
+    },
+    {
+      "model": "qwen3-coder:480b-cloud",
+      "case": "tool-web-search",
+      "ok": true,
+      "durationMs": 2437
+    },
+    {
+      "model": "qwen3-coder:480b-cloud",
+      "case": "terminal-create-file",
+      "ok": true,
+      "durationMs": 370
+    },
+    {
+      "model": "qwen3-coder:480b-cloud",
+      "case": "terminal-move-file",
+      "ok": true,
+      "durationMs": 358
+    },
+    {
+      "model": "qwen3-coder:480b-cloud",
+      "case": "terminal-delete-file",
+      "ok": true,
+      "durationMs": 360
+    },
+    {
+      "model": "qwen3-coder:480b-cloud",
+      "case": "terminal-security-block",
+      "ok": true,
+      "durationMs": 289
+    },
+    {
+      "model": "qwen3-coder:480b-cloud",
+      "case": "edit-proposal-apply",
+      "ok": true,
+      "durationMs": 1814
+    },
+    {
+      "model": "qwen3-coder:480b-cloud",
+      "case": "empty-workspace-command-lifecycle",
+      "ok": true,
+      "durationMs": 1375
+    },
+    {
+      "model": "qwen3-coder:480b-cloud",
+      "case": "nextjs-blog-scaffold",
+      "ok": true,
+      "durationMs": 234011
+    },
+    {
+      "model": "qwen2.5-coder:7b",
+      "case": "real-world-auto",
+      "ok": true,
+      "durationMs": 62000
+    },
+    {
+      "model": "qwen2.5-coder:7b",
+      "case": "tool-search",
+      "ok": true,
+      "durationMs": 30297
+    },
+    {
+      "model": "qwen2.5-coder:7b",
+      "case": "tool-read",
+      "ok": true,
+      "durationMs": 203
+    },
+    {
+      "model": "qwen2.5-coder:7b",
+      "case": "tool-web-search",
+      "ok": true,
+      "durationMs": 1990
+    },
+    {
+      "model": "qwen2.5-coder:7b",
+      "case": "terminal-create-file",
+      "ok": true,
+      "durationMs": 255
+    },
+    {
+      "model": "qwen2.5-coder:7b",
+      "case": "terminal-move-file",
+      "ok": true,
+      "durationMs": 234
+    },
+    {
+      "model": "qwen2.5-coder:7b",
+      "case": "terminal-delete-file",
+      "ok": true,
+      "durationMs": 233
+    },
+    {
+      "model": "qwen2.5-coder:7b",
+      "case": "terminal-security-block",
+      "ok": true,
+      "durationMs": 160
+    },
+    {
+      "model": "qwen2.5-coder:7b",
+      "case": "edit-proposal-apply",
+      "ok": true,
+      "durationMs": 2231
+    },
+    {
+      "model": "qwen2.5-coder:7b",
+      "case": "empty-workspace-command-lifecycle",
+      "ok": true,
+      "durationMs": 1050
+    },
+    {
+      "model": "qwen2.5-coder:7b",
+      "case": "nextjs-blog-scaffold",
+      "ok": true,
+      "durationMs": 42318
+    },
+    {
+      "model": "nemotron-mini:latest",
+      "case": "real-world-auto",
+      "ok": true,
+      "durationMs": 11591
+    },
+    {
+      "model": "nemotron-mini:latest",
+      "case": "tool-search",
+      "ok": true,
+      "durationMs": 30470
+    },
+    {
+      "model": "nemotron-mini:latest",
+      "case": "tool-read",
+      "ok": true,
+      "durationMs": 370
+    },
+    {
+      "model": "nemotron-mini:latest",
+      "case": "tool-web-search",
+      "ok": true,
+      "durationMs": 1999
+    },
+    {
+      "model": "nemotron-mini:latest",
+      "case": "terminal-create-file",
+      "ok": true,
+      "durationMs": 419
+    },
+    {
+      "model": "nemotron-mini:latest",
+      "case": "terminal-move-file",
+      "ok": true,
+      "durationMs": 438
+    },
+    {
+      "model": "nemotron-mini:latest",
+      "case": "terminal-delete-file",
+      "ok": true,
+      "durationMs": 389
+    },
+    {
+      "model": "nemotron-mini:latest",
+      "case": "terminal-security-block",
+      "ok": true,
+      "durationMs": 295
+    },
+    {
+      "model": "nemotron-mini:latest",
+      "case": "edit-proposal-apply",
+      "ok": true,
+      "durationMs": 1451
+    },
+    {
+      "model": "nemotron-mini:latest",
+      "case": "empty-workspace-command-lifecycle",
+      "ok": true,
+      "durationMs": 763
+    },
+    {
+      "model": "nemotron-mini:latest",
+      "case": "nextjs-blog-scaffold",
+      "ok": true,
+      "durationMs": 25948
     }
   ]
 }

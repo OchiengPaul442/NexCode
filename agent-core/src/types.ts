@@ -106,6 +106,7 @@ export interface ProviderGenerateOptions {
   model?: string;
   temperature?: number;
   complexity?: "small" | "large";
+  maxTokens?: number;
   signal?: AbortSignal;
 }
 

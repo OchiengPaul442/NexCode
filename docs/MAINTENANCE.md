@@ -22,7 +22,7 @@
 
 - Configure:
   - `nexcodeKiboko.openAIBaseUrl`
-  - `nexcodeKiboko.openAIApiKey`
+- Configure `nexcodeKiboko.openAIApiKey` only if the endpoint requires auth.
 - Use only when cloud execution is desired.
 
 ### Tavily Online Search

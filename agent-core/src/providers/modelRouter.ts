@@ -50,6 +50,7 @@ export class ModelRouter {
       model,
       messages,
       temperature: options.temperature,
+      maxTokens: options.maxTokens,
       signal: options.signal,
     });
   }
@@ -64,6 +65,7 @@ export class ModelRouter {
         model,
         messages,
         temperature: options.temperature,
+        maxTokens: options.maxTokens,
         signal: options.signal,
       });
       yield result.text;
@@ -74,6 +76,7 @@ export class ModelRouter {
       model,
       messages,
       temperature: options.temperature,
+      maxTokens: options.maxTokens,
       signal: options.signal,
     })) {
       yield token;

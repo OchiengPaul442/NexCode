@@ -11,7 +11,31 @@ export interface AgentRunInput {
   provider?: ProviderId;
   model?: string;
   temperature?: number;
+  maxTokens?: number;
   signal?: AbortSignal;
+}
+
+export function getAgentMaxTokens(mode: AgentMode, userPrompt: string): number {
+  const normalizedLength = userPrompt.trim().length;
+  const lengthBoost =
+    normalizedLength > 3000
+      ? 600
+      : normalizedLength > 1500
+        ? 300
+        : normalizedLength > 600
+          ? 150
+          : 0;
+
+  const baseByMode: Record<AgentMode, number> = {
+    auto: 1400,
+    planner: 1100,
+    coder: 1800,
+    reviewer: 1000,
+    qa: 1000,
+    security: 1050,
+  };
+
+  return Math.min(2400, baseByMode[mode] + lengthBoost);
 }
 
 export async function runSpecialistAgent(
@@ -49,6 +73,7 @@ export async function runSpecialistAgent(
     provider: input.provider,
     model: input.model,
     temperature: input.temperature,
+    maxTokens: input.maxTokens ?? getAgentMaxTokens(mode, input.userPrompt),
     complexity: input.userPrompt.length > 1200 ? "large" : "small",
     signal: input.signal,
   });

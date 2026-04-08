@@ -1,6 +1,9 @@
 import path from "path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createNexcodeOrchestrator, OrchestratorEvent } from "../src";
+import { ModelRouter } from "../src/providers/modelRouter";
+import { OpenAICompatibleProvider } from "../src/providers/openAICompatibleProvider";
+import { ChatMessage, ModelProvider } from "../src/types";
 
 async function collectEvents(
   generator: AsyncGenerator<OrchestratorEvent>,
@@ -73,6 +76,21 @@ describe("NexcodeOrchestrator", () => {
     expect(command).toBe("pnpm create next-app@latest . --yes");
   });
 
+  it("uses a lighter auto pipeline for simple build prompts", () => {
+    const orchestrator = createNexcodeOrchestrator({ workspaceRoot });
+    const pipeline = (
+      orchestrator as unknown as {
+        resolveAutoPipeline(
+          prompt: string,
+        ): Array<"planner" | "coder" | "reviewer" | "qa" | "security">;
+      }
+    ).resolveAutoPipeline(
+      "Create a blog website with Next.js and polished styling.",
+    );
+
+    expect(pipeline).toEqual(["planner", "coder", "reviewer"]);
+  });
+
   it("creates proposed edits for edit commands", async () => {
     const orchestrator = createNexcodeOrchestrator({ workspaceRoot });
 
@@ -136,5 +154,72 @@ describe("NexcodeOrchestrator", () => {
 
     expect(finalEvent.response.text.length).toBeGreaterThan(10);
     expect(finalEvent.response.modeUsed).toBe("planner");
+  });
+});
+
+describe("Provider routing", () => {
+  it("passes maxTokens through the model router", async () => {
+    const requests: Array<{ maxTokens?: number }> = [];
+    const fakeProvider: ModelProvider = {
+      id: "ollama",
+      async generate(request) {
+        requests.push({ maxTokens: request.maxTokens });
+        return { text: "ok" };
+      },
+    };
+
+    const router = new ModelRouter(
+      {
+        ollama: fakeProvider,
+        "openai-compatible": fakeProvider,
+      },
+      {
+        defaultProvider: "ollama",
+        defaultModel: "qwen2.5-coder:7b",
+        defaultCloudModel: "gpt-4o-mini",
+      },
+    );
+
+    const messages: ChatMessage[] = [
+      { role: "system", content: "system" },
+      { role: "user", content: "hello" },
+    ];
+
+    await router.generate(messages, {
+      provider: "ollama",
+      maxTokens: 912,
+    });
+
+    expect(requests[0]?.maxTokens).toBe(912);
+  });
+
+  it("allows OpenAI-compatible requests without an api key", async () => {
+    const fetchMock = vi.fn(async () => {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ choices: [{ message: { content: "ok" } }] }),
+        text: async () => "",
+      } as Response;
+    });
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    try {
+      const provider = new OpenAICompatibleProvider("http://example.test");
+      const result = await provider.generate({
+        model: "test-model",
+        messages: [{ role: "user", content: "hello" }],
+      });
+
+      expect(result.text).toBe("ok");
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+      const headers = init?.headers as Record<string, string> | undefined;
+      expect(headers?.Authorization).toBeUndefined();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

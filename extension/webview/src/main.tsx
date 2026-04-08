@@ -8,8 +8,6 @@ import React, {
 import { createRoot } from "react-dom/client";
 import { AnimatePresence, motion } from "framer-motion";
 import { create } from "zustand";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import {
   MessageSquarePlus,
   PanelLeft,
@@ -41,6 +39,7 @@ import {
   Pencil,
   RotateCcw,
 } from "lucide-react";
+import { StreamingMessage } from "./components/StreamingMessage";
 
 declare const acquireVsCodeApi: <T = unknown>() => {
   postMessage: (message: unknown) => void;
@@ -361,6 +360,9 @@ function sanitizeReasoningStatus(raw: string): string {
   if (modeMeta) {
     const [, mode, provider, model] = modeMeta;
     return `Using ${model.trim()} on ${provider.trim()} (${mode.trim()} mode)`;
+  }
+  if (/^orchestrating multi-agent pipeline$/i.test(clean)) {
+    return "Starting auto workflow";
   }
   // Pass all other orchestrator messages through as-is
   return clean;
@@ -1077,7 +1079,7 @@ function ThinkingIndicator({
 }) {
   const modelLabel = model?.trim() ? model.trim() : "selected model";
   const latestStep = reasoning.at(-1);
-  const visibleSteps = Array.from(new Set(reasoning)).slice(-3);
+  const visibleSteps = Array.from(new Set(reasoning)).slice(-4);
   const primaryText = latestStep || `Thinking with ${modelLabel}`;
 
   return (
@@ -1088,7 +1090,6 @@ function ThinkingIndicator({
           {primaryText}
         </span>
       </div>
-
       {visibleSteps.length > 0 && (
         <ol className="nk-thinking-trace">
           {visibleSteps.map((step, index) => {
@@ -1099,7 +1100,9 @@ function ThinkingIndicator({
                 className={`nk-thinking-trace-item ${isLatest ? "nk-thinking-trace-item--active" : ""}`}
               >
                 <Zap size={9} style={{ color: "#0284c7", flexShrink: 0 }} />
-                <span>{step}</span>
+                <span className={isLatest ? "nk-thinking-label--shimmer" : ""}>
+                  {step}
+                </span>
               </li>
             );
           })}
@@ -1150,6 +1153,7 @@ function MessageBubble({
   canRetry,
   copied,
   isBusy,
+  onAnimatedFrame,
   onCopy,
   onRetry,
   onEdit,
@@ -1163,6 +1167,7 @@ function MessageBubble({
   canRetry: boolean;
   copied: boolean;
   isBusy: boolean;
+  onAnimatedFrame?: () => void;
   onCopy: (message: ChatMessage) => void;
   onRetry: (message: ChatMessage) => void;
   onEdit: (message: ChatMessage) => void;
@@ -1177,9 +1182,6 @@ function MessageBubble({
   return (
     <motion.div
       layout
-      initial={{ opacity: 0, y: 4 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0 }}
       className={`nk-msg-row ${isUser ? "nk-msg-row--user" : "nk-msg-row--bot"}`}
     >
       {/* Bubble */}
@@ -1212,59 +1214,67 @@ function MessageBubble({
                 {message.text}
               </pre>
             ) : (
-              <div className="markdown-body text-[13px] leading-relaxed">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {message.text || ""}
-                </ReactMarkdown>
-              </div>
+              <StreamingMessage
+                text={message.text || ""}
+                streaming={Boolean(message.streaming || message.thinking)}
+                markdown
+                className="markdown-body text-[13px] leading-relaxed"
+                showCursor
+                onFrame={onAnimatedFrame}
+              />
             )}
           </div>
         )}
 
         {/* Reasoning */}
-        {!isUser &&
-          showReasoning &&
-          message.reasoning.length > 0 &&
-          !(message.thinking && !message.text) && (
-            <div
-              className={`nk-reasoning-panel ${message.streaming || message.thinking ? "nk-reasoning-panel--live" : ""}`}
-            >
-              <div className="nk-reasoning-panel-header">
-                <span>
-                  {message.streaming || message.thinking
-                    ? "Reasoning (live)"
-                    : "Reasoning steps"}
+        {!isUser && showReasoning && message.reasoning.length > 0 && (
+          <div
+            className={`nk-reasoning-panel ${message.streaming || message.thinking ? "nk-reasoning-panel--live" : ""}`}
+          >
+            <div className="nk-reasoning-panel-header">
+              <span>
+                {message.streaming || message.thinking
+                  ? "Reasoning (live)"
+                  : "Reasoning steps"}
+              </span>
+              {(message.model || message.mode) && (
+                <span className="nk-reasoning-meta">
+                  {[
+                    message.model,
+                    message.mode ? formatAgentMode(message.mode) : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" • ")}
                 </span>
-                {(message.model || message.mode) && (
-                  <span className="nk-reasoning-meta">
-                    {[
-                      message.model,
-                      message.mode ? formatAgentMode(message.mode) : "",
-                    ]
-                      .filter(Boolean)
-                      .join(" • ")}
-                  </span>
-                )}
-              </div>
-              <ol className="nk-reasoning-list">
-                {message.reasoning.map((item, i) => {
-                  const isLatest = i === message.reasoning.length - 1;
-                  return (
-                    <li
-                      key={`${message.id}-r-${i}`}
-                      className={`nk-reasoning-item ${isLatest && (message.streaming || message.thinking) ? "nk-reasoning-item--active" : ""}`}
-                    >
-                      <Zap
-                        size={9}
-                        style={{ color: "#0284c7", flexShrink: 0 }}
-                      />
-                      <span>{item}</span>
-                    </li>
-                  );
-                })}
-              </ol>
+              )}
             </div>
-          )}
+            <ol className="nk-reasoning-list">
+              {message.reasoning.map((item, i) => {
+                const isLatest = i === message.reasoning.length - 1;
+                return (
+                  <li
+                    key={`${message.id}-r-${i}`}
+                    className={`nk-reasoning-item ${isLatest && (message.streaming || message.thinking) ? "nk-reasoning-item--active" : ""}`}
+                  >
+                    <Zap size={9} style={{ color: "#0284c7", flexShrink: 0 }} />
+                    <StreamingMessage
+                      text={item}
+                      streaming={
+                        isLatest &&
+                        Boolean(message.streaming || message.thinking)
+                      }
+                      markdown={false}
+                      as="span"
+                      className="nk-reasoning-live"
+                      showCursor={false}
+                      onFrame={onAnimatedFrame}
+                    />
+                  </li>
+                );
+              })}
+            </ol>
+          </div>
+        )}
 
         {showActions && (
           <div
@@ -2078,29 +2088,23 @@ function App() {
         flushHandleRef.current = null;
         return;
       }
-      const chunk = tokenQueueRef.current.splice(0, 8).join("");
+      const chunk = tokenQueueRef.current.join("");
+      tokenQueueRef.current = [];
       useStore
         .getState()
         .appendAssistantToken(cur.sessionId, cur.messageId, chunk);
-      if (tokenQueueRef.current.length > 0) {
-        flushHandleRef.current = window.setTimeout(flushTokenQueue, 14);
-      } else {
-        flushHandleRef.current = null;
-      }
+      flushHandleRef.current = null;
     }
     function enqueueToken(token: string) {
-      tokenQueueRef.current.push(...token.split(""));
+      tokenQueueRef.current.push(token);
       if (flushHandleRef.current === null)
-        flushHandleRef.current = window.setTimeout(flushTokenQueue, 12);
+        flushHandleRef.current = window.setTimeout(flushTokenQueue, 0);
     }
     function flushAll() {
-      while (tokenQueueRef.current.length > 0) {
-        const cur = pendingRef.current;
-        if (!cur) {
-          tokenQueueRef.current = [];
-          break;
-        }
-        const chunk = tokenQueueRef.current.splice(0, 32).join("");
+      const cur = pendingRef.current;
+      if (cur && tokenQueueRef.current.length > 0) {
+        const chunk = tokenQueueRef.current.join("");
+        tokenQueueRef.current = [];
         useStore
           .getState()
           .appendAssistantToken(cur.sessionId, cur.messageId, chunk);
@@ -2576,6 +2580,11 @@ function App() {
                   }
                   copied={copiedMessageId === msg.id}
                   isBusy={isBusy}
+                  onAnimatedFrame={() => {
+                    if (followStream) {
+                      scrollToBottom("auto");
+                    }
+                  }}
                   onCopy={(message) => {
                     void handleCopyMessage(message);
                   }}
@@ -2649,6 +2658,7 @@ function App() {
             onChange={(e) =>
               useStore.getState().setDraft(activeSession.id, e.target.value)
             }
+            onWheel={(e) => e.stopPropagation()}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();

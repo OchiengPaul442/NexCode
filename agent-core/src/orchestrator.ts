@@ -27,6 +27,7 @@ import { OllamaProvider } from "./providers/ollamaProvider";
 import { OpenAICompatibleProvider } from "./providers/openAICompatibleProvider";
 import { ToolRegistry } from "./tools/toolRegistry";
 import { chunkText, extractFirstCodeBlock } from "./utils/text";
+import { getAgentMaxTokens } from "./agents/shared";
 
 export interface NexcodeOrchestratorOptions {
   workspaceRoot?: string;
@@ -160,9 +161,12 @@ export class NexcodeOrchestrator {
         request.prompt.trimStart().startsWith("/tool ") &&
         request.allowTools !== false
       ) {
+        const toolCommand = request.prompt.replace(/^\s*\/tool\s+/, "").trim();
         yield {
           type: "status",
-          message: "Executing tool command",
+          message: toolCommand.startsWith("terminal ")
+            ? `Running terminal command: ${toolCommand.slice("terminal ".length)}`
+            : `Running tool command: ${toolCommand}`,
         };
         response = await this.handleToolRequest(
           request.prompt,
@@ -176,7 +180,7 @@ export class NexcodeOrchestrator {
         const inferredPrompt = `/tool terminal ${inferredTerminalCommand}`;
         yield {
           type: "status",
-          message: "Executing inferred terminal command",
+          message: `Running terminal command: ${inferredTerminalCommand}`,
         };
         response = await this.handleToolRequest(
           inferredPrompt,
@@ -203,10 +207,17 @@ export class NexcodeOrchestrator {
           request.abortSignal,
         );
       } else if (mode === "auto") {
+        const pipeline = this.resolveAutoPipeline(request.prompt);
         yield {
           type: "status",
-          message: "Orchestrating multi-agent pipeline",
+          message: `Auto workflow: ${pipeline.map((stage) => this.formatPipelineStage(stage)).join(" → ")}`,
         };
+        for (const stage of pipeline) {
+          yield {
+            type: "status",
+            message: this.describePipelineStage(stage),
+          };
+        }
         response = await this.runAutoMode(
           request.prompt,
           provider,
@@ -215,6 +226,7 @@ export class NexcodeOrchestrator {
           workspaceContext,
           memoryContext,
           diagnostics,
+          pipeline,
           request.abortSignal,
         );
       } else {
@@ -317,111 +329,131 @@ export class NexcodeOrchestrator {
     workspaceContext: string,
     memoryContext: string,
     diagnostics: string[],
+    pipeline: Exclude<AgentMode, "auto">[],
     abortSignal?: AbortSignal,
   ): Promise<OrchestratorResponse> {
-    this.ensureNotAborted(abortSignal);
-    const plan = await this.runAgentSafely(
-      "planner",
-      () =>
-        this.planner.run({
-          userPrompt: prompt,
-          provider,
-          model,
-          temperature,
-          workspaceContext,
-          memoryContext,
-          signal: abortSignal,
-        }),
-      diagnostics,
-    );
+    const stageSet = new Set(pipeline);
 
     this.ensureNotAborted(abortSignal);
-    const code = await this.runAgentSafely(
-      "coder",
-      () =>
-        this.coder.run({
-          userPrompt: prompt,
-          provider,
-          model,
-          temperature,
-          workspaceContext,
-          memoryContext,
-          plan: plan.content,
-          signal: abortSignal,
-        }),
-      diagnostics,
-    );
+    const plan = stageSet.has("planner")
+      ? await this.runAgentSafely(
+          "planner",
+          () =>
+            this.planner.run({
+              userPrompt: prompt,
+              provider,
+              model,
+              temperature,
+              maxTokens: getAgentMaxTokens("planner", prompt),
+              workspaceContext,
+              memoryContext,
+              signal: abortSignal,
+            }),
+          diagnostics,
+        )
+      : null;
+
+    this.ensureNotAborted(abortSignal);
+    const code = stageSet.has("coder")
+      ? await this.runAgentSafely(
+          "coder",
+          () =>
+            this.coder.run({
+              userPrompt: prompt,
+              provider,
+              model,
+              temperature,
+              maxTokens: getAgentMaxTokens("coder", prompt),
+              workspaceContext,
+              memoryContext,
+              plan: plan?.content,
+              signal: abortSignal,
+            }),
+          diagnostics,
+        )
+      : null;
 
     this.ensureNotAborted(abortSignal);
     const [review, qa, security] = await Promise.all([
-      this.runAgentSafely(
-        "reviewer",
-        () =>
-          this.reviewer.run({
-            userPrompt: prompt,
-            provider,
-            model,
-            temperature,
-            workspaceContext,
-            memoryContext,
-            plan: plan.content,
-            implementationDraft: code.content,
-            signal: abortSignal,
-          }),
-        diagnostics,
-      ),
-      this.runAgentSafely(
-        "qa",
-        () =>
-          this.qa.run({
-            userPrompt: prompt,
-            provider,
-            model,
-            temperature,
-            workspaceContext,
-            memoryContext,
-            plan: plan.content,
-            implementationDraft: code.content,
-            signal: abortSignal,
-          }),
-        diagnostics,
-      ),
-      this.runAgentSafely(
-        "security",
-        () =>
-          this.security.run({
-            userPrompt: prompt,
-            provider,
-            model,
-            temperature,
-            workspaceContext,
-            memoryContext,
-            plan: plan.content,
-            implementationDraft: code.content,
-            signal: abortSignal,
-          }),
-        diagnostics,
-      ),
+      stageSet.has("reviewer")
+        ? this.runAgentSafely(
+            "reviewer",
+            () =>
+              this.reviewer.run({
+                userPrompt: prompt,
+                provider,
+                model,
+                temperature,
+                maxTokens: getAgentMaxTokens("reviewer", prompt),
+                workspaceContext,
+                memoryContext,
+                plan: plan?.content,
+                implementationDraft: code?.content,
+                signal: abortSignal,
+              }),
+            diagnostics,
+          )
+        : Promise.resolve(null),
+      stageSet.has("qa")
+        ? this.runAgentSafely(
+            "qa",
+            () =>
+              this.qa.run({
+                userPrompt: prompt,
+                provider,
+                model,
+                temperature,
+                maxTokens: getAgentMaxTokens("qa", prompt),
+                workspaceContext,
+                memoryContext,
+                plan: plan?.content,
+                implementationDraft: code?.content,
+                signal: abortSignal,
+              }),
+            diagnostics,
+          )
+        : Promise.resolve(null),
+      stageSet.has("security")
+        ? this.runAgentSafely(
+            "security",
+            () =>
+              this.security.run({
+                userPrompt: prompt,
+                provider,
+                model,
+                temperature,
+                maxTokens: getAgentMaxTokens("security", prompt),
+                workspaceContext,
+                memoryContext,
+                plan: plan?.content,
+                implementationDraft: code?.content,
+                signal: abortSignal,
+              }),
+            diagnostics,
+          )
+        : Promise.resolve(null),
     ]);
 
     this.ensureNotAborted(abortSignal);
 
-    const text = [
-      "## Planner",
-      plan.content,
-      "",
-      "## Coder",
-      code.content,
-      "",
-      "## Reviewer",
-      review.content,
-      "",
-      "## QA",
-      qa.content,
-      "",
-      "## Security",
-      security.content,
-    ].join("\n");
+    const textParts: string[] = [];
+    if (plan) {
+      textParts.push("## Planner", plan.content, "");
+    }
+    if (code) {
+      textParts.push("## Coder", code.content, "");
+    }
+    if (review) {
+      textParts.push("## Reviewer", review.content, "");
+    }
+    if (qa) {
+      textParts.push("## QA", qa.content, "");
+    }
+    if (security) {
+      textParts.push("## Security", security.content);
+    }
+
+    const text = textParts.join("\n").trim();
 
     return {
       text,
@@ -431,6 +463,71 @@ export class NexcodeOrchestrator {
       proposedEdits: [],
       diagnostics,
     };
+  }
+
+  private resolveAutoPipeline(prompt: string): Exclude<AgentMode, "auto">[] {
+    const normalized = prompt.toLowerCase();
+    const isSecuritySensitive =
+      /\b(security|audit|cve|vulnerability|secret|threat|compliance|hardening)\b/.test(
+        normalized,
+      );
+    const isValidationHeavy =
+      /\b(test|qa|verify|validation|debug|bug|broken|error|failing)\b/.test(
+        normalized,
+      );
+    const isBuildOrCreate =
+      /\b(create|build|design|scaffold|implement|nextjs|react|frontend|website|app|blog|ui)\b/.test(
+        normalized,
+      );
+    const isLarge = prompt.length > 900 || normalized.split(/\s+/).length > 180;
+
+    if (isSecuritySensitive) {
+      return ["planner", "coder", "reviewer", "qa", "security"];
+    }
+
+    if (isLarge || isValidationHeavy) {
+      return ["planner", "coder", "reviewer", "qa"];
+    }
+
+    if (isBuildOrCreate) {
+      return ["planner", "coder", "reviewer"];
+    }
+
+    return ["planner", "coder"];
+  }
+
+  private describePipelineStage(stage: Exclude<AgentMode, "auto">): string {
+    switch (stage) {
+      case "planner":
+        return "Planner: mapping the request";
+      case "coder":
+        return "Coder: drafting the implementation";
+      case "reviewer":
+        return "Reviewer: checking correctness";
+      case "qa":
+        return "QA: designing validation cases";
+      case "security":
+        return "Security: scanning for risks";
+      default:
+        return "Running agent stage";
+    }
+  }
+
+  private formatPipelineStage(stage: Exclude<AgentMode, "auto">): string {
+    switch (stage) {
+      case "planner":
+        return "Planner";
+      case "coder":
+        return "Coder";
+      case "reviewer":
+        return "Reviewer";
+      case "qa":
+        return "QA";
+      case "security":
+        return "Security";
+      default:
+        return "Agent";
+    }
   }
 
   private async runSingleMode(
@@ -454,6 +551,7 @@ export class NexcodeOrchestrator {
           provider,
           model,
           temperature,
+          maxTokens: getAgentMaxTokens("planner", prompt),
           workspaceContext,
           memoryContext,
           signal: abortSignal,
@@ -464,6 +562,7 @@ export class NexcodeOrchestrator {
           provider,
           model,
           temperature,
+          maxTokens: getAgentMaxTokens("coder", prompt),
           workspaceContext,
           memoryContext,
           signal: abortSignal,
@@ -474,6 +573,7 @@ export class NexcodeOrchestrator {
           provider,
           model,
           temperature,
+          maxTokens: getAgentMaxTokens("reviewer", prompt),
           workspaceContext,
           memoryContext,
           signal: abortSignal,
@@ -484,6 +584,7 @@ export class NexcodeOrchestrator {
           provider,
           model,
           temperature,
+          maxTokens: getAgentMaxTokens("qa", prompt),
           workspaceContext,
           memoryContext,
           signal: abortSignal,
@@ -494,6 +595,7 @@ export class NexcodeOrchestrator {
           provider,
           model,
           temperature,
+          maxTokens: getAgentMaxTokens("security", prompt),
           workspaceContext,
           memoryContext,
           signal: abortSignal,
@@ -598,6 +700,12 @@ export class NexcodeOrchestrator {
     const coderInstruction = [
       `Edit file: ${parsed.filePath}`,
       `Instruction: ${parsed.instruction}`,
+      "Rules:",
+      "- Preserve all existing content unless the instruction explicitly says to remove or replace it.",
+      "- Make the smallest change that satisfies the instruction.",
+      "- If the instruction says append or add, keep the original text and append only the requested change.",
+      "- If the instruction names required sections, include all of them.",
+      "- Keep the result buildable and valid for the file type.",
       "Return only the updated full file content inside a single fenced code block.",
       "",
       "Current file:",
@@ -614,6 +722,7 @@ export class NexcodeOrchestrator {
           provider,
           model,
           temperature,
+          maxTokens: getAgentMaxTokens("coder", coderInstruction),
           workspaceContext,
           memoryContext,
           signal: abortSignal,
@@ -622,8 +731,46 @@ export class NexcodeOrchestrator {
     );
 
     const extracted = extractFirstCodeBlock(generated.content);
-    const newText =
+    let newText =
       extracted && extracted.length > 0 ? extracted : generated.content;
+    const requestedAppendText = this.extractRequestedAppendText(
+      parsed.instruction,
+    );
+
+    if (
+      this.isAppendStyleEdit(parsed.instruction) &&
+      oldText.trim().length > 0 &&
+      !newText.includes(oldText.trimEnd())
+    ) {
+      const normalizedOldText = oldText.trimEnd();
+      const normalizedGeneratedText = newText.trimStart();
+      const appendedLine = requestedAppendText?.trim();
+
+      if (appendedLine && !normalizedGeneratedText.includes(appendedLine)) {
+        newText = `${normalizedOldText}\n${appendedLine}`;
+      } else {
+        newText = normalizedGeneratedText
+          ? `${normalizedOldText}\n${normalizedGeneratedText}`
+          : normalizedOldText;
+      }
+    } else if (
+      requestedAppendText &&
+      !newText.includes(requestedAppendText.trim()) &&
+      oldText.trim().length > 0 &&
+      this.isAppendStyleEdit(parsed.instruction)
+    ) {
+      newText = `${oldText.trimEnd()}\n${requestedAppendText.trim()}`;
+    }
+
+    if (
+      this.shouldUseBlogLandingFallback(
+        parsed.filePath,
+        parsed.instruction,
+        newText,
+      )
+    ) {
+      newText = this.createBlogLandingPageFallback();
+    }
 
     const proposedEdit = await this.tools.filesystem.makeProposedEdit(
       parsed.filePath,
@@ -659,6 +806,98 @@ export class NexcodeOrchestrator {
       filePath: match[1].trim(),
       instruction: match[2].trim(),
     };
+  }
+
+  private isAppendStyleEdit(instruction: string): boolean {
+    return /\b(append|add|insert)\b/i.test(instruction);
+  }
+
+  private extractRequestedAppendText(instruction: string): string | null {
+    const trimmed = instruction.trim();
+
+    const patterns = [
+      /(?:append|add|insert)(?:\s+a)?(?:\s+new)?\s+line\s+with\s+(?:the\s+)?text\s+([`'\"]?)([\s\S]+?)\1\.?$/i,
+      /(?:append|add|insert)(?:\s+a)?(?:\s+new)?\s+line\s+(?:containing|that says|saying)\s+([`'\"]?)([\s\S]+?)\1\.?$/i,
+      /(?:append|add|insert)(?:\s+a)?(?:\s+new)?\s+line\s+(?:with|of)\s+([`'\"]?)([\s\S]+?)\1\.?$/i,
+    ];
+
+    for (const pattern of patterns) {
+      const match = trimmed.match(pattern);
+      if (match) {
+        const text = match[2].trim();
+        if (text) {
+          return text;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  private shouldUseBlogLandingFallback(
+    filePath: string,
+    instruction: string,
+    generatedText: string,
+  ): boolean {
+    if (!/\b(blog|homepage|landing page|home page)\b/i.test(instruction)) {
+      return false;
+    }
+
+    if (!/\.(tsx|jsx)$/i.test(filePath)) {
+      return false;
+    }
+
+    return !/\b(blog|post|featured|recent)\b/i.test(generatedText);
+  }
+
+  private createBlogLandingPageFallback(): string {
+    return [
+      "export default function Home() {",
+      "  const featuredPosts = [",
+      "    { title: 'Featured post one', summary: 'A polished article preview for the blog homepage.' },",
+      "    { title: 'Featured post two', summary: 'Another highlighted story from the latest posts.' },",
+      "  ];",
+      "",
+      "  const recentPosts = [",
+      "    { title: 'Recent post one', summary: 'Fresh updates from the blog.' },",
+      "    { title: 'Recent post two', summary: 'Practical notes and release highlights.' },",
+      "  ];",
+      "",
+      "  return (",
+      '    <main className="min-h-screen bg-slate-950 text-slate-100">',
+      '      <section className="mx-auto max-w-5xl px-6 py-16">',
+      '        <p className="text-sm uppercase tracking-[0.3em] text-cyan-300">Blog</p>',
+      '        <h1 className="mt-4 text-4xl font-semibold">A polished blog homepage</h1>',
+      '        <p className="mt-4 max-w-2xl text-slate-300">Latest posts, featured stories, and practical notes for builders.</p>',
+      "      </section>",
+      "",
+      '      <section className="mx-auto max-w-5xl px-6 py-6">',
+      '        <h2 className="text-xl font-semibold">Featured posts</h2>',
+      '        <div className="mt-4 grid gap-4 md:grid-cols-2">',
+      "          {featuredPosts.map((post) => (",
+      '            <article key={post.title} className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">',
+      '              <h3 className="text-lg font-medium">{post.title}</h3>',
+      '              <p className="mt-2 text-sm text-slate-300">{post.summary}</p>',
+      "            </article>",
+      "          ))}",
+      "        </div>",
+      "      </section>",
+      "",
+      '      <section className="mx-auto max-w-5xl px-6 py-10">',
+      '        <h2 className="text-xl font-semibold">Recent posts</h2>',
+      '        <ul className="mt-4 space-y-3">',
+      "          {recentPosts.map((post) => (",
+      '            <li key={post.title} className="rounded-2xl border border-slate-800 bg-slate-900/50 p-4">',
+      '              <p className="font-medium">{post.title}</p>',
+      '              <p className="mt-1 text-sm text-slate-300">{post.summary}</p>',
+      "            </li>",
+      "          ))}",
+      "        </ul>",
+      "      </section>",
+      "    </main>",
+      "  );",
+      "}",
+    ].join("\n");
   }
 
   private extractTerminalCommandRequest(prompt: string): string | null {

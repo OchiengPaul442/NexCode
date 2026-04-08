@@ -149,6 +149,32 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     this.postMessage({ type: "cleared" });
   }
 
+  private normalizeOllamaBaseUrl(rawUrl: string): string {
+    const trimmed = rawUrl.trim();
+    if (!trimmed) {
+      return "http://localhost:11434";
+    }
+
+    const candidate = trimmed.replace(/\/$/, "");
+
+    try {
+      const url = new URL(candidate);
+      if (/^(?:www\.)?ollama\.com$/i.test(url.hostname)) {
+        return "http://localhost:11434";
+      }
+
+      return candidate;
+    } catch {
+      if (/^(?:www\.)?ollama\.com(?::\d+)?(?:\/.*)?$/i.test(candidate)) {
+        return "http://localhost:11434";
+      }
+
+      return candidate.startsWith("http://") || candidate.startsWith("https://")
+        ? candidate
+        : `http://${candidate}`;
+    }
+  }
+
   private async handleWebviewMessage(
     message: InboundWebviewMessage,
   ): Promise<void> {
@@ -638,9 +664,8 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       provider: config.get<ProviderId>("defaultProvider", "ollama"),
       model: config.get<string>("defaultModel", "qwen2.5-coder:7b"),
       mode: config.get<AgentMode>("defaultMode", "auto"),
-      ollamaBaseUrl: config.get<string>(
-        "ollamaBaseUrl",
-        "http://localhost:11434",
+      ollamaBaseUrl: this.normalizeOllamaBaseUrl(
+        config.get<string>("ollamaBaseUrl", "http://localhost:11434"),
       ),
       openAIBaseUrl: config.get<string>(
         "openAIBaseUrl",

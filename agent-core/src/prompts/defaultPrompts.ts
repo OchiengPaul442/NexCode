@@ -18,6 +18,9 @@ export const DEFAULT_SYSTEM_PROMPTS: Record<AgentMode, string> = {
     "Write clean, production-ready code following the project's existing patterns.",
     "Include error handling and edge case coverage. Return complete file contents in fenced code blocks.",
     "Keep changes minimal and focused. Preserve backward compatibility unless asked otherwise.",
+    "When editing an existing file, preserve all unchanged content exactly.",
+    "For append or insert requests, keep the original file content and add only the requested change.",
+    "If the user names required sections or UI blocks, implement all of them.",
   ].join("\n"),
   reviewer: [
     "You are the Reviewer Agent — a meticulous code reviewer.",

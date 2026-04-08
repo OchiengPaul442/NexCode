@@ -31,6 +31,18 @@ export class OpenAICompatibleProvider implements ModelProvider {
     private readonly apiKey?: string,
   ) {}
 
+  private createHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+
+    if (this.apiKey?.trim()) {
+      headers.Authorization = `Bearer ${this.apiKey.trim()}`;
+    }
+
+    return headers;
+  }
+
   private createAbortController(
     signal: AbortSignal | undefined,
     timeoutMs: number,
@@ -59,19 +71,12 @@ export class OpenAICompatibleProvider implements ModelProvider {
   }
 
   public async generate(request: ModelRequest): Promise<ModelResponse> {
-    if (!this.apiKey) {
-      throw new Error("OpenAI-compatible provider requires an API key.");
-    }
-
     const abort = this.createAbortController(request.signal, 300_000);
 
     try {
       const response = await fetch(`${this.baseUrl}/chat/completions`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${this.apiKey}`,
-        },
+        headers: this.createHeaders(),
         body: JSON.stringify({
           model: request.model,
           messages: request.messages,
@@ -102,19 +107,12 @@ export class OpenAICompatibleProvider implements ModelProvider {
   }
 
   public async *stream(request: ModelRequest): AsyncGenerator<string> {
-    if (!this.apiKey) {
-      throw new Error("OpenAI-compatible provider requires an API key.");
-    }
-
     const abort = this.createAbortController(request.signal, 600_000);
 
     try {
       const response = await fetch(`${this.baseUrl}/chat/completions`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${this.apiKey}`,
-        },
+        headers: this.createHeaders(),
         body: JSON.stringify({
           model: request.model,
           messages: request.messages,

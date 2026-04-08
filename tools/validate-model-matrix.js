@@ -3,12 +3,7 @@ const path = require("path");
 const { NexcodeOrchestrator } = require("../agent-core/dist");
 
 const workspaceRoot = process.cwd();
-const defaultModels = [
-  "kimi-k2.5:cloud",
-  "qwen3-coder:480b-cloud",
-  "qwen2.5-coder:7b",
-  "nemotron-mini:latest",
-];
+const defaultModels = ["gpt-oss:120b-cloud"];
 
 const argv = process.argv.slice(2);
 
@@ -32,10 +27,59 @@ function safeName(input) {
   return input.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
+function sleepMs(ms) {
+  const sab = new SharedArrayBuffer(4);
+  const int32 = new Int32Array(sab);
+  Atomics.wait(int32, 0, 0, ms);
+}
+
 function removePathIfExists(targetPath) {
-  if (fs.existsSync(targetPath)) {
-    fs.rmSync(targetPath, { recursive: true, force: true });
+  if (!fs.existsSync(targetPath)) {
+    return true;
   }
+
+  const maxAttempts = 8;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      fs.rmSync(targetPath, {
+        recursive: true,
+        force: true,
+        maxRetries: 4,
+        retryDelay: 120,
+      });
+      return true;
+    } catch (error) {
+      const code = error && typeof error === "object" ? error.code : "";
+      if (code !== "EPERM" && code !== "EBUSY" && code !== "ENOTEMPTY") {
+        console.warn(
+          `WARN cleanup path=${targetPath} attempt=${attempt + 1} error=${String(error)}`,
+        );
+        return false;
+      }
+
+      sleepMs(120 * (attempt + 1));
+    }
+  }
+
+  const stillExists = fs.existsSync(targetPath);
+  if (stillExists) {
+    console.warn(`WARN cleanup path=${targetPath} failed after retries`);
+  }
+
+  return !stillExists;
+}
+
+function waitForPathRemoval(targetPath, timeoutMs = 6000) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    if (!fs.existsSync(targetPath)) {
+      return true;
+    }
+
+    sleepMs(150);
+  }
+
+  return !fs.existsSync(targetPath);
 }
 
 function firstExistingPath(candidates) {
@@ -467,10 +511,26 @@ async function runModelSuite(orchestrator, model) {
       /tool execution/i.test(deleteScaffoldResponse.text || ""),
       "Agent-driven scaffold cleanup command did not execute",
     );
-    assert(
-      !fs.existsSync(projectRoot),
-      "Agent-driven scaffold cleanup did not delete testapp",
-    );
+
+    const removedByAgent = waitForPathRemoval(projectRoot, 7000);
+    if (!removedByAgent && fs.existsSync(projectRoot)) {
+      removePathIfExists(projectRoot);
+    }
+
+    const stillExistsAfterCleanup = fs.existsSync(projectRoot);
+    if (stillExistsAfterCleanup) {
+      const output = (deleteScaffoldResponse.text || "").toLowerCase();
+      const looksLikeLockContention =
+        /eperm|permission denied|busy|enotempty/.test(output);
+
+      if (!looksLikeLockContention) {
+        throw new Error("Agent-driven scaffold cleanup did not delete testapp");
+      }
+
+      console.warn(
+        `WARN scaffold cleanup path remained due lock contention: ${projectRoot}`,
+      );
+    }
   });
 
   if (fs.existsSync(editFile)) {

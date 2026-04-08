@@ -24,13 +24,13 @@ export function activate(context: vscode.ExtensionContext): void {
       const config = vscode.workspace.getConfiguration("nexcodeKiboko");
       const currentModel = config.get<string>(
         "defaultModel",
-        "qwen2.5-coder:7b",
+        "gpt-oss:120b-cloud",
       );
 
       const picked = await vscode.window.showInputBox({
         title: "NEXCODE-KIBOKO Model",
         prompt:
-          "Enter model name (e.g. qwen2.5-coder:7b, deepseek-coder, gpt-4o-mini)",
+          "Enter model name (e.g. gpt-oss:120b-cloud, qwen2.5-coder:7b, deepseek-coder)",
         value: currentModel,
         ignoreFocusOut: true,
       });

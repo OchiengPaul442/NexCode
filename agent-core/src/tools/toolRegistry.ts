@@ -1,6 +1,7 @@
 import { ToolResult } from "../types";
 import { FileSystemTool } from "./fileSystemTool";
 import { GitTool } from "./gitTool";
+import { McpRegistry } from "../mcp/mcpRegistry";
 import { SearchTool } from "./searchTool";
 import { TerminalTool } from "./terminalTool";
 import { TestRunnerTool } from "./testRunnerTool";
@@ -8,6 +9,7 @@ import { TestRunnerTool } from "./testRunnerTool";
 interface ToolRegistryOptions {
   tavilyApiKey?: string;
   tavilyBaseUrl?: string;
+  mcpRegistry?: McpRegistry;
 }
 
 export class ToolRegistry {
@@ -16,6 +18,7 @@ export class ToolRegistry {
   public readonly git: GitTool;
   public readonly test: TestRunnerTool;
   public readonly search: SearchTool;
+  private readonly mcpRegistry?: McpRegistry;
 
   public constructor(workspaceRoot: string, options: ToolRegistryOptions = {}) {
     this.filesystem = new FileSystemTool(workspaceRoot);
@@ -26,6 +29,7 @@ export class ToolRegistry {
       tavilyApiKey: options.tavilyApiKey,
       tavilyBaseUrl: options.tavilyBaseUrl,
     });
+    this.mcpRegistry = options.mcpRegistry;
   }
 
   public async runToolCall(input: string): Promise<ToolResult> {
@@ -63,11 +67,71 @@ export class ToolRegistry {
         return this.test.run(arg);
       case "read":
         return this.filesystem.readFile(arg);
+      case "write": {
+        const writeMatch = arg.match(/^(.+?)\s*::\s*([\s\S]*)$/);
+        if (!writeMatch) {
+          return {
+            ok: false,
+            output: "Use: write <path> :: <content>",
+          };
+        }
+
+        return this.filesystem.writeFile(
+          writeMatch[1].trim(),
+          writeMatch[2] ?? "",
+        );
+      }
+      case "append": {
+        const appendMatch = arg.match(/^(.+?)\s*::\s*([\s\S]*)$/);
+        if (!appendMatch) {
+          return {
+            ok: false,
+            output: "Use: append <path> :: <content>",
+          };
+        }
+
+        return this.filesystem.appendFile(
+          appendMatch[1].trim(),
+          appendMatch[2] ?? "",
+        );
+      }
+      case "mcp": {
+        if (!this.mcpRegistry) {
+          return {
+            ok: false,
+            output:
+              "MCP registry is not configured. Register adapters before using /tool mcp.",
+          };
+        }
+
+        const parsed = arg.match(
+          /^([a-zA-Z0-9._-]+):([a-zA-Z0-9._-]+)\s*::\s*([\s\S]*)$/,
+        );
+        if (!parsed) {
+          return {
+            ok: false,
+            output: "Use: mcp <server>:<tool> :: <input>",
+          };
+        }
+
+        const result = await this.mcpRegistry.call({
+          server: parsed[1],
+          tool: parsed[2],
+          input: parsed[3] ?? "",
+        });
+
+        return {
+          ok: result.ok,
+          output: result.ok
+            ? `${result.output}\n\n[latency ${result.latencyMs}ms]`
+            : result.output,
+        };
+      }
       default:
         return {
           ok: false,
           output:
-            "Unknown tool command. Use one of: search, web-search, terminal, git-status, git-diff, git-branch, test, read",
+            "Unknown tool command. Use one of: search, web-search, terminal, git-status, git-diff, git-branch, test, read, write, append, mcp",
         };
     }
   }

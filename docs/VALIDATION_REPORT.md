@@ -1,65 +1,57 @@
 # Validation Report
 
-Date: 2026-04-05
+Date: 2026-04-08
 
 ## Scope
 
-Full regression validation was executed across these Ollama models:
+Full validation was executed for the selected Ollama model:
 
-- `kimi-k2.5:cloud`
-- `qwen3-coder:480b-cloud`
-- `qwen2.5-coder:7b`
-- `nemotron-mini:latest`
+- `gpt-oss:120b-cloud`
 
-Test categories per model:
+Test categories:
 
-- Real-world `auto` planning/implementation prompt
+- Real-world `auto` end-to-end prompt
 - `/tool search`
 - `/tool read`
 - `/tool web-search`
 - `/tool terminal` filesystem create/move/delete
 - `/tool terminal` dangerous-command block check
 - `/edit ...` proposal generation + apply flow
+- Empty-workspace command lifecycle (create/edit/delete)
+- Next.js blog scaffold + support-file creation
 
 ## Summary
 
-- Total test cases: `36`
-- Passed: `36`
+- Total test cases: `11`
+- Passed: `11`
 - Failed: `0`
-- Memory entries before: `121`
-- Memory entries after: `157`
-- Memory delta (interaction learning persistence): `+36`
+- Success rate: `100%`
+- Memory entries before: `286`
+- Memory entries after: `295`
+- Memory delta: `+9`
 
 Machine-readable details are in `docs/VALIDATION_REPORT.json`.
 
 ## Timing Highlights
 
-- Kimi real-world auto: `326203 ms`
-- Qwen3 480b cloud real-world auto: `528802 ms`
-- Qwen2.5 coder 7b real-world auto: `135898 ms`
-- Nemotron-mini real-world auto: `14279 ms`
-
-Tool execution and filesystem operations consistently completed in low latency ranges for all models.
+- Real-world auto: `8691 ms`
+- Tool search: `30399 ms`
+- Next.js blog scaffold: `50873 ms`
 
 ## Security Validation
 
-Dangerous terminal pattern test (`/tool terminal rm -rf /`) was blocked for all models.
+Dangerous terminal pattern test (`/tool terminal rm -rf /`) was blocked successfully.
 
 ## Filesystem Capability Validation
 
-For each model, the agent successfully performed:
+Validated successfully:
 
 - Create file
 - Move file
 - Delete file
-
-These operations were verified with on-disk existence checks.
-
-## Edit Workflow Validation
-
-For each model, the `/edit` flow produced at least one proposed edit and the first edit was applied successfully.
+- Append/update via edit flow
 
 ## Notes
 
-- A previous activation issue (`Cannot find module '@nexcode/agent-core'`) was traced to VSIX dependency packaging.
-- Release packaging now uses isolated staging and dependency verification to prevent this regression.
+- Validation was run after orchestration streaming/routing refactor and sidebar UX updates.
+- The selected model configuration for validation defaults is now `gpt-oss:120b-cloud`.

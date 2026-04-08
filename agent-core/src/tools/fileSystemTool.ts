@@ -42,6 +42,26 @@ export class FileSystemTool {
     }
   }
 
+  public async appendFile(
+    targetPath: string,
+    content: string,
+  ): Promise<ToolResult> {
+    try {
+      const absolutePath = this.resolveWorkspacePath(targetPath);
+      await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+      await fs.appendFile(absolutePath, content, "utf8");
+      return {
+        ok: true,
+        output: `Appended to ${targetPath}`,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        output: String(error),
+      };
+    }
+  }
+
   public async makeProposedEdit(
     targetPath: string,
     newText: string,

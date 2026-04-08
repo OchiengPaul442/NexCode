@@ -8,8 +8,12 @@ import { QaAgent } from "./agents/qaAgent";
 import { ReviewerAgent } from "./agents/reviewerAgent";
 import { SecurityAgent } from "./agents/securityAgent";
 import {
+  ActivityFile,
+  ActivityStatus,
+  ActivityTodo,
   AgentMode,
   AgentResult,
+  ChatMessage,
   OrchestratorEvent,
   OrchestratorRequest,
   OrchestratorResponse,
@@ -17,6 +21,8 @@ import {
   ProposedEdit,
   RequestAttachment,
 } from "./types";
+import { McpAdapter, McpToolCall, McpToolResult } from "./mcp";
+import { McpRegistry } from "./mcp/mcpRegistry";
 import { MemoryManager } from "./memory/memoryManager";
 import { PromptStore } from "./prompts/promptStore";
 import { FeedbackLogger } from "./self-improve/feedbackLogger";
@@ -43,6 +49,36 @@ export interface NexcodeOrchestratorOptions {
   tavilyBaseUrl?: string;
 }
 
+type AutoRoutingStrategy =
+  | {
+      kind: "single";
+      mode: Exclude<AgentMode, "auto">;
+      statusLabel?: string;
+      todoTitle: string;
+    }
+  | {
+      kind: "pipeline";
+      pipeline: Exclude<AgentMode, "auto">[];
+    };
+
+export interface PromptEnhancementRequest {
+  prompt: string;
+  provider?: ProviderId;
+  model?: string;
+  mode?: AgentMode;
+  temperature?: number;
+  workspaceRoot?: string;
+  activeFilePath?: string;
+  selectedText?: string;
+}
+
+export interface PromptEnhancementResult {
+  enhancedPrompt: string;
+  notes: string[];
+  providerUsed: ProviderId;
+  modelUsed: string;
+}
+
 export class NexcodeOrchestrator {
   private readonly config: RuntimeConfig;
   private readonly router: ModelRouter;
@@ -57,6 +93,7 @@ export class NexcodeOrchestrator {
   private readonly feedbackLogger: FeedbackLogger;
   private readonly reflection: ReflectionEngine;
   private readonly promptVersions: PromptVersionManager;
+  private readonly mcpRegistry: McpRegistry;
 
   public constructor(options: NexcodeOrchestratorOptions = {}) {
     this.config = createRuntimeConfig({
@@ -65,7 +102,7 @@ export class NexcodeOrchestrator {
       memoryDir: options.memoryDir,
       providerDefaults: {
         provider: options.defaultProvider ?? "ollama",
-        model: options.defaultModel ?? "qwen2.5-coder:7b",
+        model: options.defaultModel ?? "gpt-oss:120b-cloud",
         ollamaBaseUrl: options.ollamaBaseUrl ?? "http://localhost:11434",
         openAIBaseUrl: options.openAIBaseUrl ?? "https://api.openai.com/v1",
         openAIApiKey: options.openAIApiKey ?? process.env.OPENAI_API_KEY,
@@ -87,15 +124,17 @@ export class NexcodeOrchestrator {
       {
         defaultProvider: this.config.providerDefaults.provider,
         defaultModel: this.config.providerDefaults.model,
-        defaultCloudModel: options.defaultCloudModel ?? "gpt-4o-mini",
+        defaultCloudModel: options.defaultCloudModel ?? "gpt-oss:120b-cloud",
       },
     );
 
     this.prompts = new PromptStore(this.config.promptsDir);
     this.memory = new MemoryManager(this.config.memoryDir);
+    this.mcpRegistry = new McpRegistry();
     this.tools = new ToolRegistry(this.config.workspaceRoot, {
       tavilyApiKey: this.config.toolDefaults.tavilyApiKey,
       tavilyBaseUrl: this.config.toolDefaults.tavilyBaseUrl,
+      mcpRegistry: this.mcpRegistry,
     });
 
     this.planner = new PlannerAgent(this.router, this.prompts);
@@ -107,6 +146,110 @@ export class NexcodeOrchestrator {
     this.feedbackLogger = new FeedbackLogger(this.config.memoryDir);
     this.reflection = new ReflectionEngine();
     this.promptVersions = new PromptVersionManager(this.config.memoryDir);
+  }
+
+  public registerMcpAdapter(adapter: McpAdapter): void {
+    this.mcpRegistry.register(adapter);
+  }
+
+  public listMcpServers(): string[] {
+    return this.mcpRegistry.listServers();
+  }
+
+  public listMcpTools(server: string): Promise<string[]> {
+    return this.mcpRegistry.listTools(server);
+  }
+
+  public invokeMcpTool(call: McpToolCall): Promise<McpToolResult> {
+    return this.mcpRegistry.call(call);
+  }
+
+  public async enhancePrompt(
+    request: PromptEnhancementRequest,
+  ): Promise<PromptEnhancementResult> {
+    const originalPrompt = request.prompt?.trim() ?? "";
+    const fallbackProvider =
+      request.provider ?? this.config.providerDefaults.provider;
+    const fallbackModel = request.model ?? this.config.providerDefaults.model;
+
+    if (!originalPrompt) {
+      return {
+        enhancedPrompt: request.prompt ?? "",
+        notes: ["Prompt is empty, so no rewrite was performed."],
+        providerUsed: fallbackProvider,
+        modelUsed: fallbackModel,
+      };
+    }
+
+    const resolved = this.router.resolve({
+      provider: request.provider,
+      model: request.model,
+      complexity: originalPrompt.length > 1200 ? "large" : "small",
+    });
+
+    const contextRequest: OrchestratorRequest = {
+      prompt: originalPrompt,
+      workspaceRoot: request.workspaceRoot,
+      activeFilePath: request.activeFilePath,
+      selectedText: request.selectedText,
+    };
+
+    const [memoryContext, workspaceContext] = await Promise.all([
+      this.memory.getRelevantContext(originalPrompt).catch(() => ""),
+      this.buildWorkspaceContext(contextRequest).catch(() => ""),
+    ]);
+
+    const rewriteMode = request.mode ?? "auto";
+    const messages: ChatMessage[] = [
+      {
+        role: "system",
+        content: [
+          "You rewrite coding-task prompts for an autonomous software agent.",
+          "Return strict JSON with keys: enhancedPrompt (string), notes (string[]).",
+          "Preserve intent, constraints, and requested scope.",
+          "Do not invent requirements or change the user objective.",
+          "Preserve explicit slash commands (/tool, /edit, /plan, /code, /fix, /test, /explain).",
+          "If prompt is already high quality, keep changes minimal.",
+          "No markdown, no code fences, JSON only.",
+        ].join("\n"),
+      },
+      {
+        role: "user",
+        content: [
+          `Mode hint: ${rewriteMode}`,
+          `Original prompt:\n${originalPrompt}`,
+          workspaceContext
+            ? `Workspace context:\n${workspaceContext.slice(0, 5000)}`
+            : "",
+          memoryContext
+            ? `Memory context:\n${memoryContext.slice(0, 2500)}`
+            : "",
+          "Rewrite now.",
+        ]
+          .filter(Boolean)
+          .join("\n\n"),
+      },
+    ];
+
+    const response = await this.router.generate(messages, {
+      provider: request.provider,
+      model: request.model,
+      temperature:
+        typeof request.temperature === "number"
+          ? Math.min(1, Math.max(0, request.temperature))
+          : 0.2,
+      maxTokens: 900,
+      complexity: originalPrompt.length > 1200 ? "large" : "small",
+    });
+
+    const parsed = this.parsePromptEnhancement(response.text, originalPrompt);
+
+    return {
+      enhancedPrompt: parsed.enhancedPrompt,
+      notes: parsed.notes,
+      providerUsed: resolved.provider.id,
+      modelUsed: resolved.model,
+    };
   }
 
   public async *stream(
@@ -121,6 +264,8 @@ export class NexcodeOrchestrator {
         : undefined;
     const sessionId = this.getSessionId(request.workspaceRoot);
     const diagnostics: string[] = [];
+    let streamedAnyToken = false;
+    let latestActivityFiles: ActivityFile[] = [];
 
     this.memory.appendSessionMessage(sessionId, {
       role: "user",
@@ -129,12 +274,37 @@ export class NexcodeOrchestrator {
 
     yield {
       type: "status",
-      message: `Mode: ${mode} | Provider: ${provider} | Model: ${model}`,
+      message: `Using ${model} on ${provider} (${mode} mode)`,
     };
 
     yield {
       type: "status",
-      message: "Collecting context",
+      message: "Collecting workspace and memory context",
+    };
+
+    yield {
+      type: "activity",
+      todos: [
+        {
+          id: "context",
+          title: "Collect workspace and memory context",
+          status: "in-progress",
+          detail: "Gathering conversation memory and workspace signals",
+        },
+        {
+          id: "execution",
+          title: "Execute request",
+          status: "not-started",
+          detail: "Waiting for context",
+        },
+        {
+          id: "finalize",
+          title: "Finalize response",
+          status: "not-started",
+          detail: "Pending",
+        },
+      ],
+      note: "Starting request",
     };
 
     try {
@@ -148,26 +318,81 @@ export class NexcodeOrchestrator {
 
       yield {
         type: "status",
-        message: `Context ready – routing to ${mode} pipeline`,
+        message: "Context ready",
       };
 
-      const inferredTerminalCommand =
+      yield {
+        type: "activity",
+        todos: [
+          {
+            id: "context",
+            title: "Collect workspace and memory context",
+            status: "completed",
+            detail: "Context assembled",
+          },
+          {
+            id: "execution",
+            title: "Execute request",
+            status: "in-progress",
+            detail: "Routing request",
+          },
+          {
+            id: "finalize",
+            title: "Finalize response",
+            status: "not-started",
+            detail: "Pending",
+          },
+        ],
+        note: "Context ready",
+      };
+
+      const inferredToolCommand =
         request.allowTools !== false
-          ? this.extractTerminalCommandRequest(request.prompt)
+          ? this.extractToolCommandRequest(request.prompt)
           : null;
 
-      let response: OrchestratorResponse;
+      let response: OrchestratorResponse | null = null;
       if (
         request.prompt.trimStart().startsWith("/tool ") &&
         request.allowTools !== false
       ) {
         const toolCommand = request.prompt.replace(/^\s*\/tool\s+/, "").trim();
+        const toolFiles = this.inferActivityFilesFromToolCommand(toolCommand);
+        latestActivityFiles = toolFiles;
+
         yield {
           type: "status",
           message: toolCommand.startsWith("terminal ")
             ? `Running terminal command: ${toolCommand.slice("terminal ".length)}`
             : `Running tool command: ${toolCommand}`,
         };
+
+        yield {
+          type: "activity",
+          todos: [
+            {
+              id: "tool-parse",
+              title: "Parse tool command",
+              status: "completed",
+              detail: toolCommand,
+            },
+            {
+              id: "tool-run",
+              title: "Execute tool",
+              status: "in-progress",
+              detail: "Waiting for tool output",
+            },
+            {
+              id: "tool-summarize",
+              title: "Prepare tool result",
+              status: "not-started",
+              detail: "Pending",
+            },
+          ],
+          files: toolFiles,
+          note: "Tool command detected",
+        };
+
         response = await this.handleToolRequest(
           request.prompt,
           mode,
@@ -176,12 +401,72 @@ export class NexcodeOrchestrator {
           diagnostics,
           request.allowWebSearch !== false,
         );
-      } else if (inferredTerminalCommand) {
-        const inferredPrompt = `/tool terminal ${inferredTerminalCommand}`;
+
+        yield {
+          type: "activity",
+          todos: [
+            {
+              id: "tool-parse",
+              title: "Parse tool command",
+              status: "completed",
+              detail: toolCommand,
+            },
+            {
+              id: "tool-run",
+              title: "Execute tool",
+              status: "completed",
+              detail: "Tool run complete",
+            },
+            {
+              id: "tool-summarize",
+              title: "Prepare tool result",
+              status: "completed",
+              detail: "Result formatted",
+            },
+          ],
+          files: toolFiles.map((file) => ({ ...file, status: "modified" })),
+          note: "Tool execution complete",
+        };
+      } else if (inferredToolCommand) {
+        const inferredPrompt = `/tool ${inferredToolCommand}`;
+        const inferredStatus = inferredToolCommand.startsWith("terminal ")
+          ? `Running terminal command: ${inferredToolCommand.slice("terminal ".length)}`
+          : `Running inferred tool command: ${inferredToolCommand}`;
+        const inferredFiles =
+          this.inferActivityFilesFromToolCommand(inferredToolCommand);
+        latestActivityFiles = inferredFiles;
+
         yield {
           type: "status",
-          message: `Running terminal command: ${inferredTerminalCommand}`,
+          message: inferredStatus,
         };
+
+        yield {
+          type: "activity",
+          todos: [
+            {
+              id: "tool-infer",
+              title: "Infer tool command",
+              status: "completed",
+              detail: inferredToolCommand,
+            },
+            {
+              id: "tool-run",
+              title: "Execute inferred tool",
+              status: "in-progress",
+              detail: "Waiting for tool output",
+            },
+            {
+              id: "tool-summarize",
+              title: "Prepare tool result",
+              status: "not-started",
+              detail: "Pending",
+            },
+          ],
+          files: inferredFiles,
+          note: "Inferred tool command",
+        };
+
         response = await this.handleToolRequest(
           inferredPrompt,
           mode,
@@ -190,11 +475,78 @@ export class NexcodeOrchestrator {
           diagnostics,
           request.allowWebSearch !== false,
         );
+
+        yield {
+          type: "activity",
+          todos: [
+            {
+              id: "tool-infer",
+              title: "Infer tool command",
+              status: "completed",
+              detail: inferredToolCommand,
+            },
+            {
+              id: "tool-run",
+              title: "Execute inferred tool",
+              status: "completed",
+              detail: "Tool run complete",
+            },
+            {
+              id: "tool-summarize",
+              title: "Prepare tool result",
+              status: "completed",
+              detail: "Result formatted",
+            },
+          ],
+          files: inferredFiles.map((file) => ({ ...file, status: "modified" })),
+          note: "Tool execution complete",
+        };
       } else if (request.prompt.trimStart().startsWith("/edit ")) {
+        const parsedEdit = this.parseEditCommand(request.prompt);
+        const editFiles = parsedEdit
+          ? [
+              {
+                path: parsedEdit.filePath,
+                status: "in-progress" as ActivityStatus,
+                summary: "Preparing patch proposal",
+              },
+            ]
+          : [];
+        latestActivityFiles = editFiles;
+
         yield {
           type: "status",
           message: "Preparing edit proposal",
         };
+
+        yield {
+          type: "activity",
+          todos: [
+            {
+              id: "edit-parse",
+              title: "Parse edit command",
+              status: parsedEdit ? "completed" : "in-progress",
+              detail: parsedEdit
+                ? `Target: ${parsedEdit.filePath}`
+                : "Parsing command",
+            },
+            {
+              id: "edit-draft",
+              title: "Draft file update",
+              status: "in-progress",
+              detail: "Generating candidate file content",
+            },
+            {
+              id: "edit-patch",
+              title: "Build patch preview",
+              status: "not-started",
+              detail: "Pending",
+            },
+          ],
+          files: editFiles,
+          note: "Preparing edit proposal",
+        };
+
         response = await this.handleEditRequest(
           request.prompt,
           mode,
@@ -206,35 +558,159 @@ export class NexcodeOrchestrator {
           diagnostics,
           request.abortSignal,
         );
-      } else if (mode === "auto") {
-        const pipeline = this.resolveAutoPipeline(request.prompt);
+
+        latestActivityFiles =
+          response.proposedEdits.length > 0
+            ? this.buildActivityFilesFromProposedEdits(response.proposedEdits)
+            : editFiles.map((file) => ({ ...file, status: "modified" }));
+
         yield {
-          type: "status",
-          message: `Auto workflow: ${pipeline.map((stage) => this.formatPipelineStage(stage)).join(" → ")}`,
+          type: "activity",
+          todos: [
+            {
+              id: "edit-parse",
+              title: "Parse edit command",
+              status: parsedEdit ? "completed" : "in-progress",
+              detail: parsedEdit
+                ? `Target: ${parsedEdit.filePath}`
+                : "Command format needs review",
+            },
+            {
+              id: "edit-draft",
+              title: "Draft file update",
+              status: "completed",
+              detail: "Model response complete",
+            },
+            {
+              id: "edit-patch",
+              title: "Build patch preview",
+              status: "completed",
+              detail:
+                response.proposedEdits.length > 0
+                  ? `${response.proposedEdits.length} proposed edit(s)`
+                  : "No edits proposed",
+            },
+          ],
+          files: latestActivityFiles,
+          note: "Edit proposal ready",
         };
-        for (const stage of pipeline) {
+      } else if (mode === "auto") {
+        const strategy = this.resolveAutoStrategy(request.prompt);
+        if (strategy.kind === "pipeline") {
+          const pipelineTodos = strategy.pipeline.map((stage, index) => ({
+            id: `pipeline-${index + 1}-${stage}`,
+            title: `${this.formatPipelineStage(stage)} stage`,
+            status:
+              index === 0
+                ? ("in-progress" as ActivityStatus)
+                : ("not-started" as ActivityStatus),
+            detail: index === 0 ? "Active" : "Queued",
+          }));
+
           yield {
             type: "status",
-            message: this.describePipelineStage(stage),
+            message: `Auto routing: multi-agent pipeline (${strategy.pipeline
+              .map((stage) => this.formatPipelineStage(stage))
+              .join(" → ")})`,
           };
+
+          yield {
+            type: "activity",
+            todos: pipelineTodos,
+            note: "Auto routing selected pipeline",
+          };
+
+          const iterator = this.runAutoModeStreaming(
+            request.prompt,
+            provider,
+            model,
+            temperature,
+            workspaceContext,
+            memoryContext,
+            diagnostics,
+            strategy.pipeline,
+            request.abortSignal,
+          );
+
+          while (true) {
+            const step = await iterator.next();
+            if (step.done) {
+              response = step.value;
+              break;
+            }
+
+            if (step.value.type === "token") {
+              streamedAnyToken = true;
+            }
+
+            if (step.value.type === "activity") {
+              latestActivityFiles = step.value.files ?? latestActivityFiles;
+            }
+
+            yield step.value;
+          }
+        } else {
+          yield {
+            type: "status",
+            message:
+              strategy.statusLabel ??
+              `Auto routing: ${this.formatPipelineStage(strategy.mode)} fast path`,
+          };
+
+          const inferredFiles = this.inferActivityFilesFromPrompt(
+            request.prompt,
+            request.workspaceRoot,
+            request.activeFilePath,
+          );
+          latestActivityFiles = inferredFiles;
+
+          const iterator = this.runSingleModeStreaming(
+            strategy.mode,
+            "auto",
+            request.prompt,
+            provider,
+            model,
+            temperature,
+            workspaceContext,
+            memoryContext,
+            diagnostics,
+            request.abortSignal,
+            {
+              statusLabel: strategy.statusLabel,
+              todoTitle: strategy.todoTitle,
+              files: inferredFiles,
+            },
+          );
+
+          while (true) {
+            const step = await iterator.next();
+            if (step.done) {
+              response = step.value;
+              break;
+            }
+
+            if (step.value.type === "token") {
+              streamedAnyToken = true;
+            }
+
+            if (step.value.type === "activity") {
+              latestActivityFiles = step.value.files ?? latestActivityFiles;
+            }
+
+            yield step.value;
+          }
         }
-        response = await this.runAutoMode(
-          request.prompt,
-          provider,
-          model,
-          temperature,
-          workspaceContext,
-          memoryContext,
-          diagnostics,
-          pipeline,
-          request.abortSignal,
-        );
       } else {
-        yield {
-          type: "status",
-          message: `Calling ${mode} agent`,
-        };
-        response = await this.runSingleMode(
+        const selectedMode = mode as Exclude<AgentMode, "auto">;
+        const inferredFiles = this.inferActivityFilesFromPrompt(
+          request.prompt,
+          request.workspaceRoot,
+          request.activeFilePath,
+        );
+        latestActivityFiles = inferredFiles;
+
+        const iterator = this.runSingleModeStreaming(
+          selectedMode,
           mode,
           request.prompt,
           provider,
@@ -244,18 +720,47 @@ export class NexcodeOrchestrator {
           memoryContext,
           diagnostics,
           request.abortSignal,
+          {
+            statusLabel: this.describePipelineStage(selectedMode),
+            todoTitle: `Run ${this.formatPipelineStage(selectedMode)} stage`,
+            files: inferredFiles,
+          },
         );
+
+        while (true) {
+          const step = await iterator.next();
+          if (step.done) {
+            response = step.value;
+            break;
+          }
+
+          if (step.value.type === "token") {
+            streamedAnyToken = true;
+          }
+
+          if (step.value.type === "activity") {
+            latestActivityFiles = step.value.files ?? latestActivityFiles;
+          }
+
+          yield step.value;
+        }
       }
 
       this.ensureNotAborted(request.abortSignal);
 
+      if (!response) {
+        throw new Error("No response produced by orchestrator pipeline.");
+      }
+
       response.diagnostics = diagnostics;
 
-      for (const token of chunkText(response.text, 32)) {
-        yield {
-          type: "token",
-          token,
-        };
+      if (!streamedAnyToken && response.text.trim().length > 0) {
+        for (const token of chunkText(response.text, 32)) {
+          yield {
+            type: "token",
+            token,
+          };
+        }
       }
 
       this.memory.appendSessionMessage(sessionId, {
@@ -264,7 +769,7 @@ export class NexcodeOrchestrator {
       });
 
       await this.memory.rememberInteraction(request.prompt, response.text, [
-        mode,
+        response.modeUsed,
         provider,
         model,
       ]);
@@ -278,7 +783,7 @@ export class NexcodeOrchestrator {
       await this.feedbackLogger.log({
         ...feedback,
         metadata: {
-          mode,
+          mode: response.modeUsed,
           provider,
           model,
           diagnosticsCount: diagnostics.length,
@@ -287,11 +792,44 @@ export class NexcodeOrchestrator {
 
       if (feedback.score >= 85) {
         await this.promptVersions.record(
-          mode,
+          response.modeUsed,
           feedback.score,
           "High-scoring response captured for prompt evolution.",
         );
       }
+
+      const responseFiles = this.buildActivityFilesFromProposedEdits(
+        response.proposedEdits,
+      );
+      if (responseFiles.length > 0) {
+        latestActivityFiles = responseFiles;
+      }
+
+      yield {
+        type: "activity",
+        todos: [
+          {
+            id: "context",
+            title: "Collect workspace and memory context",
+            status: "completed",
+            detail: "Completed",
+          },
+          {
+            id: "execution",
+            title: "Execute request",
+            status: "completed",
+            detail: "Completed",
+          },
+          {
+            id: "finalize",
+            title: "Finalize response",
+            status: "completed",
+            detail: "Saved to memory and ready in chat",
+          },
+        ],
+        files: latestActivityFiles,
+        note: "Response ready",
+      };
 
       yield {
         type: "final",
@@ -300,11 +838,37 @@ export class NexcodeOrchestrator {
     } catch (error) {
       if (this.isAbortError(error)) {
         yield {
+          type: "activity",
+          todos: [
+            {
+              id: "execution",
+              title: "Execute request",
+              status: "failed",
+              detail: "Stopped by user",
+            },
+          ],
+          note: "Request stopped",
+        };
+
+        yield {
           type: "stopped",
           message: "Request stopped by user.",
         };
         return;
       }
+
+      yield {
+        type: "activity",
+        todos: [
+          {
+            id: "execution",
+            title: "Execute request",
+            status: "failed",
+            detail: String(error),
+          },
+        ],
+        note: "Request failed",
+      };
 
       yield {
         type: "error",
@@ -321,7 +885,131 @@ export class NexcodeOrchestrator {
     await fs.writeFile(absolutePath, edit.newText, "utf8");
   }
 
-  private async runAutoMode(
+  private async *runSingleModeStreaming(
+    selectedMode: Exclude<AgentMode, "auto">,
+    modeUsed: AgentMode,
+    prompt: string,
+    provider: ProviderId,
+    model: string,
+    temperature: number | undefined,
+    workspaceContext: string,
+    memoryContext: string,
+    diagnostics: string[],
+    abortSignal?: AbortSignal,
+    options?: {
+      statusLabel?: string;
+      todoTitle?: string;
+      files?: ActivityFile[];
+    },
+  ): AsyncGenerator<OrchestratorEvent, OrchestratorResponse> {
+    const stageLabel = this.formatPipelineStage(selectedMode);
+    const todoTitle = options?.todoTitle ?? `Run ${stageLabel} stage`;
+    const activityFiles = (options?.files ?? []).map((file) => ({ ...file }));
+
+    yield {
+      type: "status",
+      message: options?.statusLabel ?? this.describePipelineStage(selectedMode),
+    };
+
+    yield {
+      type: "activity",
+      todos: [
+        {
+          id: `${selectedMode}-single`,
+          title: todoTitle,
+          status: "in-progress",
+          detail: `${stageLabel} is generating output`,
+        },
+      ],
+      files: activityFiles,
+      note: `${stageLabel} stage started`,
+    };
+
+    let text = "";
+
+    try {
+      for await (const token of this.streamAgentTokens(
+        selectedMode,
+        {
+          userPrompt: prompt,
+          workspaceContext,
+          memoryContext,
+        },
+        provider,
+        model,
+        temperature,
+        abortSignal,
+      )) {
+        this.ensureNotAborted(abortSignal);
+        if (!token) {
+          continue;
+        }
+
+        text += token;
+        yield {
+          type: "token",
+          token,
+        };
+      }
+    } catch (error) {
+      if (this.isAbortError(error)) {
+        throw error;
+      }
+
+      const errorStr = String(error);
+      const isTimeout = errorStr.toLowerCase().includes("timeout");
+      diagnostics.push(`${capitalize(selectedMode)} agent error: ${errorStr}`);
+      const fallback = [
+        `> **${capitalize(selectedMode)} agent could not complete the task.**`,
+        ">",
+        `> ${
+          isTimeout
+            ? "The request timed out. Try a smaller sub-task or a faster model."
+            : errorStr
+        }`,
+      ].join("\n");
+
+      for (const token of chunkText(fallback, 32)) {
+        text += token;
+        yield {
+          type: "token",
+          token,
+        };
+      }
+    }
+
+    const finalText = text.trim().length
+      ? text.trim()
+      : `${stageLabel} agent returned an empty response.`;
+
+    yield {
+      type: "activity",
+      todos: [
+        {
+          id: `${selectedMode}-single`,
+          title: todoTitle,
+          status: "completed",
+          detail: `${stageLabel} response ready`,
+        },
+      ],
+      files: activityFiles.map((file) => ({
+        ...file,
+        status: file.status === "failed" ? "failed" : "modified",
+      })),
+      note: `${stageLabel} stage complete`,
+    };
+
+    return {
+      text: finalText,
+      modeUsed,
+      providerUsed: provider,
+      modelUsed: model,
+      proposedEdits: [],
+      diagnostics,
+    };
+  }
+
+  private async *runAutoModeStreaming(
     prompt: string,
     provider: ProviderId,
     model: string,
@@ -331,132 +1019,157 @@ export class NexcodeOrchestrator {
     diagnostics: string[],
     pipeline: Exclude<AgentMode, "auto">[],
     abortSignal?: AbortSignal,
-  ): Promise<OrchestratorResponse> {
-    const stageSet = new Set(pipeline);
+  ): AsyncGenerator<OrchestratorEvent, OrchestratorResponse> {
+    let composed = "";
+    let planContent: string | undefined;
+    let implementationDraft: string | undefined;
+    const stageTodos: ActivityTodo[] = pipeline.map((stage, index) => ({
+      id: `pipeline-${index + 1}-${stage}`,
+      title: `${this.formatPipelineStage(stage)} stage`,
+      status: index === 0 ? "in-progress" : "not-started",
+      detail: index === 0 ? "Active" : "Queued",
+    }));
 
-    this.ensureNotAborted(abortSignal);
-    const plan = stageSet.has("planner")
-      ? await this.runAgentSafely(
-          "planner",
-          () =>
-            this.planner.run({
-              userPrompt: prompt,
-              provider,
-              model,
-              temperature,
-              maxTokens: getAgentMaxTokens("planner", prompt),
-              workspaceContext,
-              memoryContext,
-              signal: abortSignal,
-            }),
-          diagnostics,
-        )
-      : null;
+    yield {
+      type: "activity",
+      todos: stageTodos.map((todo) => ({ ...todo })),
+      note: "Pipeline execution started",
+    };
 
-    this.ensureNotAborted(abortSignal);
-    const code = stageSet.has("coder")
-      ? await this.runAgentSafely(
-          "coder",
-          () =>
-            this.coder.run({
-              userPrompt: prompt,
-              provider,
-              model,
-              temperature,
-              maxTokens: getAgentMaxTokens("coder", prompt),
-              workspaceContext,
-              memoryContext,
-              plan: plan?.content,
-              signal: abortSignal,
-            }),
-          diagnostics,
-        )
-      : null;
+    for (let stageIndex = 0; stageIndex < pipeline.length; stageIndex += 1) {
+      const stage = pipeline[stageIndex];
+      this.ensureNotAborted(abortSignal);
 
-    this.ensureNotAborted(abortSignal);
-    const [review, qa, security] = await Promise.all([
-      stageSet.has("reviewer")
-        ? this.runAgentSafely(
-            "reviewer",
-            () =>
-              this.reviewer.run({
-                userPrompt: prompt,
-                provider,
-                model,
-                temperature,
-                maxTokens: getAgentMaxTokens("reviewer", prompt),
-                workspaceContext,
-                memoryContext,
-                plan: plan?.content,
-                implementationDraft: code?.content,
-                signal: abortSignal,
-              }),
-            diagnostics,
-          )
-        : Promise.resolve(null),
-      stageSet.has("qa")
-        ? this.runAgentSafely(
-            "qa",
-            () =>
-              this.qa.run({
-                userPrompt: prompt,
-                provider,
-                model,
-                temperature,
-                maxTokens: getAgentMaxTokens("qa", prompt),
-                workspaceContext,
-                memoryContext,
-                plan: plan?.content,
-                implementationDraft: code?.content,
-                signal: abortSignal,
-              }),
-            diagnostics,
-          )
-        : Promise.resolve(null),
-      stageSet.has("security")
-        ? this.runAgentSafely(
-            "security",
-            () =>
-              this.security.run({
-                userPrompt: prompt,
-                provider,
-                model,
-                temperature,
-                maxTokens: getAgentMaxTokens("security", prompt),
-                workspaceContext,
-                memoryContext,
-                plan: plan?.content,
-                implementationDraft: code?.content,
-                signal: abortSignal,
-              }),
-            diagnostics,
-          )
-        : Promise.resolve(null),
-    ]);
+      const stageLabel = this.formatPipelineStage(stage);
+      stageTodos[stageIndex] = {
+        ...stageTodos[stageIndex],
+        status: "in-progress",
+        detail: "Running",
+      };
 
-    this.ensureNotAborted(abortSignal);
+      yield {
+        type: "status",
+        message: this.describePipelineStage(stage),
+      };
 
-    const textParts: string[] = [];
-    if (plan) {
-      textParts.push("## Planner", plan.content, "");
+      yield {
+        type: "activity",
+        todos: stageTodos.map((todo) => ({ ...todo })),
+        note: `${stageLabel} stage running`,
+      };
+
+      const sectionPrefix = `${composed.length > 0 ? "\n\n" : ""}## ${stageLabel}\n\n`;
+      composed += sectionPrefix;
+      yield {
+        type: "token",
+        token: sectionPrefix,
+      };
+
+      let stageText = "";
+
+      try {
+        for await (const token of this.streamAgentTokens(
+          stage,
+          {
+            userPrompt: prompt,
+            workspaceContext,
+            memoryContext,
+            plan: planContent,
+            implementationDraft,
+          },
+          provider,
+          model,
+          temperature,
+          abortSignal,
+        )) {
+          this.ensureNotAborted(abortSignal);
+          if (!token) {
+            continue;
+          }
+
+          stageText += token;
+          composed += token;
+          yield {
+            type: "token",
+            token,
+          };
+        }
+      } catch (error) {
+        if (this.isAbortError(error)) {
+          throw error;
+        }
+
+        const errorStr = String(error);
+        const isTimeout = errorStr.toLowerCase().includes("timeout");
+        diagnostics.push(`${capitalize(stage)} agent error: ${errorStr}`);
+        const fallback = [
+          `> **${stageLabel} stage could not complete.**`,
+          ">",
+          `> ${
+            isTimeout
+              ? "This stage timed out. Continue with the partial result and retry in a focused follow-up."
+              : errorStr
+          }`,
+        ].join("\n");
+
+        for (const token of chunkText(fallback, 32)) {
+          stageText += token;
+          composed += token;
+          yield {
+            type: "token",
+            token,
+          };
+        }
+      }
+
+      const normalizedStageText = stageText.trim();
+      if (!normalizedStageText) {
+        const fallbackText = `${stageLabel} stage returned an empty response.`;
+        composed += fallbackText;
+        yield {
+          type: "token",
+          token: fallbackText,
+        };
+        stageText = fallbackText;
+      }
+
+      if (stage === "planner") {
+        planContent = stageText.trim();
+      }
+
+      if (stage === "coder") {
+        implementationDraft = stageText.trim();
+      }
+
+      stageTodos[stageIndex] = {
+        ...stageTodos[stageIndex],
+        status: "completed",
+        detail: "Completed",
+      };
+      if (stageIndex + 1 < stageTodos.length) {
+        const nextTodo = stageTodos[stageIndex + 1];
+        if (nextTodo.status === "not-started") {
+          stageTodos[stageIndex + 1] = {
+            ...nextTodo,
+            detail: "Up next",
+          };
+        }
+      }
+
+      yield {
+        type: "status",
+        message: `${stageLabel} stage complete`,
+      };
+
+      yield {
+        type: "activity",
+        todos: stageTodos.map((todo) => ({ ...todo })),
+        note: `${stageLabel} stage complete`,
+      };
     }
-    if (code) {
-      textParts.push("## Coder", code.content, "");
-    }
-    if (review) {
-      textParts.push("## Reviewer", review.content, "");
-    }
-    if (qa) {
-      textParts.push("## QA", qa.content, "");
-    }
-    if (security) {
-      textParts.push("## Security", security.content);
-    }
-
-    const text = textParts.join("\n").trim();
 
     return {
-      text,
+      text: composed.trim(),
       modeUsed: "auto",
       providerUsed: provider,
       modelUsed: model,
@@ -465,8 +1178,173 @@ export class NexcodeOrchestrator {
     };
   }
 
+  private async *streamAgentTokens(
+    mode: Exclude<AgentMode, "auto">,
+    input: {
+      userPrompt: string;
+      workspaceContext: string;
+      memoryContext: string;
+      plan?: string;
+      implementationDraft?: string;
+    },
+    provider: ProviderId,
+    model: string,
+    temperature: number | undefined,
+    abortSignal?: AbortSignal,
+  ): AsyncGenerator<string> {
+    const messages = await this.buildAgentMessages(mode, input);
+
+    for await (const token of this.router.stream(messages, {
+      provider,
+      model,
+      temperature,
+      maxTokens: getAgentMaxTokens(mode, input.userPrompt),
+      complexity: input.userPrompt.length > 1200 ? "large" : "small",
+      signal: abortSignal,
+    })) {
+      if (token) {
+        yield token;
+      }
+    }
+  }
+
+  private async buildAgentMessages(
+    mode: Exclude<AgentMode, "auto">,
+    input: {
+      userPrompt: string;
+      workspaceContext?: string;
+      memoryContext?: string;
+      plan?: string;
+      implementationDraft?: string;
+    },
+  ): Promise<ChatMessage[]> {
+    const systemPrompt = await this.prompts.getPrompt(mode);
+
+    const parts = [
+      `User request:\n${input.userPrompt}`,
+      input.plan ? `Planner output:\n${input.plan}` : "",
+      input.implementationDraft
+        ? `Coder output:\n${input.implementationDraft}`
+        : "",
+      input.workspaceContext
+        ? `Workspace context:\n${input.workspaceContext}`
+        : "",
+      input.memoryContext ? `Memory context:\n${input.memoryContext}` : "",
+    ].filter((part) => part.length > 0);
+
+    return [
+      {
+        role: "system",
+        content: systemPrompt,
+      },
+      {
+        role: "user",
+        content: parts.join("\n\n"),
+      },
+    ];
+  }
+
+  private resolveAutoStrategy(prompt: string): AutoRoutingStrategy {
+    const normalized = prompt.toLowerCase().trim();
+    const words = normalized.split(/\s+/).filter(Boolean);
+    const wordCount = words.length;
+
+    const isGreeting =
+      /^(hi|hello|hey|yo|sup|good\s+(morning|afternoon|evening))(?:[\s!.,?]*)$/.test(
+        normalized,
+      ) || /^(thanks|thank you)(?:[\s!.,?]*)$/.test(normalized);
+    const isSimpleQuestion =
+      /\?$/.test(normalized) &&
+      wordCount < 18 &&
+      !/\b(create|build|implement|fix|debug|test|review|security|plan)\b/.test(
+        normalized,
+      );
+    const wantsPlan =
+      /\b(plan|architecture|roadmap|steps|break down|acceptance criteria)\b/.test(
+        normalized,
+      ) && !/\b(build|create|implement|write|code|edit|fix)\b/.test(normalized);
+    const wantsSecurity =
+      /\b(security|cve|vulnerability|threat|hardening|owasp|secret)\b/.test(
+        normalized,
+      );
+    const wantsQa =
+      /\b(test strategy|test case|qa|validate|verification)\b/.test(normalized);
+    const wantsReview =
+      /\b(review|code review|regression|smell|refactor recommendation)\b/.test(
+        normalized,
+      );
+    const wantsDeepWorkflow =
+      /\b(multi[- ]agent|end[- ]to[- ]end|comprehensive|full workflow|iterate|production[- ]grade|real world test|run all suites|thorough)\b/.test(
+        normalized,
+      );
+    const isLarge = prompt.length > 1400 || wordCount > 220;
+
+    if (isGreeting || isSimpleQuestion) {
+      return {
+        kind: "single",
+        mode: "coder",
+        statusLabel: "Preparing a quick direct answer",
+        todoTitle: "Draft quick answer",
+      };
+    }
+
+    if (wantsPlan) {
+      return {
+        kind: "single",
+        mode: "planner",
+        statusLabel: "Planning approach and milestones",
+        todoTitle: "Build implementation plan",
+      };
+    }
+
+    if (wantsSecurity && !wantsDeepWorkflow) {
+      return {
+        kind: "single",
+        mode: "security",
+        statusLabel: "Checking security posture",
+        todoTitle: "Run focused security review",
+      };
+    }
+
+    if (wantsQa && !wantsDeepWorkflow) {
+      return {
+        kind: "single",
+        mode: "qa",
+        statusLabel: "Validating behavior and tests",
+        todoTitle: "Assess QA and validation coverage",
+      };
+    }
+
+    if (wantsReview && !wantsDeepWorkflow) {
+      return {
+        kind: "single",
+        mode: "reviewer",
+        statusLabel: "Reviewing correctness and regressions",
+        todoTitle: "Produce review findings",
+      };
+    }
+
+    if (wantsDeepWorkflow || isLarge) {
+      return {
+        kind: "pipeline",
+        pipeline: this.resolveAutoPipeline(prompt),
+      };
+    }
+
+    return {
+      kind: "single",
+      mode: "coder",
+      statusLabel: "Drafting implementation-ready response",
+      todoTitle: "Generate implementation guidance",
+    };
+  }
+
   private resolveAutoPipeline(prompt: string): Exclude<AgentMode, "auto">[] {
     const normalized = prompt.toLowerCase();
+    const isPlanningHeavy =
+      /\b(plan|architecture|roadmap|acceptance criteria|break down)\b/.test(
+        normalized,
+      );
     const isSecuritySensitive =
       /\b(security|audit|cve|vulnerability|secret|threat|compliance|hardening)\b/.test(
         normalized,
@@ -481,33 +1359,37 @@ export class NexcodeOrchestrator {
       );
     const isLarge = prompt.length > 900 || normalized.split(/\s+/).length > 180;
 
-    if (isSecuritySensitive) {
-      return ["planner", "coder", "reviewer", "qa", "security"];
-    }
-
-    if (isLarge || isValidationHeavy) {
-      return ["planner", "coder", "reviewer", "qa"];
-    }
-
-    if (isBuildOrCreate) {
+    if (isPlanningHeavy && !isBuildOrCreate) {
       return ["planner", "coder", "reviewer"];
     }
 
-    return ["planner", "coder"];
+    if (isSecuritySensitive) {
+      return ["coder", "reviewer", "security"];
+    }
+
+    if (isLarge || isValidationHeavy) {
+      return ["coder", "reviewer", "qa"];
+    }
+
+    if (isBuildOrCreate) {
+      return ["coder", "reviewer", "qa"];
+    }
+
+    return ["coder", "reviewer"];
   }
 
   private describePipelineStage(stage: Exclude<AgentMode, "auto">): string {
     switch (stage) {
       case "planner":
-        return "Planner: mapping the request";
+        return "Planner: outlining strategy and milestones";
       case "coder":
-        return "Coder: drafting the implementation";
+        return "Coder: producing implementation-ready output";
       case "reviewer":
-        return "Reviewer: checking correctness";
+        return "Reviewer: checking correctness and regressions";
       case "qa":
-        return "QA: designing validation cases";
+        return "QA: validating behavior and test coverage";
       case "security":
-        return "Security: scanning for risks";
+        return "Security: scanning for exploitable risks";
       default:
         return "Running agent stage";
     }
@@ -528,95 +1410,6 @@ export class NexcodeOrchestrator {
       default:
         return "Agent";
     }
-  }
-
-  private async runSingleMode(
-    mode: AgentMode,
-    prompt: string,
-    provider: ProviderId,
-    model: string,
-    temperature: number | undefined,
-    workspaceContext: string,
-    memoryContext: string,
-    diagnostics: string[],
-    abortSignal?: AbortSignal,
-  ): Promise<OrchestratorResponse> {
-    const runnerByMode: Record<
-      Exclude<AgentMode, "auto">,
-      () => Promise<AgentResult>
-    > = {
-      planner: () =>
-        this.planner.run({
-          userPrompt: prompt,
-          provider,
-          model,
-          temperature,
-          maxTokens: getAgentMaxTokens("planner", prompt),
-          workspaceContext,
-          memoryContext,
-          signal: abortSignal,
-        }),
-      coder: () =>
-        this.coder.run({
-          userPrompt: prompt,
-          provider,
-          model,
-          temperature,
-          maxTokens: getAgentMaxTokens("coder", prompt),
-          workspaceContext,
-          memoryContext,
-          signal: abortSignal,
-        }),
-      reviewer: () =>
-        this.reviewer.run({
-          userPrompt: prompt,
-          provider,
-          model,
-          temperature,
-          maxTokens: getAgentMaxTokens("reviewer", prompt),
-          workspaceContext,
-          memoryContext,
-          signal: abortSignal,
-        }),
-      qa: () =>
-        this.qa.run({
-          userPrompt: prompt,
-          provider,
-          model,
-          temperature,
-          maxTokens: getAgentMaxTokens("qa", prompt),
-          workspaceContext,
-          memoryContext,
-          signal: abortSignal,
-        }),
-      security: () =>
-        this.security.run({
-          userPrompt: prompt,
-          provider,
-          model,
-          temperature,
-          maxTokens: getAgentMaxTokens("security", prompt),
-          workspaceContext,
-          memoryContext,
-          signal: abortSignal,
-        }),
-    };
-
-    const selected = mode === "auto" ? "planner" : mode;
-    const result = await this.runAgentSafely(
-      selected,
-      runnerByMode[selected],
-      diagnostics,
-    );
-
-    return {
-      text: `## ${capitalize(selected)}\n${result.content}`,
-      modeUsed: mode,
-      providerUsed: provider,
-      modelUsed: model,
-      proposedEdits: [],
-      diagnostics,
-    };
   }
 
   private async handleToolRequest(
@@ -900,6 +1693,42 @@ export class NexcodeOrchestrator {
     ].join("\n");
   }
 
+  private extractToolCommandRequest(prompt: string): string | null {
+    const terminalCommand = this.extractTerminalCommandRequest(prompt);
+    if (terminalCommand) {
+      return `terminal ${terminalCommand}`;
+    }
+
+    const normalized = prompt.trim();
+    if (!normalized) {
+      return null;
+    }
+
+    const readMatch = normalized.match(
+      /^(?:please\s+)?(?:read|open|show)\s+(?:the\s+)?file\s+(.+)$/i,
+    );
+    if (readMatch) {
+      return `read ${readMatch[1].trim()}`;
+    }
+
+    const searchMatch = normalized.match(
+      /^(?:please\s+)?(?:search|find)\s+(?:for\s+)?(.+)$/i,
+    );
+    if (searchMatch && !/\b(command|terminal|shell)\b/i.test(normalized)) {
+      return `search ${searchMatch[1].trim()}`;
+    }
+
+    const testMatch = normalized.match(
+      /^(?:please\s+)?(?:run|execute)\s+(?:the\s+)?tests?(?:\s+with\s+(.+))?$/i,
+    );
+    if (testMatch) {
+      const args = testMatch[1]?.trim();
+      return args && args.length > 0 ? `test ${args}` : "test";
+    }
+
+    return null;
+  }
+
   private extractTerminalCommandRequest(prompt: string): string | null {
     const raw = prompt.trim();
     if (!raw) {
@@ -973,6 +1802,221 @@ export class NexcodeOrchestrator {
       /^(pnpm|npm|npx|yarn|bun|node|python|pip|pip3|uv|poetry|go|cargo|dotnet|mvn|gradle|java|javac|git|docker|kubectl|terraform|make|cmake|pwsh|powershell|bash|sh|cmd|ls|dir|mkdir|touch|cp|mv|rm|del|cat|type)\b/i;
 
     return commandStarter.test(trimmed) ? trimmed : null;
+  }
+
+  private buildActivityFilesFromProposedEdits(
+    edits: ProposedEdit[],
+  ): ActivityFile[] {
+    const deduped = new Map<string, ActivityFile>();
+
+    for (const edit of edits) {
+      const normalizedPath = this.normalizeActivityPath(edit.filePath);
+      if (!normalizedPath) {
+        continue;
+      }
+
+      deduped.set(normalizedPath, {
+        path: normalizedPath,
+        status: "modified",
+        summary: edit.summary || "Proposed edit generated",
+      });
+    }
+
+    return [...deduped.values()];
+  }
+
+  private inferActivityFilesFromToolCommand(
+    toolCommand: string,
+  ): ActivityFile[] {
+    const trimmed = toolCommand.trim();
+    if (!trimmed) {
+      return [];
+    }
+
+    const readMatch = trimmed.match(/^read\s+(.+)$/i);
+    if (readMatch) {
+      const filePath = this.normalizeActivityPath(readMatch[1]);
+      if (filePath) {
+        return [
+          {
+            path: filePath,
+            status: "viewed",
+            summary: "Reading file",
+          },
+        ];
+      }
+    }
+
+    const searchMatch = trimmed.match(/^search\s+(.+)$/i);
+    if (searchMatch) {
+      return [
+        {
+          path: "workspace",
+          status: "viewed",
+          summary: `Searching for: ${searchMatch[1].trim()}`,
+        },
+      ];
+    }
+
+    const terminalMatch = trimmed.match(/^terminal\s+(.+)$/i);
+    if (terminalMatch) {
+      return [
+        {
+          path: "terminal",
+          status: "in-progress",
+          summary: terminalMatch[1].trim(),
+        },
+      ];
+    }
+
+    const mcpMatch = trimmed.match(/^mcp\s+([^:\s]+:[^\s]+).*$/i);
+    if (mcpMatch) {
+      return [
+        {
+          path: "mcp",
+          status: "in-progress",
+          summary: `Calling ${mcpMatch[1]}`,
+        },
+      ];
+    }
+
+    return [];
+  }
+
+  private inferActivityFilesFromPrompt(
+    prompt: string,
+    workspaceRoot?: string,
+    activeFilePath?: string,
+  ): ActivityFile[] {
+    const files: ActivityFile[] = [];
+    const seen = new Set<string>();
+
+    const parsedEdit = this.parseEditCommand(prompt);
+    if (parsedEdit) {
+      const editPath = this.normalizeActivityPath(parsedEdit.filePath);
+      if (editPath) {
+        files.push({
+          path: editPath,
+          status: "in-progress",
+          summary: "Preparing edit",
+        });
+        seen.add(editPath);
+      }
+    }
+
+    const pathLikeMatches = prompt.match(/[\w./\\-]+\.[a-z0-9]{1,8}/gi) ?? [];
+    for (const match of pathLikeMatches.slice(0, 4)) {
+      const normalizedPath = this.normalizeActivityPath(match, workspaceRoot);
+      if (!normalizedPath || seen.has(normalizedPath)) {
+        continue;
+      }
+
+      files.push({
+        path: normalizedPath,
+        status: "viewed",
+        summary: "Referenced in prompt",
+      });
+      seen.add(normalizedPath);
+    }
+
+    const normalizedActivePath = this.normalizeActivityPath(
+      activeFilePath,
+      workspaceRoot,
+    );
+    if (normalizedActivePath && !seen.has(normalizedActivePath)) {
+      files.push({
+        path: normalizedActivePath,
+        status: "viewed",
+        summary: "Active editor context",
+      });
+    }
+
+    return files.slice(0, 6);
+  }
+
+  private normalizeActivityPath(
+    rawPath: string | undefined,
+    workspaceRoot?: string,
+  ): string | null {
+    if (!rawPath) {
+      return null;
+    }
+
+    const trimmed = rawPath.trim().replace(/^['"`]|['"`]$/g, "");
+    if (!trimmed) {
+      return null;
+    }
+
+    const root = workspaceRoot ?? this.config.workspaceRoot;
+    let normalized = trimmed;
+
+    if (path.isAbsolute(trimmed) && root) {
+      const relative = path.relative(root, trimmed);
+      if (relative && !relative.startsWith("..")) {
+        normalized = relative;
+      }
+    }
+
+    return normalized.replace(/\\/g, "/");
+  }
+
+  private parsePromptEnhancement(
+    responseText: string,
+    fallbackPrompt: string,
+  ): { enhancedPrompt: string; notes: string[] } {
+    const candidates = [responseText, extractFirstCodeBlock(responseText)]
+      .filter(
+        (candidate): candidate is string =>
+          typeof candidate === "string" && candidate.trim().length > 0,
+      )
+      .map((candidate) => candidate.trim());
+
+    for (const candidate of candidates) {
+      try {
+        const parsed = JSON.parse(candidate) as {
+          enhancedPrompt?: unknown;
+          notes?: unknown;
+        };
+
+        if (typeof parsed.enhancedPrompt !== "string") {
+          continue;
+        }
+
+        const enhancedPrompt = parsed.enhancedPrompt.trim();
+        if (!enhancedPrompt) {
+          continue;
+        }
+
+        const notes = Array.isArray(parsed.notes)
+          ? parsed.notes
+              .map((item) => String(item).trim())
+              .filter((item) => item.length > 0)
+              .slice(0, 5)
+          : [];
+
+        return {
+          enhancedPrompt,
+          notes,
+        };
+      } catch {
+        // Try next candidate.
+      }
+    }
+
+    const plainText = responseText.trim();
+    if (plainText) {
+      return {
+        enhancedPrompt: plainText,
+        notes: [
+          "Model returned plain text instead of JSON; used plain output.",
+        ],
+      };
+    }
+
+    return {
+      enhancedPrompt: fallbackPrompt,
+      notes: ["Model returned empty output; original prompt was preserved."],
+    };
   }
 
   private async runAgentSafely(

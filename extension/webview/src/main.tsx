@@ -38,6 +38,8 @@ import {
   Square,
   Pencil,
   RotateCcw,
+  Sparkles,
+  ListTodo,
 } from "lucide-react";
 import { StreamingMessage } from "./components/StreamingMessage";
 
@@ -52,6 +54,14 @@ type AgentMode = "auto" | "planner" | "coder" | "reviewer" | "qa" | "security";
 type UiMode = "agent" | "plan" | "ask";
 type PermissionLevel = "default" | "bypass" | "autopilot";
 type EditStatus = "pending" | "applied" | "rejected";
+type ActivityStatus =
+  | "pending"
+  | "not-started"
+  | "in-progress"
+  | "completed"
+  | "failed"
+  | "viewed"
+  | "modified";
 
 interface ProviderStatus {
   provider: ProviderId;
@@ -71,6 +81,19 @@ interface ProposedEdit {
   statusLabel?: string;
 }
 
+interface ActivityTodo {
+  id: string;
+  title: string;
+  status: ActivityStatus;
+  detail?: string;
+}
+
+interface ActivityFile {
+  path: string;
+  status: ActivityStatus;
+  summary?: string;
+}
+
 interface ChatMessage {
   id: string;
   role: "user" | "assistant";
@@ -86,6 +109,9 @@ interface ChatMessage {
   reasoning: string[];
   debug: string[];
   proposedEdits: ProposedEdit[];
+  activityTodos: ActivityTodo[];
+  activityFiles: ActivityFile[];
+  activityNote?: string;
 }
 
 interface QueuedPrompt {
@@ -118,6 +144,14 @@ interface AttachmentChip {
   kind: "text" | "image" | "binary";
   mimeType: string;
   byteSize?: number;
+}
+
+interface McpQuickResult {
+  ok: boolean;
+  server: string;
+  tool: string;
+  output: string;
+  latencyMs: number;
 }
 
 interface SidebarSettings {
@@ -195,6 +229,13 @@ interface StoreState {
     reasoning: string[],
     debug: string[],
   ) => void;
+  updateAssistantActivity: (
+    sessionId: string,
+    messageId: string,
+    todos: ActivityTodo[],
+    files: ActivityFile[],
+    note?: string,
+  ) => void;
   finalizeAssistantMessage: (
     sessionId: string,
     messageId: string,
@@ -253,6 +294,9 @@ function normalizePersistedState(
           ...message,
           streaming: false,
           thinking: false,
+          activityTodos: message.activityTodos ?? [],
+          activityFiles: message.activityFiles ?? [],
+          activityNote: message.activityNote,
         })),
     }))
     .filter((session) => session.messages.length > 0 || session.title.trim());
@@ -327,7 +371,7 @@ function mapUiModeToAgent(mode: UiMode): AgentMode {
     case "plan":
       return "planner";
     case "ask":
-      return "planner";
+      return "coder";
     default:
       return "auto";
   }
@@ -353,7 +397,10 @@ function createSession(defaults: {
 
 function sanitizeReasoningStatus(raw: string): string {
   const clean = raw.replace(/\s+/g, " ").trim();
-  // Translate the internal mode-meta marker into a readable model header
+  if (!clean) {
+    return "";
+  }
+
   const modeMeta = clean.match(
     /^mode:\s*([^|]+)\|\s*provider:\s*([^|]+)\|\s*model:\s*(.+)$/i,
   );
@@ -361,10 +408,7 @@ function sanitizeReasoningStatus(raw: string): string {
     const [, mode, provider, model] = modeMeta;
     return `Using ${model.trim()} on ${provider.trim()} (${mode.trim()} mode)`;
   }
-  if (/^orchestrating multi-agent pipeline$/i.test(clean)) {
-    return "Starting auto workflow";
-  }
-  // Pass all other orchestrator messages through as-is
+
   return clean;
 }
 
@@ -387,23 +431,6 @@ function formatAgentMode(mode?: AgentMode): string {
   }
 }
 
-function extractCompletionSummary(text: string): string {
-  const flattened = text
-    .replace(/```[\s\S]*?```/g, " ")
-    .replace(/`[^`]+`/g, " ")
-    .replace(/[>#*_]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  if (!flattened) {
-    return "Response completed.";
-  }
-
-  const sentenceMatch = flattened.match(/^(.{20,220}?[.!?])(?:\s|$)/);
-  const sentence = sentenceMatch ? sentenceMatch[1] : flattened.slice(0, 220);
-  return sentence.length > 220 ? `${sentence.slice(0, 217)}...` : sentence;
-}
-
 function formatRelativeTime(timestamp: number): string {
   const seconds = Math.floor((Date.now() - timestamp) / 1000);
   if (seconds < 60) {
@@ -422,6 +449,180 @@ function formatRelativeTime(timestamp: number): string {
 
   const days = Math.floor(hours / 24);
   return `${days}d ago`;
+}
+
+function extractCommandTokens(value: string): string[] {
+  const matches = value.match(/(?:^|\s)([#/][a-z][\w:-]*)/gi) ?? [];
+  const normalized = matches
+    .map((match) => match.trim())
+    .filter((token) => token.length > 1);
+  return [...new Set(normalized)].slice(0, 8);
+}
+
+function isRunningActivityStatus(status: ActivityStatus): boolean {
+  return status === "in-progress" || status === "pending";
+}
+
+function activityStatusLabel(status: ActivityStatus): string {
+  switch (status) {
+    case "pending":
+      return "Pending";
+    case "not-started":
+      return "Queued";
+    case "in-progress":
+      return "Running";
+    case "completed":
+      return "Done";
+    case "failed":
+      return "Failed";
+    case "viewed":
+      return "Viewed";
+    case "modified":
+      return "Changed";
+    default:
+      return "Status";
+  }
+}
+
+function activityStatusClass(status: ActivityStatus): string {
+  switch (status) {
+    case "pending":
+      return "nk-activity-status--not-started";
+    case "in-progress":
+      return "nk-activity-status--in-progress";
+    case "completed":
+      return "nk-activity-status--completed";
+    case "failed":
+      return "nk-activity-status--failed";
+    case "viewed":
+      return "nk-activity-status--viewed";
+    case "modified":
+      return "nk-activity-status--modified";
+    default:
+      return "nk-activity-status--not-started";
+  }
+}
+
+function ActivityPanel({
+  todos,
+  files,
+  note,
+}: {
+  todos: ActivityTodo[];
+  files: ActivityFile[];
+  note?: string;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+  const [runningOnly, setRunningOnly] = useState(false);
+
+  const totalItems = todos.length + files.length;
+  const runningCount =
+    todos.filter((todo) => isRunningActivityStatus(todo.status)).length +
+    files.filter((file) => isRunningActivityStatus(file.status)).length;
+
+  const visibleTodos = runningOnly
+    ? todos.filter((todo) => isRunningActivityStatus(todo.status))
+    : todos;
+  const visibleFiles = runningOnly
+    ? files.filter((file) => isRunningActivityStatus(file.status))
+    : files;
+
+  if (totalItems === 0) {
+    return null;
+  }
+
+  return (
+    <div className="nk-activity-panel">
+      <div className="nk-activity-panel-head">
+        <div className="nk-activity-head-label">
+          <ListTodo size={10} />
+          <span>Live activity</span>
+        </div>
+        <div className="nk-activity-head-controls">
+          <div className="nk-activity-filter-group">
+            <button
+              className={`nk-activity-toggle ${!runningOnly ? "nk-activity-toggle--active" : ""}`}
+              onClick={() => setRunningOnly(false)}
+              type="button"
+            >
+              All
+            </button>
+            <button
+              className={`nk-activity-toggle ${runningOnly ? "nk-activity-toggle--active" : ""}`}
+              onClick={() => setRunningOnly(true)}
+              type="button"
+            >
+              Running
+            </button>
+          </div>
+          <button
+            className="nk-activity-collapse-btn"
+            onClick={() => setCollapsed((value) => !value)}
+            type="button"
+          >
+            {collapsed ? "Expand" : "Collapse"}
+          </button>
+        </div>
+      </div>
+
+      {note && <div className="nk-activity-note">{note}</div>}
+
+      {collapsed ? (
+        <div className="nk-activity-collapsed">
+          {runningCount} running • {totalItems} total
+        </div>
+      ) : (
+        <>
+          {visibleTodos.length > 0 && (
+            <ul className="nk-activity-todos">
+              {visibleTodos.slice(0, 8).map((todo) => (
+                <li key={todo.id} className="nk-activity-item">
+                  <span
+                    className={`nk-activity-status-dot ${activityStatusClass(todo.status)}`}
+                  />
+                  <div className="nk-activity-item-content">
+                    <div className="nk-activity-item-title">{todo.title}</div>
+                    {todo.detail && (
+                      <div className="nk-activity-item-detail">
+                        {todo.detail}
+                      </div>
+                    )}
+                  </div>
+                  <span className="nk-activity-badge">
+                    {activityStatusLabel(todo.status)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {visibleFiles.length > 0 && (
+            <ul className="nk-activity-files">
+              {visibleFiles.slice(0, 6).map((file, index) => (
+                <li
+                  key={`${file.path}-${index}`}
+                  className="nk-activity-file-item"
+                  title={file.summary ?? file.path}
+                >
+                  <FileText size={10} className="shrink-0" />
+                  <span className="nk-activity-file-path">{file.path}</span>
+                  <span
+                    className={`nk-activity-file-badge ${activityStatusClass(file.status)}`}
+                  >
+                    {activityStatusLabel(file.status)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {visibleTodos.length === 0 && visibleFiles.length === 0 && (
+            <div className="nk-activity-empty">No running tasks right now.</div>
+          )}
+        </>
+      )}
+    </div>
+  );
 }
 
 function estimateAttachmentKind(file: File): "text" | "image" | "binary" {
@@ -517,7 +718,7 @@ function parseSlashCommand(
     case "explain":
       return {
         prompt: body || "Explain the current code path and trade-offs clearly.",
-        mode: "planner",
+        mode: "coder",
       };
     default:
       return {
@@ -549,7 +750,7 @@ function findRetryPromptForMessage(
 const useStore = create<StoreState>((set, get) => {
   const initialDefaults = {
     provider: "ollama" as ProviderId,
-    model: "qwen2.5-coder:7b",
+    model: "gpt-oss:120b-cloud",
     mode: "agent" as UiMode,
   };
 
@@ -746,6 +947,8 @@ const useStore = create<StoreState>((set, get) => {
               reasoning: [],
               debug: [],
               proposedEdits: [],
+              activityTodos: [],
+              activityFiles: [],
             };
 
             return {
@@ -787,6 +990,8 @@ const useStore = create<StoreState>((set, get) => {
                     reasoning: [],
                     debug: [],
                     proposedEdits: [],
+                    activityTodos: [],
+                    activityFiles: [],
                   },
                 ],
               }
@@ -812,6 +1017,28 @@ const useStore = create<StoreState>((set, get) => {
                         ...message,
                         reasoning,
                         debug,
+                      }
+                    : message,
+                ),
+              }
+            : session,
+        ),
+      }));
+    },
+    updateAssistantActivity: (sessionId, messageId, todos, files, note) => {
+      set((state) => ({
+        sessions: state.sessions.map((session) =>
+          session.id === sessionId
+            ? {
+                ...session,
+                updatedAt: Date.now(),
+                messages: session.messages.map((message) =>
+                  message.id === messageId
+                    ? {
+                        ...message,
+                        activityTodos: todos,
+                        activityFiles: files,
+                        activityNote: note,
                       }
                     : message,
                 ),
@@ -975,13 +1202,50 @@ function getActiveSession(state: StoreState): Session | undefined {
 }
 
 // ─── Token Ring ──────────────────────────────────────────────────────────────
+function inferContextWindow(model: string): number {
+  const normalized = model.toLowerCase().trim();
+
+  if (/gpt-oss:120b-cloud/.test(normalized)) {
+    return 128_000;
+  }
+
+  if (/qwen2\.5-coder:7b|nemotron-mini/.test(normalized)) {
+    return 32_768;
+  }
+
+  if (
+    /qwen3-coder:480b-cloud|gpt-4|gpt-4o|claude|deepseek|llama-3\.3/.test(
+      normalized,
+    )
+  ) {
+    return 128_000;
+  }
+
+  return 64_000;
+}
+
+function formatTokenCount(value: number): string {
+  if (value >= 1_000_000) {
+    return `${(value / 1_000_000).toFixed(1)}M`;
+  }
+
+  if (value >= 1_000) {
+    return `${(value / 1_000).toFixed(1)}K`;
+  }
+
+  return String(value);
+}
+
 function TokenRing({
   sessionMessages,
   draftText,
+  model,
 }: {
   sessionMessages: ChatMessage[];
   draftText: string;
+  model: string;
 }) {
+  const max = useMemo(() => inferContextWindow(model), [model]);
   const sessionTokens = useMemo(() => {
     let total = 0;
     for (const msg of sessionMessages) {
@@ -991,7 +1255,6 @@ function TokenRing({
   }, [sessionMessages]);
   const draftTokens = Math.ceil(draftText.length / 4);
   const totalTokens = sessionTokens + draftTokens;
-  const max = 128_000;
   const pct = Math.min(totalTokens / max, 1);
   const r = 6;
   const circ = 2 * Math.PI * r;
@@ -999,7 +1262,10 @@ function TokenRing({
   const color = pct > 0.85 ? "#f87171" : pct > 0.65 ? "#fb923c" : "#0284c7";
 
   return (
-    <div className="nk-token-ring-wrap" title="Context usage">
+    <div
+      className="nk-token-ring-wrap"
+      title={`Context usage: ${totalTokens}/${max} tokens`}
+    >
       <svg width="16" height="16" viewBox="0 0 16 16" className="shrink-0">
         <circle
           cx="8"
@@ -1022,6 +1288,9 @@ function TokenRing({
           style={{ transition: "stroke-dasharray 0.25s ease" }}
         />
       </svg>
+      <span className="nk-token-ring-label">
+        {formatTokenCount(totalTokens)}/{formatTokenCount(max)}
+      </span>
     </div>
   );
 }
@@ -1061,86 +1330,6 @@ function StatusDot({
           {latencyMs}ms
         </span>
       )}
-    </div>
-  );
-}
-
-// ─── Thinking Indicator ───────────────────────────────────────────────────────
-function ThinkingIndicator({
-  reasoning,
-  provider,
-  model,
-  mode,
-}: {
-  reasoning: string[];
-  provider?: ProviderId;
-  model?: string;
-  mode?: AgentMode;
-}) {
-  const modelLabel = model?.trim() ? model.trim() : "selected model";
-  const latestStep = reasoning.at(-1);
-  const visibleSteps = Array.from(new Set(reasoning)).slice(-4);
-  const primaryText = latestStep || `Thinking with ${modelLabel}`;
-
-  return (
-    <div className="nk-thinking-wrap">
-      <div className="nk-thinking-row">
-        <Cpu size={12} className="nk-thinking-icon" />
-        <span className="nk-thinking-label nk-thinking-label--shimmer">
-          {primaryText}
-        </span>
-      </div>
-      {visibleSteps.length > 0 && (
-        <ol className="nk-thinking-trace">
-          {visibleSteps.map((step, index) => {
-            const isLatest = index === visibleSteps.length - 1;
-            return (
-              <li
-                key={`thinking-step-${index}-${step}`}
-                className={`nk-thinking-trace-item ${isLatest ? "nk-thinking-trace-item--active" : ""}`}
-              >
-                <Zap size={9} style={{ color: "#0284c7", flexShrink: 0 }} />
-                <span className={isLatest ? "nk-thinking-label--shimmer" : ""}>
-                  {step}
-                </span>
-              </li>
-            );
-          })}
-        </ol>
-      )}
-    </div>
-  );
-}
-
-function CompletionSummary({ message }: { message: ChatMessage }) {
-  if (
-    message.role !== "assistant" ||
-    message.streaming ||
-    message.thinking ||
-    message.error ||
-    message.stopped
-  ) {
-    return null;
-  }
-
-  const bullets = [
-    message.mode ? `Mode: ${formatAgentMode(message.mode)}` : null,
-    message.model ? `Model: ${message.model}` : null,
-    `${message.proposedEdits.length} edit proposal${message.proposedEdits.length === 1 ? "" : "s"}`,
-    `${message.reasoning.length} reasoning step${message.reasoning.length === 1 ? "" : "s"}`,
-  ].filter((entry): entry is string => Boolean(entry));
-
-  return (
-    <div className="nk-summary-card">
-      <p className="nk-summary-title">Summary</p>
-      <p className="nk-summary-line">
-        {extractCompletionSummary(message.text)}
-      </p>
-      <ul className="nk-summary-list">
-        {bullets.map((item) => (
-          <li key={`${message.id}-${item}`}>{item}</li>
-        ))}
-      </ul>
     </div>
   );
 }
@@ -1188,18 +1377,8 @@ function MessageBubble({
       <div
         className={`nk-msg-content ${isUser ? "nk-msg-content--user" : "nk-msg-content--bot"}`}
       >
-        {/* Thinking state */}
-        {message.thinking && !message.text && (
-          <ThinkingIndicator
-            reasoning={message.reasoning}
-            provider={message.provider}
-            model={message.model}
-            mode={message.mode}
-          />
-        )}
-
         {/* Main text */}
-        {(message.text || !message.thinking) && (
+        {(isUser ? message.text.trim().length > 0 : true) && (
           <div
             className={
               isUser
@@ -1220,18 +1399,30 @@ function MessageBubble({
                 markdown
                 className="markdown-body text-[13px] leading-relaxed"
                 showCursor
+                thinkingLabel={message.reasoning.at(-1) ?? "Working..."}
                 onFrame={onAnimatedFrame}
               />
             )}
           </div>
         )}
 
+        {!isUser &&
+          (message.activityTodos.length > 0 ||
+            message.activityFiles.length > 0) && (
+            <ActivityPanel
+              todos={message.activityTodos}
+              files={message.activityFiles}
+              note={message.activityNote}
+            />
+          )}
+
         {/* Reasoning */}
         {!isUser && showReasoning && message.reasoning.length > 0 && (
-          <div
+          <details
             className={`nk-reasoning-panel ${message.streaming || message.thinking ? "nk-reasoning-panel--live" : ""}`}
+            open={Boolean(message.streaming || message.thinking)}
           >
-            <div className="nk-reasoning-panel-header">
+            <summary className="nk-reasoning-panel-header nk-reasoning-summary">
               <span>
                 {message.streaming || message.thinking
                   ? "Reasoning (live)"
@@ -1247,7 +1438,7 @@ function MessageBubble({
                     .join(" • ")}
                 </span>
               )}
-            </div>
+            </summary>
             <ol className="nk-reasoning-list">
               {message.reasoning.map((item, i) => {
                 const isLatest = i === message.reasoning.length - 1;
@@ -1273,7 +1464,7 @@ function MessageBubble({
                 );
               })}
             </ol>
-          </div>
+          </details>
         )}
 
         {showActions && (
@@ -1393,8 +1584,6 @@ function MessageBubble({
             ))}
           </div>
         )}
-
-        {!isUser && <CompletionSummary message={message} />}
       </div>
     </motion.div>
   );
@@ -1511,15 +1700,39 @@ function SettingsDrawer({
   activeSession,
   settings,
   modelsForProvider,
+  mcpServers,
+  mcpTools,
+  mcpSelectedServer,
+  mcpSelectedTool,
+  mcpInput,
+  mcpInvokeBusy,
+  mcpInvokeResult,
   onProviderChange,
   onModelChange,
+  onMcpRefresh,
+  onMcpServerChange,
+  onMcpToolChange,
+  onMcpInputChange,
+  onMcpInvoke,
   onClose,
 }: {
   activeSession: Session;
   settings: SidebarSettings;
   modelsForProvider: string[];
+  mcpServers: string[];
+  mcpTools: string[];
+  mcpSelectedServer: string;
+  mcpSelectedTool: string;
+  mcpInput: string;
+  mcpInvokeBusy: boolean;
+  mcpInvokeResult: McpQuickResult | null;
   onProviderChange: (p: ProviderId) => void;
   onModelChange: (m: string) => void;
+  onMcpRefresh: () => void;
+  onMcpServerChange: (server: string) => void;
+  onMcpToolChange: (tool: string) => void;
+  onMcpInputChange: (input: string) => void;
+  onMcpInvoke: () => void;
   onClose: () => void;
 }) {
   return (
@@ -1697,6 +1910,99 @@ function SettingsDrawer({
             </a>
           </div>
 
+          <div className="nk-info-box">
+            <div className="nk-mcp-header">
+              <p
+                className="text-[11px] font-semibold"
+                style={{ color: "#cccccc", margin: 0 }}
+              >
+                MCP management
+              </p>
+              <button
+                className="nk-btn-ghost text-[10px] px-2 py-1"
+                onClick={onMcpRefresh}
+                type="button"
+              >
+                Refresh
+              </button>
+            </div>
+
+            <p className="nk-mcp-meta">
+              {mcpServers.length} registered server
+              {mcpServers.length === 1 ? "" : "s"}
+            </p>
+
+            {mcpServers.length === 0 ? (
+              <p className="nk-mcp-empty">No MCP adapters registered yet.</p>
+            ) : (
+              <>
+                <label className="nk-label mt-2">Server</label>
+                <select
+                  className="nk-select mt-1"
+                  value={mcpSelectedServer}
+                  onChange={(event) => onMcpServerChange(event.target.value)}
+                >
+                  {mcpServers.map((server) => (
+                    <option key={server} value={server}>
+                      {server}
+                    </option>
+                  ))}
+                </select>
+
+                <label className="nk-label mt-2">Tool</label>
+                <select
+                  className="nk-select mt-1"
+                  value={mcpSelectedTool}
+                  onChange={(event) => onMcpToolChange(event.target.value)}
+                  disabled={mcpTools.length === 0}
+                >
+                  {mcpTools.length === 0 ? (
+                    <option value="">No tools available</option>
+                  ) : (
+                    mcpTools.map((tool) => (
+                      <option key={tool} value={tool}>
+                        {tool}
+                      </option>
+                    ))
+                  )}
+                </select>
+
+                <label className="nk-label mt-2">Quick input</label>
+                <textarea
+                  className="nk-mcp-input"
+                  value={mcpInput}
+                  onChange={(event) => onMcpInputChange(event.target.value)}
+                  placeholder="Input passed to the selected MCP tool"
+                  rows={3}
+                />
+
+                <button
+                  className="nk-btn-accent w-full mt-2"
+                  onClick={onMcpInvoke}
+                  disabled={
+                    mcpInvokeBusy || !mcpSelectedServer || !mcpSelectedTool
+                  }
+                  type="button"
+                >
+                  {mcpInvokeBusy ? "Invoking..." : "Quick invoke"}
+                </button>
+
+                {mcpInvokeResult && (
+                  <div className="nk-mcp-result">
+                    <p className="nk-mcp-result-meta">
+                      {mcpInvokeResult.ok ? "Success" : "Failed"} •{" "}
+                      {mcpInvokeResult.server}:{mcpInvokeResult.tool} •{" "}
+                      {mcpInvokeResult.latencyMs}ms
+                    </p>
+                    <pre className="nk-code-block">
+                      {mcpInvokeResult.output}
+                    </pre>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
           {/* Open in tab */}
           <button
             className="nk-btn-ghost w-full flex items-center justify-center gap-2 mt-2"
@@ -1747,7 +2053,7 @@ function SettingsDrawer({
               ],
               [
                 "Ask",
-                "Q&A mode – answers questions about code, architecture, and best practices. Read-only, no modifications.",
+                "Q&A mode – conversational answers for code and architecture questions. Keeps responses concise and practical.",
               ],
             ].map(([name, desc]) => (
               <div key={name} className="mb-1.5">
@@ -1789,6 +2095,19 @@ function App() {
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [followStream, setFollowStream] = useState(true);
+  const [enhanceBusy, setEnhanceBusy] = useState(false);
+  const [enhanceFeedback, setEnhanceFeedback] = useState<string | null>(null);
+  const [mcpServers, setMcpServers] = useState<string[]>([]);
+  const [mcpToolsByServer, setMcpToolsByServer] = useState<
+    Record<string, string[]>
+  >({});
+  const [mcpSelectedServer, setMcpSelectedServer] = useState("");
+  const [mcpSelectedTool, setMcpSelectedTool] = useState("");
+  const [mcpQuickInput, setMcpQuickInput] = useState("");
+  const [mcpInvokeBusy, setMcpInvokeBusy] = useState(false);
+  const [mcpInvokeResult, setMcpInvokeResult] = useState<McpQuickResult | null>(
+    null,
+  );
 
   // Fixed DnD: counter-based to avoid nested element false leaves
   const dragCounterRef = useRef(0);
@@ -1796,6 +2115,7 @@ function App() {
 
   const chatScrollerRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const mcpSelectedServerRef = useRef("");
   const pendingRef = useRef<{ sessionId: string; messageId: string } | null>(
     null,
   );
@@ -1823,6 +2143,37 @@ function App() {
       ]),
     ];
   }, [activeSession, modelSuggestions]);
+
+  const highlightedCommands = useMemo(
+    () => extractCommandTokens(activeDraft),
+    [activeDraft],
+  );
+
+  const mcpToolsForSelectedServer = useMemo(
+    () => mcpToolsByServer[mcpSelectedServer] ?? [],
+    [mcpSelectedServer, mcpToolsByServer],
+  );
+
+  useEffect(() => {
+    mcpSelectedServerRef.current = mcpSelectedServer;
+  }, [mcpSelectedServer]);
+
+  useEffect(() => {
+    vscode.postMessage({ type: "listMcpServers" });
+  }, []);
+
+  useEffect(() => {
+    if (!mcpSelectedServer) {
+      return;
+    }
+
+    if (!mcpToolsByServer[mcpSelectedServer]) {
+      vscode.postMessage({
+        type: "listMcpTools",
+        server: mcpSelectedServer,
+      });
+    }
+  }, [mcpSelectedServer, mcpToolsByServer]);
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
     const scroller = chatScrollerRef.current;
@@ -2038,6 +2389,69 @@ function App() {
     [activeSession, submitPrompt],
   );
 
+  const handleEnhancePrompt = useCallback(() => {
+    if (!activeSession) {
+      return;
+    }
+
+    const current = useStore.getState().drafts[activeSession.id] ?? "";
+    if (!current.trim()) {
+      return;
+    }
+
+    setEnhanceBusy(true);
+    setEnhanceFeedback(null);
+    vscode.postMessage({
+      type: "enhancePrompt",
+      sessionId: activeSession.id,
+      prompt: current,
+      provider: activeSession.provider,
+      model: activeSession.model,
+      mode: mapUiModeToAgent(activeSession.mode),
+      temperature: settings.temperature,
+    });
+  }, [activeSession, settings.temperature]);
+
+  const handleMcpRefresh = useCallback(() => {
+    vscode.postMessage({ type: "listMcpServers" });
+    if (mcpSelectedServerRef.current) {
+      vscode.postMessage({
+        type: "listMcpTools",
+        server: mcpSelectedServerRef.current,
+      });
+    }
+  }, []);
+
+  const handleMcpServerChange = useCallback((server: string) => {
+    setMcpSelectedServer(server);
+    setMcpInvokeResult(null);
+    if (!server) {
+      setMcpSelectedTool("");
+      return;
+    }
+
+    vscode.postMessage({ type: "listMcpTools", server });
+  }, []);
+
+  const handleMcpToolChange = useCallback((tool: string) => {
+    setMcpSelectedTool(tool);
+  }, []);
+
+  const handleMcpInvoke = useCallback(() => {
+    if (!mcpSelectedServer || !mcpSelectedTool) {
+      return;
+    }
+
+    setMcpInvokeBusy(true);
+    setMcpInvokeResult(null);
+    vscode.postMessage({
+      type: "invokeMcpToolQuick",
+      server: mcpSelectedServer,
+      tool: mcpSelectedTool,
+      input: mcpQuickInput,
+    });
+  }, [mcpQuickInput, mcpSelectedServer, mcpSelectedTool]);
+
   // Persist state to VS Code webview state
   useEffect(() => {
     let handle: number | null = null;
@@ -2079,6 +2493,20 @@ function App() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!enhanceFeedback) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setEnhanceFeedback(null);
+    }, 5000);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [enhanceFeedback]);
 
   // Token flush machinery
   useEffect(() => {
@@ -2153,6 +2581,118 @@ function App() {
               (payload.models as string[]) ?? [],
             );
           return;
+        case "enhancePromptStart":
+          setEnhanceBusy(true);
+          return;
+        case "enhancePromptResult": {
+          setEnhanceBusy(false);
+
+          const sessionId =
+            typeof payload.sessionId === "string"
+              ? payload.sessionId
+              : useStore.getState().activeSessionId;
+
+          if (payload.ok && typeof payload.enhancedPrompt === "string") {
+            if (sessionId) {
+              useStore.getState().setDraft(sessionId, payload.enhancedPrompt);
+            }
+
+            const firstNote = Array.isArray(payload.notes)
+              ? String(payload.notes[0] ?? "")
+              : "";
+            setEnhanceFeedback(
+              firstNote ||
+                `Enhanced by ${String(payload.model ?? "model-assisted rewrite")}`,
+            );
+
+            window.requestAnimationFrame(() => {
+              const textarea = textareaRef.current;
+              if (!textarea) {
+                return;
+              }
+
+              textarea.focus();
+              textarea.setSelectionRange(
+                textarea.value.length,
+                textarea.value.length,
+              );
+            });
+          } else {
+            setEnhanceFeedback(
+              String(payload.error ?? "Prompt enhancement failed."),
+            );
+          }
+          return;
+        }
+        case "mcpServers": {
+          const servers = Array.isArray(payload.servers)
+            ? (payload.servers as string[])
+                .map((server) => String(server).trim())
+                .filter((server) => server.length > 0)
+            : [];
+
+          setMcpServers(servers);
+          setMcpToolsByServer((current) =>
+            Object.fromEntries(
+              Object.entries(current).filter(([server]) =>
+                servers.includes(server),
+              ),
+            ),
+          );
+
+          setMcpSelectedServer((current) => {
+            const next =
+              current && servers.includes(current)
+                ? current
+                : (servers[0] ?? "");
+
+            if (next) {
+              vscode.postMessage({
+                type: "listMcpTools",
+                server: next,
+              });
+            } else {
+              setMcpSelectedTool("");
+            }
+
+            return next;
+          });
+          return;
+        }
+        case "mcpTools": {
+          const server = String(payload.server ?? "").trim();
+          const tools = Array.isArray(payload.tools)
+            ? (payload.tools as string[])
+                .map((tool) => String(tool).trim())
+                .filter((tool) => tool.length > 0)
+            : [];
+
+          if (!server) {
+            return;
+          }
+
+          setMcpToolsByServer((current) => ({
+            ...current,
+            [server]: tools,
+          }));
+
+          if (server === mcpSelectedServerRef.current) {
+            setMcpSelectedTool((current) =>
+              current && tools.includes(current) ? current : (tools[0] ?? ""),
+            );
+          }
+          return;
+        }
+        case "mcpQuickResult":
+          setMcpInvokeBusy(false);
+          setMcpInvokeResult({
+            ok: Boolean(payload.ok),
+            server: String(payload.server ?? ""),
+            tool: String(payload.tool ?? ""),
+            output: String(payload.output ?? ""),
+            latencyMs: Number(payload.latencyMs ?? 0),
+          });
+          return;
         case "start":
           useStore.getState().setBusy(true);
           reasoningRef.current = [];
@@ -2206,6 +2746,39 @@ function App() {
                 [...debugRef.current],
               );
           }
+          return;
+        }
+        case "activity": {
+          const cur = pendingRef.current;
+          if (!cur) {
+            return;
+          }
+
+          const todos = Array.isArray(payload.todos)
+            ? (payload.todos as ActivityTodo[]).filter(
+                (todo) =>
+                  typeof todo?.id === "string" &&
+                  typeof todo?.title === "string" &&
+                  typeof todo?.status === "string",
+              )
+            : [];
+          const files = Array.isArray(payload.files)
+            ? (payload.files as ActivityFile[]).filter(
+                (file) =>
+                  typeof file?.path === "string" &&
+                  typeof file?.status === "string",
+              )
+            : [];
+
+          useStore
+            .getState()
+            .updateAssistantActivity(
+              cur.sessionId,
+              cur.messageId,
+              todos,
+              files,
+              typeof payload.note === "string" ? payload.note : undefined,
+            );
           return;
         }
         case "token": {
@@ -2268,6 +2841,8 @@ function App() {
           return;
         }
         case "error": {
+          setMcpInvokeBusy(false);
+          setEnhanceBusy(false);
           const cur = pendingRef.current;
           if (cur)
             useStore
@@ -2658,7 +3233,6 @@ function App() {
             onChange={(e) =>
               useStore.getState().setDraft(activeSession.id, e.target.value)
             }
-            onWheel={(e) => e.stopPropagation()}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
@@ -2666,6 +3240,43 @@ function App() {
               }
             }}
           />
+
+          <div className="nk-input-meta-row">
+            <div className="nk-command-highlight-row">
+              {highlightedCommands.length > 0 ? (
+                highlightedCommands.map((command) => (
+                  <span key={command} className="nk-command-chip">
+                    {command}
+                  </span>
+                ))
+              ) : (
+                <span className="nk-command-chip nk-command-chip--hint">
+                  Type commands like #fetch, /tool, /edit
+                </span>
+              )}
+            </div>
+
+            <div className="nk-input-meta-actions">
+              {enhanceFeedback && (
+                <span className="nk-enhance-feedback" title={enhanceFeedback}>
+                  {enhanceFeedback}
+                </span>
+              )}
+
+              <button
+                className="nk-enhance-btn"
+                title={enhanceBusy ? "Enhancing prompt..." : "Enhance prompt"}
+                onClick={handleEnhancePrompt}
+                disabled={!activeDraft.trim() || enhanceBusy || isBusy}
+              >
+                {enhanceBusy ? (
+                  <RefreshCw size={11} className="animate-spin" />
+                ) : (
+                  <Sparkles size={11} />
+                )}
+              </button>
+            </div>
+          </div>
 
           {/* Toolbar row */}
           <div className="nk-input-toolbar">
@@ -2722,6 +3333,7 @@ function App() {
               <TokenRing
                 sessionMessages={activeSession.messages}
                 draftText={activeDraft}
+                model={activeSession.model}
               />
             </div>
 
@@ -2778,8 +3390,20 @@ function App() {
             activeSession={activeSession}
             settings={settings}
             modelsForProvider={modelsForActiveProvider}
+            mcpServers={mcpServers}
+            mcpTools={mcpToolsForSelectedServer}
+            mcpSelectedServer={mcpSelectedServer}
+            mcpSelectedTool={mcpSelectedTool}
+            mcpInput={mcpQuickInput}
+            mcpInvokeBusy={mcpInvokeBusy}
+            mcpInvokeResult={mcpInvokeResult}
             onProviderChange={onProviderChange}
             onModelChange={onModelChange}
+            onMcpRefresh={handleMcpRefresh}
+            onMcpServerChange={handleMcpServerChange}
+            onMcpToolChange={handleMcpToolChange}
+            onMcpInputChange={setMcpQuickInput}
+            onMcpInvoke={handleMcpInvoke}
             onClose={() => useStore.getState().setSettingsPanelOpen(false)}
           />
         )}

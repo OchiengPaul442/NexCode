@@ -29,6 +29,29 @@ This document captures the concrete practices applied in NEXCODE-KIBOKO to impro
 - Non-blocking startup checks.
   - Provider health and model discovery run asynchronously after UI render.
 
+## Orchestration Architecture (2026-04 Refresh)
+
+- Dynamic auto routing.
+  - Auto mode now chooses between fast-path single-agent execution and multi-agent pipelines.
+  - Simple conversational prompts no longer default to planner behavior.
+- Live token streaming from agent stages.
+  - Responses stream directly from model providers during execution instead of replaying full text at completion.
+  - Multi-agent pipeline stages stream incrementally with stage-level status updates.
+- Deterministic tool intent inference.
+  - High-confidence natural language requests (read/search/test/run command) map to the tool surface.
+  - Added direct tool commands for `write` and `append` to improve file-operation reliability.
+
+## Sidebar UX Responsiveness (2026-04 Refresh)
+
+- Response-first streaming.
+  - Assistant output area remains primary while reasoning/activity stays secondary.
+- Collapsible reasoning panel.
+  - Reasoning is open during active streaming and collapses when complete to reduce clutter.
+- Input ergonomics improvements.
+  - Input area spacing increased and textarea scrolling enabled with visible scrollbar.
+- Token visibility improvements.
+  - Token ring now shows explicit `used/max` context values with model-aware context window estimates.
+
 ## Security Practices
 
 - Strict CSP in webview HTML.

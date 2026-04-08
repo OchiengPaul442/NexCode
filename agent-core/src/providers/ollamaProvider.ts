@@ -45,8 +45,24 @@ export class OllamaProvider implements ModelProvider {
     };
   }
 
+  private resolveTimeoutMs(kind: "generate" | "stream"): number {
+    const envOverride = Number(process.env.NEXCODE_PROVIDER_TIMEOUT_MS ?? "");
+    if (Number.isFinite(envOverride) && envOverride > 0) {
+      return envOverride;
+    }
+
+    if (process.env.NODE_ENV === "test") {
+      return kind === "stream" ? 2_200 : 1_800;
+    }
+
+    return kind === "stream" ? 600_000 : 300_000;
+  }
+
   public async generate(request: ModelRequest): Promise<ModelResponse> {
-    const abort = this.createAbortController(request.signal, 300_000);
+    const abort = this.createAbortController(
+      request.signal,
+      this.resolveTimeoutMs("generate"),
+    );
     try {
       const payload = {
         model: request.model,
@@ -85,7 +101,10 @@ export class OllamaProvider implements ModelProvider {
   }
 
   public async *stream(request: ModelRequest): AsyncGenerator<string> {
-    const abort = this.createAbortController(request.signal, 600_000);
+    const abort = this.createAbortController(
+      request.signal,
+      this.resolveTimeoutMs("stream"),
+    );
     try {
       const payload = {
         model: request.model,

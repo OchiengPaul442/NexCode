@@ -6,6 +6,8 @@ Local-first, multi-agent AI coding assistant for VS Code.
 
 - VS Code sidebar extension with chat, streaming, attachments, and controlled edit approvals.
 - Copilot-style sidebar UX with session history, per-session model/provider/mode controls, and settings drawer.
+- Dynamic auto-routing with fast-path single-agent execution and selective multi-agent pipelines.
+- Native live token streaming from agent stages (no end-of-run replay).
 - Provider connection badge with live health checks and latency display.
 - Automatic model suggestions from Ollama/OpenAI-compatible `/models` endpoints.
 - Multi-agent core with `auto`, `planner`, `coder`, `reviewer`, `qa`, and `security` modes.
@@ -52,6 +54,8 @@ The sidebar model field is editable. For advanced runs, set model to:
 
 You can still use lighter models such as `qwen2.5-coder:7b` for faster local iteration.
 
+Default profile in this repository is now configured for `gpt-oss:120b-cloud`.
+
 ## Chat Command Surface
 
 - Standard prompt:
@@ -71,6 +75,9 @@ You can still use lighter models such as `qwen2.5-coder:7b` for faster local ite
   - `/tool read README.md`
 - Propose code edit:
   - `/edit agent-core/src/orchestrator.ts :: add retry around provider call`
+- Direct file write/append tools:
+  - `/tool write notes/todo.md :: Initial line`
+  - `/tool append notes/todo.md ::\nSecond line`
 
 ## Approval And Safety Flow
 

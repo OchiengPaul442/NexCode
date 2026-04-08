@@ -3,7 +3,7 @@
   "displayName": "Nexcode Kiboko",
   "description": "Local-first, multi-agent AI coding assistant for VS Code.",
   "publisher": "nexcode",
-  "version": "0.1.35",
+  "version": "0.1.37",
   "private": true,
   "icon": "media/icon.png",
   "engines": {
@@ -22,10 +22,6 @@
     "Other"
   ],
   "activationEvents": [
-    "onView:nexcodeKiboko.sidebarView",
-    "onCommand:nexcodeKiboko.openSidebar",
-    "onCommand:nexcodeKiboko.pickModel",
-    "onCommand:nexcodeKiboko.clearConversation",
     "onCommand:nexcodeKiboko.openInTab"
   ],
   "main": "./out/extension.js",
@@ -77,7 +73,7 @@
         },
         "nexcodeKiboko.defaultModel": {
           "type": "string",
-          "default": "qwen2.5-coder:7b",
+          "default": "gpt-oss:120b-cloud",
           "description": "Default model name to send to the selected provider."
         },
         "nexcodeKiboko.defaultMode": {

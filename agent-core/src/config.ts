@@ -29,7 +29,7 @@ export function createRuntimeConfig(
     memoryDir: partial.memoryDir ?? path.join(workspaceRoot, "memory"),
     providerDefaults: {
       provider: partial.providerDefaults?.provider ?? "ollama",
-      model: partial.providerDefaults?.model ?? "qwen2.5-coder:7b",
+      model: partial.providerDefaults?.model ?? "gpt-oss:120b-cloud",
       ollamaBaseUrl:
         partial.providerDefaults?.ollamaBaseUrl ?? "http://localhost:11434",
       openAIBaseUrl:

@@ -66,6 +66,29 @@ export interface OrchestratorResponse {
   diagnostics: string[];
 }
 
+export type ActivityStatus =
+  | "pending"
+  | "not-started"
+  | "in-progress"
+  | "completed"
+  | "failed"
+  | "viewed"
+  | "modified";
+
+export interface ActivityTodo {
+  id: string;
+  title: string;
+  status: ActivityStatus;
+  detail?: string;
+}
+
+export interface ActivityFile {
+  path: string;
+  action?: string;
+  summary?: string;
+  status: ActivityStatus;
+}
+
 export type OrchestratorEvent =
   | {
       type: "status";
@@ -86,6 +109,12 @@ export type OrchestratorEvent =
   | {
       type: "stopped";
       message: string;
+    }
+  | {
+      type: "activity";
+      todos?: ActivityTodo[];
+      files?: ActivityFile[];
+      note?: string;
     };
 
 export interface ModelRequest {

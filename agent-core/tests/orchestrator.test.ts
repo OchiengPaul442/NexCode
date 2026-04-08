@@ -88,7 +88,7 @@ describe("NexcodeOrchestrator", () => {
       "Create a blog website with Next.js and polished styling.",
     );
 
-    expect(pipeline).toEqual(["planner", "coder", "reviewer"]);
+    expect(pipeline).toEqual(["coder", "reviewer", "qa"]);
   });
 
   it("creates proposed edits for edit commands", async () => {

@@ -81,6 +81,32 @@ interface WebviewRequestModelSuggestionsMessage {
   provider?: ProviderId;
 }
 
+interface WebviewEnhancePromptMessage {
+  type: "enhancePrompt";
+  sessionId?: string;
+  prompt: string;
+  provider?: ProviderId;
+  model?: string;
+  mode?: AgentMode;
+  temperature?: number;
+}
+
+interface WebviewListMcpServersMessage {
+  type: "listMcpServers";
+}
+
+interface WebviewListMcpToolsMessage {
+  type: "listMcpTools";
+  server: string;
+}
+
+interface WebviewInvokeMcpToolQuickMessage {
+  type: "invokeMcpToolQuick";
+  server: string;
+  tool: string;
+  input?: string;
+}
+
 type InboundWebviewMessage =
   | WebviewSendPromptMessage
   | WebviewCancelPromptMessage
@@ -93,6 +119,10 @@ type InboundWebviewMessage =
   | WebviewAddAttachmentMessage
   | WebviewRefreshProviderStatusMessage
   | WebviewRequestModelSuggestionsMessage
+  | WebviewEnhancePromptMessage
+  | WebviewListMcpServersMessage
+  | WebviewListMcpToolsMessage
+  | WebviewInvokeMcpToolQuickMessage
   | WebviewOpenInTabMessage;
 
 interface AttachmentChip {
@@ -107,6 +137,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = "nexcodeKiboko.sidebarView";
 
   private view?: vscode.WebviewView;
+  private readonly webviews = new Set<vscode.Webview>();
   private orchestrator?: NexcodeOrchestrator;
   private currentWorkspaceRoot?: string;
   private readonly pendingEdits = new Map<string, ProposedEdit>();
@@ -130,11 +161,16 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     view.webview.onDidReceiveMessage((message: InboundWebviewMessage) => {
       void this.handleWebviewMessage(message);
     });
+    this.webviews.add(view.webview);
 
-    this.postMessage({ type: "config", value: this.getRuntimeSettings() });
-    this.postAttachments();
-    void this.refreshProviderStatus();
-    void this.provideModelSuggestions();
+    view.onDidDispose(() => {
+      this.webviews.delete(view.webview);
+      if (this.view?.webview === view.webview) {
+        this.view = undefined;
+      }
+    });
+
+    this.pushInitialWebviewState();
   }
 
   public notifyConfigChanged(): void {
@@ -202,6 +238,18 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         return;
       case "requestModelSuggestions":
         await this.provideModelSuggestions(message.provider);
+        return;
+      case "enhancePrompt":
+        await this.handleEnhancePrompt(message);
+        return;
+      case "listMcpServers":
+        await this.postMcpRegistryState();
+        return;
+      case "listMcpTools":
+        await this.postMcpTools(message.server);
+        return;
+      case "invokeMcpToolQuick":
+        await this.invokeMcpToolQuick(message);
         return;
       case "pickAttachments":
         await this.pickAttachments();
@@ -301,6 +349,135 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       this.isBusy = false;
       this.currentAbortController = undefined;
       this.postMessage({ type: "end" });
+    }
+  }
+
+  private async handleEnhancePrompt(
+    message: WebviewEnhancePromptMessage,
+  ): Promise<void> {
+    const prompt = message.prompt?.trim();
+    if (!prompt) {
+      this.postMessage({
+        type: "enhancePromptResult",
+        sessionId: message.sessionId,
+        ok: false,
+        error: "Prompt cannot be empty.",
+      });
+      return;
+    }
+
+    const workspaceRoot = this.getWorkspaceRoot();
+    const orchestrator = this.getOrchestrator(workspaceRoot);
+    const activeEditor = vscode.window.activeTextEditor;
+
+    this.postMessage({
+      type: "enhancePromptStart",
+      sessionId: message.sessionId,
+    });
+
+    try {
+      const result = await orchestrator.enhancePrompt({
+        prompt,
+        provider: message.provider,
+        model: message.model,
+        mode: message.mode,
+        temperature: message.temperature,
+        workspaceRoot,
+        activeFilePath: activeEditor?.document.uri.fsPath,
+        selectedText: activeEditor?.document.getText(activeEditor.selection),
+      });
+
+      this.postMessage({
+        type: "enhancePromptResult",
+        sessionId: message.sessionId,
+        ok: true,
+        enhancedPrompt: result.enhancedPrompt,
+        notes: result.notes,
+        provider: result.providerUsed,
+        model: result.modelUsed,
+      });
+    } catch (error) {
+      this.postMessage({
+        type: "enhancePromptResult",
+        sessionId: message.sessionId,
+        ok: false,
+        error: String(error),
+      });
+    }
+  }
+
+  private async postMcpRegistryState(): Promise<void> {
+    const orchestrator = this.getOrchestrator(this.getWorkspaceRoot());
+    this.postMessage({
+      type: "mcpServers",
+      servers: orchestrator.listMcpServers(),
+    });
+  }
+
+  private async postMcpTools(server: string): Promise<void> {
+    const normalizedServer = server.trim();
+    if (!normalizedServer) {
+      this.postMessage({
+        type: "mcpTools",
+        server: "",
+        tools: [],
+      });
+      return;
+    }
+
+    const orchestrator = this.getOrchestrator(this.getWorkspaceRoot());
+    const tools = await orchestrator.listMcpTools(normalizedServer);
+
+    this.postMessage({
+      type: "mcpTools",
+      server: normalizedServer,
+      tools,
+    });
+  }
+
+  private async invokeMcpToolQuick(
+    message: WebviewInvokeMcpToolQuickMessage,
+  ): Promise<void> {
+    const server = message.server?.trim();
+    const tool = message.tool?.trim();
+
+    if (!server || !tool) {
+      this.postMessage({
+        type: "mcpQuickResult",
+        ok: false,
+        server: server ?? "",
+        tool: tool ?? "",
+        output: "Select an MCP server and tool before invoking.",
+        latencyMs: 0,
+      });
+      return;
+    }
+
+    try {
+      const orchestrator = this.getOrchestrator(this.getWorkspaceRoot());
+      const result = await orchestrator.invokeMcpTool({
+        server,
+        tool,
+        input: message.input ?? "",
+      });
+
+      this.postMessage({
+        type: "mcpQuickResult",
+        ok: result.ok,
+        server,
+        tool,
+        output: result.output,
+        latencyMs: result.latencyMs,
+      });
+    } catch (error) {
+      this.postMessage({
+        type: "mcpQuickResult",
+        ok: false,
+        server,
+        tool,
+        output: String(error),
+        latencyMs: 0,
+      });
     }
   }
 
@@ -662,7 +839,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
 
     return {
       provider: config.get<ProviderId>("defaultProvider", "ollama"),
-      model: config.get<string>("defaultModel", "qwen2.5-coder:7b"),
+      model: config.get<string>("defaultModel", "gpt-oss:120b-cloud"),
       mode: config.get<AgentMode>("defaultMode", "auto"),
       ollamaBaseUrl: this.normalizeOllamaBaseUrl(
         config.get<string>("ollamaBaseUrl", "http://localhost:11434"),
@@ -887,16 +1064,37 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       undefined,
       context.subscriptions,
     );
+
+    this.webviews.add(panel.webview);
+    panel.onDidDispose(
+      () => {
+        this.webviews.delete(panel.webview);
+      },
+      undefined,
+      context.subscriptions,
+    );
+
+    this.pushInitialWebviewState();
+  }
+
+  private pushInitialWebviewState(): void {
+    this.postMessage({ type: "config", value: this.getRuntimeSettings() });
+    this.postAttachments();
+    void this.postMcpRegistryState();
+    void this.refreshProviderStatus();
+    void this.provideModelSuggestions();
   }
 
   private postMessage(message: unknown): void {
-    if (!this.view) {
+    if (this.webviews.size === 0) {
       return;
     }
 
-    this.view.webview.postMessage(message).then(undefined, () => {
-      // Ignore postMessage race conditions during shutdown.
-    });
+    for (const webview of this.webviews) {
+      webview.postMessage(message).then(undefined, () => {
+        // Ignore postMessage race conditions during shutdown.
+      });
+    }
   }
 
   private async fileExists(uri: vscode.Uri): Promise<boolean> {

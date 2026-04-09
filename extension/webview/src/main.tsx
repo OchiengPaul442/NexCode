@@ -27,7 +27,6 @@ import {
   ArrowUp,
   ArrowDown,
   Cpu,
-  Zap,
   Globe,
   Code2,
   GitBranch,
@@ -38,7 +37,6 @@ import {
   Square,
   Pencil,
   RotateCcw,
-  Sparkles,
   ListTodo,
 } from "lucide-react";
 import { StreamingMessage } from "./components/StreamingMessage";
@@ -156,7 +154,6 @@ interface McpQuickResult {
 
 interface SidebarSettings {
   temperature: number;
-  showReasoning: boolean;
   autoApplyChanges: boolean;
   requireTerminalApproval: boolean;
   showDebugPanel: boolean;
@@ -177,7 +174,6 @@ interface BackendConfig {
   mode: AgentMode;
   requireTerminalApproval: boolean;
   temperature: number;
-  showReasoning: boolean;
   autoApplyChanges: boolean;
   allowWebSearch: boolean;
 }
@@ -451,14 +447,6 @@ function formatRelativeTime(timestamp: number): string {
   return `${days}d ago`;
 }
 
-function extractCommandTokens(value: string): string[] {
-  const matches = value.match(/(?:^|\s)([#/][a-z][\w:-]*)/gi) ?? [];
-  const normalized = matches
-    .map((match) => match.trim())
-    .filter((token) => token.length > 1);
-  return [...new Set(normalized)].slice(0, 8);
-}
-
 function isRunningActivityStatus(status: ActivityStatus): boolean {
   return status === "in-progress" || status === "pending";
 }
@@ -625,52 +613,6 @@ function ActivityPanel({
   );
 }
 
-function ReasoningPanel({
-  message,
-  onAnimatedFrame,
-}: {
-  message: ChatMessage;
-  onAnimatedFrame?: () => void;
-}) {
-  if (message.streaming || message.thinking || message.reasoning.length === 0) {
-    return null;
-  }
-
-  return (
-    <div className="nk-reasoning-panel">
-      <div className="nk-reasoning-panel-header">
-        <div className="nk-reasoning-head-label">
-          <Zap size={10} />
-          <span>Trace</span>
-        </div>
-        {(message.model || message.mode) && (
-          <span className="nk-reasoning-meta">
-            {[message.model, message.mode ? formatAgentMode(message.mode) : ""]
-              .filter(Boolean)
-              .join(" • ")}
-          </span>
-        )}
-      </div>
-
-      <ul className="nk-reasoning-list">
-        {message.reasoning.slice(-4).map((item, index) => (
-          <li key={`${message.id}-r-${index}`} className="nk-reasoning-item">
-            <span className="nk-reasoning-step-index">{index + 1}</span>
-            <StreamingMessage
-              text={item}
-              markdown={false}
-              as="span"
-              className="nk-reasoning-live"
-              showCursor={false}
-              onFrame={onAnimatedFrame}
-            />
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
 function estimateAttachmentKind(file: File): "text" | "image" | "binary" {
   const name = file.name.toLowerCase();
   if (file.type.startsWith("image/")) {
@@ -802,7 +744,6 @@ const useStore = create<StoreState>((set, get) => {
 
   const defaultSidebarSettings: SidebarSettings = {
     temperature: 0.2,
-    showReasoning: true,
     autoApplyChanges: false,
     requireTerminalApproval: true,
     showDebugPanel: false,
@@ -851,10 +792,6 @@ const useStore = create<StoreState>((set, get) => {
         const settings: SidebarSettings = {
           ...state.settings,
           temperature: config.temperature ?? state.settings.temperature,
-          showReasoning:
-            typeof config.showReasoning === "boolean"
-              ? config.showReasoning
-              : state.settings.showReasoning,
           autoApplyChanges:
             typeof config.autoApplyChanges === "boolean"
               ? config.autoApplyChanges
@@ -1383,7 +1320,6 @@ function StatusDot({
 // ─── Message Bubble ──────────────────────────────────────────────────────────
 function MessageBubble({
   message,
-  showReasoning,
   showDebug,
   canRetry,
   copied,
@@ -1397,7 +1333,6 @@ function MessageBubble({
   onReject,
 }: {
   message: ChatMessage;
-  showReasoning: boolean;
   showDebug: boolean;
   canRetry: boolean;
   copied: boolean;
@@ -1450,11 +1385,6 @@ function MessageBubble({
               />
             )}
           </div>
-        )}
-
-        {/* Reasoning */}
-        {!isUser && showReasoning && (
-          <ReasoningPanel message={message} onAnimatedFrame={onAnimatedFrame} />
         )}
 
         {showActions && (
@@ -1828,7 +1758,6 @@ function SettingsDrawer({
           {/* Toggles */}
           {(
             [
-              ["Show reasoning", "showReasoning"],
               ["Show debug panel", "showDebugPanel"],
               ["Enable web search tool", "enableWebSearch"],
               ["Auto-apply changes", "autoApplyChanges"],
@@ -2138,36 +2067,9 @@ function App() {
     ];
   }, [activeSession, modelSuggestions]);
 
-  const highlightedCommands = useMemo(
-    () => extractCommandTokens(activeDraft),
-    [activeDraft],
-  );
-
   const mcpToolsForSelectedServer = useMemo(
     () => mcpToolsByServer[mcpSelectedServer] ?? [],
     [mcpSelectedServer, mcpToolsByServer],
-  );
-
-  const quickPromptActions = useMemo(
-    () => [
-      {
-        label: "Plan",
-        template: "/plan ",
-      },
-      {
-        label: "Code",
-        template: "/code ",
-      },
-      {
-        label: "Fix",
-        template: "/fix ",
-      },
-      {
-        label: "Test",
-        template: "/test ",
-      },
-    ],
-    [],
   );
 
   const showNotice = useCallback((kind: "error" | "info", text: string) => {
@@ -3000,8 +2902,8 @@ function App() {
     if (!ta) return;
     ta.style.height = "auto";
     const scrollH = ta.scrollHeight;
-    ta.style.height = `${Math.min(scrollH, 280)}px`;
-    ta.style.overflowY = scrollH > 280 ? "auto" : "hidden";
+    ta.style.height = `${Math.min(scrollH, 170)}px`;
+    ta.style.overflowY = scrollH > 170 ? "auto" : "hidden";
   }, [activeDraft]);
 
   // DnD file handler
@@ -3041,33 +2943,6 @@ function App() {
     [],
   );
 
-  const injectQuickPrompt = useCallback(
-    (template: string): void => {
-      if (!activeSession) {
-        return;
-      }
-
-      const current = useStore.getState().drafts[activeSession.id] ?? "";
-      const nextValue = current.trim().length
-        ? `${current}\n${template}`
-        : template;
-
-      useStore.getState().setDraft(activeSession.id, nextValue);
-
-      window.requestAnimationFrame(() => {
-        const textarea = textareaRef.current;
-        if (!textarea) {
-          return;
-        }
-
-        textarea.focus();
-        const cursor = textarea.value.length;
-        textarea.setSelectionRange(cursor, cursor);
-      });
-    },
-    [activeSession],
-  );
-
   // Send
   function onSendPrompt(): void {
     const sess = getActiveSession(useStore.getState());
@@ -3076,7 +2951,6 @@ function App() {
     if (!rawPrompt) return;
 
     const attachmentIds = useStore.getState().attachments.map((a) => a.id);
-    const accepted = submitPrompt(rawPrompt, sess, attachmentIds);
     if (!accepted) {
       return;
     }
@@ -3241,7 +3115,6 @@ function App() {
                 <MessageBubble
                   key={msg.id}
                   message={msg}
-                  showReasoning={settings.showReasoning}
                   showDebug={settings.showDebugPanel}
                   canRetry={
                     Boolean(findRetryPromptForMessage(activeSession, msg.id)) &&
@@ -3332,18 +3205,6 @@ function App() {
         {/* Input card */}
         <div className="nk-input-card">
           <div className="nk-input-head">
-            <div className="nk-quick-actions">
-              {quickPromptActions.map((action) => (
-                <button
-                  key={action.label}
-                  className="nk-quick-action-btn"
-                  onClick={() => injectQuickPrompt(action.template)}
-                  title={`Insert ${action.template.trim()} command`}
-                >
-                  {action.label}
-                </button>
-              ))}
-            </div>
             <div className="nk-input-head-meta">
               <span className="nk-draft-metric">
                 {Math.ceil(activeDraft.length / 4)} tok est
@@ -3380,43 +3241,6 @@ function App() {
               }
             }}
           />
-
-          <div className="nk-input-meta-row">
-            <div className="nk-command-highlight-row">
-              {highlightedCommands.length > 0 ? (
-                highlightedCommands.map((command) => (
-                  <span key={command} className="nk-command-chip">
-                    {command}
-                  </span>
-                ))
-              ) : (
-                <span className="nk-command-chip nk-command-chip--hint">
-                  Type commands like #fetch, /tool, /edit
-                </span>
-              )}
-            </div>
-
-            <div className="nk-input-meta-actions">
-              {enhanceFeedback && (
-                <span className="nk-enhance-feedback" title={enhanceFeedback}>
-                  {enhanceFeedback}
-                </span>
-              )}
-
-              <button
-                className="nk-enhance-btn"
-                title={enhanceBusy ? "Enhancing prompt..." : "Enhance prompt"}
-                onClick={handleEnhancePrompt}
-                disabled={!activeDraft.trim() || enhanceBusy || isBusy}
-              >
-                {enhanceBusy ? (
-                  <RefreshCw size={11} className="animate-spin" />
-                ) : (
-                  <Sparkles size={11} />
-                )}
-              </button>
-            </div>
-          </div>
 
           {/* Toolbar row */}
           <div className="nk-input-toolbar">
@@ -3458,11 +3282,19 @@ function App() {
               <div className="nk-pill-select-wrap">
                 <select
                   className="nk-pill-select nk-pill-select--mode"
-                  value={activeSession.mode}
-                  onChange={(e) => onModeChange(e.target.value as UiMode)}
-                  title="Agent mode"
+                  value={mapUiModeToAgent(activeSession.mode)}
+                  onChange={(e) =>
+                    onModeChange(
+                      (e.target.value === "plan"
+                        ? "plan"
+                        : e.target.value === "ask"
+                          ? "ask"
+                          : "agent") as UiMode,
+                    )
+                  }
+                  title="Routing"
                 >
-                  <option value="agent">Agent</option>
+                  <option value="agent">Auto</option>
                   <option value="plan">Plan</option>
                   <option value="ask">Ask</option>
                 </select>
@@ -3475,10 +3307,6 @@ function App() {
                 draftText={activeDraft}
                 model={activeSession.model}
               />
-
-              <span className="nk-key-hint">
-                Enter to send · Shift+Enter newline
-              </span>
             </div>
 
             {/* Right: queue status + stop + send */}

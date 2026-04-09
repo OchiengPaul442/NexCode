@@ -2108,6 +2108,10 @@ function App() {
   const [mcpInvokeResult, setMcpInvokeResult] = useState<McpQuickResult | null>(
     null,
   );
+  const [bannerNotice, setBannerNotice] = useState<{
+    kind: "error" | "info";
+    text: string;
+  } | null>(null);
 
   // Fixed DnD: counter-based to avoid nested element false leaves
   const dragCounterRef = useRef(0);
@@ -2153,6 +2157,32 @@ function App() {
     () => mcpToolsByServer[mcpSelectedServer] ?? [],
     [mcpSelectedServer, mcpToolsByServer],
   );
+
+  const quickPromptActions = useMemo(
+    () => [
+      {
+        label: "Plan",
+        template: "/plan ",
+      },
+      {
+        label: "Code",
+        template: "/code ",
+      },
+      {
+        label: "Fix",
+        template: "/fix ",
+      },
+      {
+        label: "Test",
+        template: "/test ",
+      },
+    ],
+    [],
+  );
+
+  const showNotice = useCallback((kind: "error" | "info", text: string) => {
+    setBannerNotice({ kind, text: text.trim() });
+  }, []);
 
   useEffect(() => {
     mcpSelectedServerRef.current = mcpSelectedServer;
@@ -2508,6 +2538,20 @@ function App() {
     };
   }, [enhanceFeedback]);
 
+  useEffect(() => {
+    if (!bannerNotice) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setBannerNotice(null);
+    }, 4200);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [bannerNotice]);
+
   // Token flush machinery
   useEffect(() => {
     function flushTokenQueue() {
@@ -2568,6 +2612,31 @@ function App() {
             .getState()
             .setAttachments((payload.attachments as AttachmentChip[]) ?? []);
           return;
+        case "prefillPrompt": {
+          const prompt = String(payload.prompt ?? "").trim();
+          if (!prompt) {
+            return;
+          }
+
+          const sessionId = useStore.getState().activeSessionId;
+          if (!sessionId) {
+            return;
+          }
+
+          useStore.getState().setDraft(sessionId, prompt);
+          showNotice("info", "Prompt drafted from current editor context.");
+          window.requestAnimationFrame(() => {
+            const textarea = textareaRef.current;
+            if (!textarea) {
+              return;
+            }
+
+            textarea.focus();
+            const cursor = textarea.value.length;
+            textarea.setSelectionRange(cursor, cursor);
+          });
+          return;
+        }
         case "providerStatus":
           useStore
             .getState()
@@ -2828,6 +2897,10 @@ function App() {
           flushAll();
           const cur = pendingRef.current;
           if (!cur) {
+            showNotice(
+              "info",
+              String(payload.message ?? "Request stopped by user."),
+            );
             return;
           }
 
@@ -2843,15 +2916,13 @@ function App() {
         case "error": {
           setMcpInvokeBusy(false);
           setEnhanceBusy(false);
+          const message = String(payload.message ?? "Request failed.");
           const cur = pendingRef.current;
           if (cur)
             useStore
               .getState()
-              .failAssistantMessage(
-                cur.sessionId,
-                cur.messageId,
-                String(payload.message ?? "Request failed."),
-              );
+              .failAssistantMessage(cur.sessionId, cur.messageId, message);
+          else showNotice("error", message);
           return;
         }
         case "end":
@@ -2980,6 +3051,33 @@ function App() {
     [],
   );
 
+  const injectQuickPrompt = useCallback(
+    (template: string): void => {
+      if (!activeSession) {
+        return;
+      }
+
+      const current = useStore.getState().drafts[activeSession.id] ?? "";
+      const nextValue = current.trim().length
+        ? `${current}\n${template}`
+        : template;
+
+      useStore.getState().setDraft(activeSession.id, nextValue);
+
+      window.requestAnimationFrame(() => {
+        const textarea = textareaRef.current;
+        if (!textarea) {
+          return;
+        }
+
+        textarea.focus();
+        const cursor = textarea.value.length;
+        textarea.setSelectionRange(cursor, cursor);
+      });
+    },
+    [activeSession],
+  );
+
   // Send
   function onSendPrompt(): void {
     const sess = getActiveSession(useStore.getState());
@@ -3019,9 +3117,9 @@ function App() {
 
   return (
     <div className="nk-shell">
-      {/* ── Minimal Top bar ── */}
+      {/* ── Top bar ── */}
       <header className="nk-topbar">
-        <div className="flex items-center gap-1">
+        <div className="nk-topbar-left">
           <button
             className="nk-icon-btn"
             title="Chat history"
@@ -3029,9 +3127,16 @@ function App() {
           >
             <PanelLeft size={15} />
           </button>
+          <div className="nk-brand-block">
+            <p className="nk-brand-title">NexCode</p>
+            <p className="nk-brand-subtitle">
+              {activeSession.title || "New Chat"} •{" "}
+              {formatAgentMode(mapUiModeToAgent(activeSession.mode))}
+            </p>
+          </div>
         </div>
 
-        <div className="flex items-center gap-1 shrink-0">
+        <div className="nk-topbar-right">
           <StatusDot
             connected={providerHealth?.connected ?? false}
             latencyMs={providerHealth?.latencyMs}
@@ -3196,6 +3301,19 @@ function App() {
 
       {/* ── Copilot-style Input Card ── */}
       <div className="nk-input-area">
+        {bannerNotice && (
+          <div className={`nk-banner nk-banner--${bannerNotice.kind}`}>
+            <span>{bannerNotice.text}</span>
+            <button
+              className="nk-banner-close"
+              title="Dismiss"
+              onClick={() => setBannerNotice(null)}
+            >
+              <X size={11} />
+            </button>
+          </div>
+        )}
+
         {/* Attachment chips */}
         {attachments.length > 0 && (
           <div className="nk-chips-row">
@@ -3223,17 +3341,49 @@ function App() {
 
         {/* Input card */}
         <div className="nk-input-card">
+          <div className="nk-input-head">
+            <div className="nk-quick-actions">
+              {quickPromptActions.map((action) => (
+                <button
+                  key={action.label}
+                  className="nk-quick-action-btn"
+                  onClick={() => injectQuickPrompt(action.template)}
+                  title={`Insert ${action.template.trim()} command`}
+                >
+                  {action.label}
+                </button>
+              ))}
+            </div>
+            <div className="nk-input-head-meta">
+              <span className="nk-draft-metric">
+                {Math.ceil(activeDraft.length / 4)} tok est
+              </span>
+              <span className="nk-draft-metric">
+                {activeDraft.length} chars
+              </span>
+            </div>
+          </div>
+
           {/* Textarea */}
           <textarea
             ref={textareaRef}
             className="nk-textarea"
-            placeholder="Ask Nexcode…"
+            placeholder={
+              isBusy
+                ? "NexCode is responding... write next prompt to queue it"
+                : "Ask NexCode to build, fix, review, or explain your code"
+            }
             value={activeDraft}
             rows={2}
             onChange={(e) =>
               useStore.getState().setDraft(activeSession.id, e.target.value)
             }
             onKeyDown={(e) => {
+              const native = e.nativeEvent as { isComposing?: boolean };
+              if (native.isComposing) {
+                return;
+              }
+
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 onSendPrompt();
@@ -3335,6 +3485,10 @@ function App() {
                 draftText={activeDraft}
                 model={activeSession.model}
               />
+
+              <span className="nk-key-hint">
+                Enter to send · Shift+Enter newline
+              </span>
             </div>
 
             {/* Right: queue status + stop + send */}

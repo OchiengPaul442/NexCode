@@ -1,4 +1,5 @@
 import path from "path";
+import { randomUUID } from "crypto";
 import * as vscode from "vscode";
 import {
   AgentMode,
@@ -133,6 +134,10 @@ interface AttachmentChip {
   byteSize?: number;
 }
 
+const MAX_ATTACHMENT_BYTES = 3_000_000;
+const MAX_ATTACHMENT_TEXT_CHARS = 750_000;
+const MAX_ATTACHMENT_NAME_LENGTH = 160;
+
 export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = "nexcodeKiboko.sidebarView";
 
@@ -183,6 +188,18 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     this.pendingEdits.clear();
     this.pendingAttachments.clear();
     this.postMessage({ type: "cleared" });
+  }
+
+  public prefillPrompt(prompt: string): void {
+    const trimmed = prompt.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    this.postMessage({
+      type: "prefillPrompt",
+      prompt: trimmed,
+    });
   }
 
   private normalizeOllamaBaseUrl(rawUrl: string): string {
@@ -329,8 +346,8 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         this.postMessage(event);
       }
     } catch (error) {
-      const messageText = String(error ?? "");
-      if (messageText.toLowerCase().includes("abort")) {
+      const messageText = this.formatErrorForUi(error);
+      if (messageText.toLowerCase().includes("cancel")) {
         this.postMessage({
           type: "stopped",
           message: "Request stopped by user.",
@@ -526,32 +543,113 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
-    const id =
-      payload.id && payload.id.trim().length > 0
-        ? payload.id.trim()
-        : `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
-
-    const byteSize = payload.byteSize ?? 0;
-    if (byteSize > 3_000_000) {
+    if (!this.isValidAttachmentKind(payload.kind)) {
       this.postMessage({
         type: "error",
-        message: `Attachment ${payload.fileName} is too large. Limit is 3MB.`,
+        message: "Attachment type is not supported.",
       });
       return;
     }
 
+    const id =
+      payload.id && payload.id.trim().length > 0
+        ? payload.id.trim()
+        : randomUUID();
+
+    const sanitizedFileName = this.sanitizeAttachmentFileName(payload.fileName);
+    const normalizedMimeType =
+      payload.mimeType.trim() || "application/octet-stream";
+
+    const byteSize = payload.byteSize ?? 0;
+    if (byteSize > MAX_ATTACHMENT_BYTES) {
+      this.postMessage({
+        type: "error",
+        message: `Attachment ${sanitizedFileName} is too large. Limit is 3MB.`,
+      });
+      return;
+    }
+
+    if (
+      payload.kind === "text" &&
+      (!payload.textContent || payload.textContent.trim().length === 0)
+    ) {
+      this.postMessage({
+        type: "error",
+        message: "Text attachments must include text content.",
+      });
+      return;
+    }
+
+    if (
+      payload.kind !== "text" &&
+      (!payload.base64Data || payload.base64Data.trim().length === 0)
+    ) {
+      this.postMessage({
+        type: "error",
+        message: "Binary or image attachments must include base64 data.",
+      });
+      return;
+    }
+
+    const normalizedTextContent = payload.textContent
+      ? payload.textContent.slice(0, MAX_ATTACHMENT_TEXT_CHARS)
+      : undefined;
+
     const attachment: RequestAttachment = {
       id,
-      fileName: payload.fileName,
-      mimeType: payload.mimeType,
+      fileName: sanitizedFileName,
+      mimeType: normalizedMimeType,
       kind: payload.kind,
       byteSize,
-      textContent: payload.textContent,
+      textContent: normalizedTextContent,
       base64Data: payload.base64Data,
     };
 
     this.pendingAttachments.set(id, attachment);
     this.postAttachments();
+  }
+
+  private isValidAttachmentKind(
+    kind: unknown,
+  ): kind is RequestAttachment["kind"] {
+    return kind === "text" || kind === "image" || kind === "binary";
+  }
+
+  private sanitizeAttachmentFileName(fileName: string): string {
+    const sanitized = fileName
+      .trim()
+      .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_")
+      .slice(0, MAX_ATTACHMENT_NAME_LENGTH);
+    return sanitized || "attachment.txt";
+  }
+
+  private formatErrorForUi(error: unknown): string {
+    const raw = String(error ?? "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!raw) {
+      return "Request failed due to an unknown error.";
+    }
+
+    const normalized = raw.toLowerCase();
+    if (normalized.includes("abort")) {
+      return "Request cancelled.";
+    }
+    if (normalized.includes("timeout")) {
+      return "Request timed out. Try a smaller task or a faster model.";
+    }
+    if (
+      normalized.includes("fetch failed") ||
+      normalized.includes("econnrefused") ||
+      normalized.includes("enotfound")
+    ) {
+      return "Could not reach the configured model provider endpoint.";
+    }
+    if (normalized.includes("401") || normalized.includes("unauthorized")) {
+      return "Provider authentication failed. Check your API key or endpoint settings.";
+    }
+
+    return raw.length > 260 ? `${raw.slice(0, 260)}...` : raw;
   }
 
   private async applyProposedEdit(editId: string): Promise<void> {
@@ -718,7 +816,11 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     const fileName = path.basename(uri.fsPath);
     const mimeType = this.guessMimeType(fileName);
     const byteSize = bytes.byteLength;
-    const id = `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+    const id = randomUUID();
+
+    if (byteSize > MAX_ATTACHMENT_BYTES) {
+      throw new Error(`Attachment is too large (${byteSize} bytes, max 3MB).`);
+    }
 
     if (this.isTextLike(mimeType, fileName) && byteSize <= 250_000) {
       const textContent = new TextDecoder("utf-8", { fatal: false }).decode(

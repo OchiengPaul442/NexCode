@@ -1,5 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
+import { randomUUID } from "crypto";
 import { ProposedEdit, ToolResult } from "../types";
 import { createPatch } from "../utils/diff";
 
@@ -77,7 +78,7 @@ export class FileSystemTool {
     }
 
     return {
-      id: `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`,
+      id: randomUUID(),
       filePath: path
         .relative(this.workspaceRoot, absolutePath)
         .replace(/\\/g, "/"),

@@ -55,6 +55,42 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   context.subscriptions.push(
+    vscode.commands.registerCommand(
+      "nexcodeKiboko.explainSelection",
+      async () => {
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) {
+          void vscode.window.showInformationMessage(
+            "Open an editor first to send context to NexCode.",
+          );
+          return;
+        }
+
+        const selectedText = editor.document.getText(editor.selection).trim();
+        const relativePath = vscode.workspace.asRelativePath(
+          editor.document.uri,
+          false,
+        );
+
+        const prompt = selectedText
+          ? [
+              `/explain Explain the selected code from ${relativePath}.`,
+              "",
+              "```",
+              selectedText.slice(0, 3_000),
+              "```",
+            ].join("\n")
+          : `/explain Explain the key behavior in ${relativePath} and suggest targeted improvements.`;
+
+        await vscode.commands.executeCommand(
+          "workbench.view.extension.nexcodeKiboko",
+        );
+        provider.prefillPrompt(prompt);
+      },
+    ),
+  );
+
+  context.subscriptions.push(
     vscode.commands.registerCommand("nexcodeKiboko.openInTab", async () => {
       const panel = vscode.window.createWebviewPanel(
         "nexcodeKibokoTab",

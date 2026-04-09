@@ -25,11 +25,93 @@ interface OpenAIChatResponse {
 
 export class OpenAICompatibleProvider implements ModelProvider {
   public readonly id = "openai-compatible" as const;
+  private readonly maxRetryAttempts = 3;
 
   public constructor(
     private readonly baseUrl: string,
     private readonly apiKey?: string,
   ) {}
+
+  private shouldRetryStatus(status: number): boolean {
+    return [408, 409, 425, 429, 500, 502, 503, 504].includes(status);
+  }
+
+  private resolveRetryDelayMs(response: Response, attempt: number): number {
+    const retryAfter = response.headers.get("retry-after");
+    if (retryAfter) {
+      const asNumber = Number(retryAfter.trim());
+      if (Number.isFinite(asNumber) && asNumber > 0) {
+        return Math.min(20_000, Math.round(asNumber * 1_000));
+      }
+
+      const parsedDate = Date.parse(retryAfter);
+      if (!Number.isNaN(parsedDate)) {
+        return Math.min(20_000, Math.max(250, parsedDate - Date.now()));
+      }
+    }
+
+    return Math.min(8_000, 400 * 2 ** (attempt - 1));
+  }
+
+  private async wait(ms: number, signal: AbortSignal): Promise<void> {
+    if (ms <= 0) {
+      return;
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        signal.removeEventListener("abort", onAbort);
+        resolve();
+      }, ms);
+
+      const onAbort = () => {
+        clearTimeout(timeout);
+        reject(new Error("Request aborted."));
+      };
+
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
+
+      signal.addEventListener("abort", onAbort, { once: true });
+    });
+  }
+
+  private async fetchWithRetries(
+    url: string,
+    initFactory: () => RequestInit,
+    signal: AbortSignal,
+  ): Promise<Response> {
+    let lastResponse: Response | undefined;
+
+    for (let attempt = 1; attempt <= this.maxRetryAttempts; attempt += 1) {
+      if (signal.aborted) {
+        throw new Error("Request aborted.");
+      }
+
+      const response = await fetch(url, {
+        ...initFactory(),
+        signal,
+      });
+
+      if (
+        !this.shouldRetryStatus(response.status) ||
+        attempt === this.maxRetryAttempts
+      ) {
+        return response;
+      }
+
+      lastResponse = response;
+      await this.wait(this.resolveRetryDelayMs(response, attempt), signal);
+    }
+
+    if (lastResponse) {
+      return lastResponse;
+    }
+
+    throw new Error("OpenAI-compatible request failed without response.");
+  }
 
   private createHeaders(): Record<string, string> {
     const headers: Record<string, string> = {
@@ -90,18 +172,21 @@ export class OpenAICompatibleProvider implements ModelProvider {
     );
 
     try {
-      const response = await fetch(`${this.baseUrl}/chat/completions`, {
-        method: "POST",
-        headers: this.createHeaders(),
-        body: JSON.stringify({
-          model: request.model,
-          messages: request.messages,
-          temperature: request.temperature ?? 0.2,
-          max_tokens: request.maxTokens,
-          stream: false,
+      const response = await this.fetchWithRetries(
+        `${this.baseUrl}/chat/completions`,
+        () => ({
+          method: "POST",
+          headers: this.createHeaders(),
+          body: JSON.stringify({
+            model: request.model,
+            messages: request.messages,
+            temperature: request.temperature ?? 0.2,
+            max_tokens: request.maxTokens,
+            stream: false,
+          }),
         }),
-        signal: abort.controller.signal,
-      });
+        abort.controller.signal,
+      );
 
       if (!response.ok) {
         const body = await response.text();
@@ -129,18 +214,21 @@ export class OpenAICompatibleProvider implements ModelProvider {
     );
 
     try {
-      const response = await fetch(`${this.baseUrl}/chat/completions`, {
-        method: "POST",
-        headers: this.createHeaders(),
-        body: JSON.stringify({
-          model: request.model,
-          messages: request.messages,
-          temperature: request.temperature ?? 0.2,
-          max_tokens: request.maxTokens,
-          stream: true,
+      const response = await this.fetchWithRetries(
+        `${this.baseUrl}/chat/completions`,
+        () => ({
+          method: "POST",
+          headers: this.createHeaders(),
+          body: JSON.stringify({
+            model: request.model,
+            messages: request.messages,
+            temperature: request.temperature ?? 0.2,
+            max_tokens: request.maxTokens,
+            stream: true,
+          }),
         }),
-        signal: abort.controller.signal,
-      });
+        abort.controller.signal,
+      );
 
       if (!response.ok || !response.body) {
         const body = await response.text();

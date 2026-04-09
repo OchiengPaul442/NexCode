@@ -79,6 +79,13 @@ export interface PromptEnhancementResult {
   modelUsed: string;
 }
 
+const MAX_WORKSPACE_CONTEXT_CHARS = 12_000;
+const MAX_MEMORY_CONTEXT_CHARS = 4_000;
+const MAX_TOOL_OUTPUT_CHARS = 16_000;
+const MAX_ACTIVE_SNIPPET_CHARS = 3_200;
+const MAX_REFERENCED_FILE_SNIPPET_CHARS = 1_600;
+const MAX_ATTACHMENT_TEXT_CHARS = 3_000;
+
 export class NexcodeOrchestrator {
   private readonly config: RuntimeConfig;
   private readonly router: ModelRouter;
@@ -94,6 +101,14 @@ export class NexcodeOrchestrator {
   private readonly reflection: ReflectionEngine;
   private readonly promptVersions: PromptVersionManager;
   private readonly mcpRegistry: McpRegistry;
+  private readonly ephemeralSessionId = randomUUID();
+  private workspaceSnapshotCache:
+    | {
+        workspaceRoot: string;
+        expiresAt: number;
+        entries: string[];
+      }
+    | undefined;
 
   public constructor(options: NexcodeOrchestratorOptions = {}) {
     this.config = createRuntimeConfig({
@@ -309,12 +324,22 @@ export class NexcodeOrchestrator {
 
     try {
       this.ensureNotAborted(request.abortSignal);
-      const memoryContext = await this.memory.getRelevantContext(
-        request.prompt,
+      const [memoryContextRaw, workspaceContextRaw] = await Promise.all([
+        this.memory.getRelevantContext(request.prompt).catch(() => ""),
+        this.buildWorkspaceContext(request).catch(() => ""),
+      ]);
+      this.ensureNotAborted(request.abortSignal);
+
+      const memoryContext = this.clampText(
+        memoryContextRaw,
+        MAX_MEMORY_CONTEXT_CHARS,
+        "Memory context trimmed",
       );
-      this.ensureNotAborted(request.abortSignal);
-      const workspaceContext = await this.buildWorkspaceContext(request);
-      this.ensureNotAborted(request.abortSignal);
+      const workspaceContext = this.clampText(
+        workspaceContextRaw,
+        MAX_WORKSPACE_CONTEXT_CHARS,
+        "Workspace context trimmed",
+      );
 
       yield {
         type: "status",
@@ -857,6 +882,8 @@ export class NexcodeOrchestrator {
         return;
       }
 
+      const errorMessage = this.formatUserFacingError(error);
+
       yield {
         type: "activity",
         todos: [
@@ -864,7 +891,7 @@ export class NexcodeOrchestrator {
             id: "execution",
             title: "Execute request",
             status: "failed",
-            detail: String(error),
+            detail: errorMessage,
           },
         ],
         note: "Request failed",
@@ -872,7 +899,7 @@ export class NexcodeOrchestrator {
 
       yield {
         type: "error",
-        message: `Orchestration failed: ${String(error)}`,
+        message: errorMessage,
       };
     }
   }
@@ -1219,6 +1246,16 @@ export class NexcodeOrchestrator {
     },
   ): Promise<ChatMessage[]> {
     const systemPrompt = await this.prompts.getPrompt(mode);
+    const boundedWorkspaceContext = this.clampText(
+      input.workspaceContext ?? "",
+      MAX_WORKSPACE_CONTEXT_CHARS,
+      "Workspace context trimmed",
+    );
+    const boundedMemoryContext = this.clampText(
+      input.memoryContext ?? "",
+      MAX_MEMORY_CONTEXT_CHARS,
+      "Memory context trimmed",
+    );
 
     const parts = [
       `User request:\n${input.userPrompt}`,
@@ -1226,10 +1263,10 @@ export class NexcodeOrchestrator {
       input.implementationDraft
         ? `Coder output:\n${input.implementationDraft}`
         : "",
-      input.workspaceContext
-        ? `Workspace context:\n${input.workspaceContext}`
+      boundedWorkspaceContext
+        ? `Workspace context:\n${boundedWorkspaceContext}`
         : "",
-      input.memoryContext ? `Memory context:\n${input.memoryContext}` : "",
+      boundedMemoryContext ? `Memory context:\n${boundedMemoryContext}` : "",
     ].filter((part) => part.length > 0);
 
     return [
@@ -1442,9 +1479,14 @@ export class NexcodeOrchestrator {
     }
 
     const result = await this.tools.runToolCall(toolCommand);
+    const boundedOutput = this.clampText(
+      result.output,
+      MAX_TOOL_OUTPUT_CHARS,
+      "Tool output truncated",
+    );
 
     if (!result.ok) {
-      diagnostics.push(result.output);
+      diagnostics.push(boundedOutput);
     }
 
     return {
@@ -1453,7 +1495,7 @@ export class NexcodeOrchestrator {
         `Command: ${toolCommand}`,
         "",
         "```text",
-        result.output,
+        boundedOutput,
         "```",
       ].join("\n"),
       modeUsed: mode,
@@ -1715,7 +1757,16 @@ export class NexcodeOrchestrator {
       /^(?:please\s+)?(?:search|find)\s+(?:for\s+)?(.+)$/i,
     );
     if (searchMatch && !/\b(command|terminal|shell)\b/i.test(normalized)) {
-      return `search ${searchMatch[1].trim()}`;
+      const searchQuery = searchMatch[1].trim();
+      const shouldInferSearch =
+        /["'`]/.test(searchQuery) ||
+        /\b(file|symbol|text|string|pattern|repo|repository|workspace|codebase)\b/i.test(
+          searchQuery,
+        );
+
+      if (shouldInferSearch) {
+        return `search ${searchQuery}`;
+      }
     }
 
     const testMatch = normalized.match(
@@ -1799,7 +1850,7 @@ export class NexcodeOrchestrator {
     }
 
     const commandStarter =
-      /^(pnpm|npm|npx|yarn|bun|node|python|pip|pip3|uv|poetry|go|cargo|dotnet|mvn|gradle|java|javac|git|docker|kubectl|terraform|make|cmake|pwsh|powershell|bash|sh|cmd|ls|dir|mkdir|touch|cp|mv|rm|del|cat|type)\b/i;
+      /^(pnpm|npm|npx|yarn|bun|node|python|pip|pip3|uv|poetry|go|cargo|dotnet|mvn|gradle|java|javac|git|docker|kubectl|terraform|make|cmake|pwsh|powershell|bash|sh|cmd|ls|dir|mkdir|touch|cat|type)\b/i;
 
     return commandStarter.test(trimmed) ? trimmed : null;
   }
@@ -2062,7 +2113,7 @@ export class NexcodeOrchestrator {
   private getSessionId(workspaceRoot?: string): string {
     return workspaceRoot
       ? `workspace:${workspaceRoot}`
-      : `session:${randomUUID()}`;
+      : `session:${this.ephemeralSessionId}`;
   }
 
   private async buildWorkspaceContext(
@@ -2072,12 +2123,7 @@ export class NexcodeOrchestrator {
     const sections: string[] = [];
 
     try {
-      const topLevel = await fs.readdir(workspaceRoot, {
-        withFileTypes: true,
-      });
-      const names = topLevel
-        .slice(0, 20)
-        .map((entry) => (entry.isDirectory() ? `${entry.name}/` : entry.name));
+      const names = await this.getWorkspaceTopLevelEntries(workspaceRoot);
       sections.push(`Workspace root: ${workspaceRoot}`);
       sections.push(`Top-level entries: ${names.join(", ")}`);
     } catch {
@@ -2085,23 +2131,64 @@ export class NexcodeOrchestrator {
     }
 
     if (request.activeFilePath) {
-      const absoluteActivePath = path.isAbsolute(request.activeFilePath)
-        ? request.activeFilePath
-        : path.join(workspaceRoot, request.activeFilePath);
+      const absoluteActivePath = this.resolvePathWithinWorkspaceRoot(
+        workspaceRoot,
+        request.activeFilePath,
+      );
+
+      if (absoluteActivePath) {
+        try {
+          const fileContent = await fs.readFile(absoluteActivePath, "utf8");
+          const snippet = this.clampText(
+            request.selectedText && request.selectedText.trim().length > 0
+              ? request.selectedText.trim()
+              : fileContent,
+            MAX_ACTIVE_SNIPPET_CHARS,
+            "Active snippet trimmed",
+          );
+
+          sections.push(
+            `Active file: ${path.relative(workspaceRoot, absoluteActivePath).replace(/\\/g, "/")}`,
+          );
+          sections.push(`Active snippet:\n${snippet}`);
+        } catch {
+          // Ignore active file read failures.
+        }
+      }
+    }
+
+    const activeRelativePath = this.normalizeActivityPath(
+      request.activeFilePath,
+      workspaceRoot,
+    );
+    const referencedFiles = this.extractLikelyFileReferences(request.prompt)
+      .map((candidate) => this.normalizeActivityPath(candidate, workspaceRoot))
+      .filter(
+        (candidate): candidate is string =>
+          Boolean(candidate) && candidate !== activeRelativePath,
+      );
+
+    const dedupedReferenced = [...new Set(referencedFiles)].slice(0, 3);
+    for (const referencedRelativePath of dedupedReferenced) {
+      const absoluteReferencedPath = this.resolvePathWithinWorkspaceRoot(
+        workspaceRoot,
+        referencedRelativePath,
+      );
+      if (!absoluteReferencedPath) {
+        continue;
+      }
 
       try {
-        const fileContent = await fs.readFile(absoluteActivePath, "utf8");
-        const snippet =
-          request.selectedText && request.selectedText.trim().length > 0
-            ? request.selectedText.trim()
-            : fileContent.slice(0, 2000);
-
-        sections.push(
-          `Active file: ${path.relative(workspaceRoot, absoluteActivePath).replace(/\\/g, "/")}`,
+        const referencedContent = await fs.readFile(
+          absoluteReferencedPath,
+          "utf8",
         );
-        sections.push(`Active snippet:\n${snippet}`);
+        sections.push(`Referenced file: ${referencedRelativePath}`);
+        sections.push(
+          `Referenced snippet:\n${this.clampText(referencedContent, MAX_REFERENCED_FILE_SNIPPET_CHARS, "Referenced snippet trimmed")}`,
+        );
       } catch {
-        // Ignore active file read failures.
+        // Ignore referenced file read failures.
       }
     }
 
@@ -2110,6 +2197,128 @@ export class NexcodeOrchestrator {
     }
 
     return sections.join("\n\n");
+  }
+
+  private async getWorkspaceTopLevelEntries(
+    workspaceRoot: string,
+  ): Promise<string[]> {
+    const now = Date.now();
+    if (
+      this.workspaceSnapshotCache &&
+      this.workspaceSnapshotCache.workspaceRoot === workspaceRoot &&
+      this.workspaceSnapshotCache.expiresAt > now
+    ) {
+      return this.workspaceSnapshotCache.entries;
+    }
+
+    const topLevel = await fs.readdir(workspaceRoot, {
+      withFileTypes: true,
+    });
+    const entries = topLevel
+      .slice(0, 24)
+      .map((entry) => (entry.isDirectory() ? `${entry.name}/` : entry.name));
+
+    this.workspaceSnapshotCache = {
+      workspaceRoot,
+      entries,
+      expiresAt: now + 15_000,
+    };
+
+    return entries;
+  }
+
+  private resolvePathWithinWorkspaceRoot(
+    workspaceRoot: string,
+    rawPath: string,
+  ): string | null {
+    const trimmed = rawPath.trim().replace(/^['"`]|['"`]$/g, "");
+    if (!trimmed) {
+      return null;
+    }
+
+    const absolutePath = path.isAbsolute(trimmed)
+      ? path.normalize(trimmed)
+      : path.normalize(path.join(workspaceRoot, trimmed));
+
+    const relative = path.relative(workspaceRoot, absolutePath);
+    if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
+      return null;
+    }
+
+    return absolutePath;
+  }
+
+  private extractLikelyFileReferences(prompt: string): string[] {
+    const matches = prompt.match(/[A-Za-z0-9._/-]+\.[a-z0-9]{1,8}/gi) ?? [];
+    return matches
+      .map((match) => match.trim())
+      .filter((match) => match.length > 2)
+      .slice(0, 8);
+  }
+
+  private clampText(
+    value: string,
+    maxChars: number,
+    noticeLabel: string,
+  ): string {
+    const text = value ?? "";
+    if (!text) {
+      return "";
+    }
+
+    if (text.length <= maxChars) {
+      return text;
+    }
+
+    const omittedChars = text.length - maxChars;
+    return `${text.slice(0, maxChars)}\n\n[${noticeLabel}; ${omittedChars} characters omitted]`;
+  }
+
+  private formatUserFacingError(error: unknown): string {
+    const raw = String(error ?? "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!raw) {
+      return "Request failed due to an unknown error.";
+    }
+
+    const normalized = raw.toLowerCase();
+    if (normalized.includes("timeout")) {
+      return "The model request timed out. Try a smaller prompt or switch to a faster model.";
+    }
+
+    if (
+      normalized.includes("401") ||
+      normalized.includes("unauthorized") ||
+      normalized.includes("invalid api key")
+    ) {
+      return "Authentication failed for the selected provider. Verify API key and endpoint settings.";
+    }
+
+    if (normalized.includes("429") || normalized.includes("rate limit")) {
+      return "Rate limit reached. Please retry in a moment or use another model.";
+    }
+
+    if (
+      normalized.includes("all stream attempts failed") ||
+      normalized.includes("all provider/model attempts failed")
+    ) {
+      return "All configured provider attempts failed. Check model availability and provider settings.";
+    }
+
+    if (
+      normalized.includes("fetch failed") ||
+      normalized.includes("econnrefused") ||
+      normalized.includes("enotfound")
+    ) {
+      return "Could not reach the model provider endpoint. Check network access and base URL settings.";
+    }
+
+    if (normalized.includes("abort")) {
+      return "Request was cancelled.";
+    }
+
+    return raw.length > 260 ? `${raw.slice(0, 260)}...` : raw;
   }
 
   private buildAttachmentContext(attachments: RequestAttachment[]): string {
@@ -2125,7 +2334,11 @@ export class NexcodeOrchestrator {
       );
 
       if (attachment.kind === "text" && attachment.textContent) {
-        const snippet = attachment.textContent.slice(0, 3000);
+        const snippet = this.clampText(
+          attachment.textContent,
+          MAX_ATTACHMENT_TEXT_CHARS,
+          "Attachment snippet trimmed",
+        );
         lines.push(`  Text snippet:\n${snippet}`);
       } else if (attachment.kind === "image" && attachment.base64Data) {
         const preview = attachment.base64Data.slice(0, 320);

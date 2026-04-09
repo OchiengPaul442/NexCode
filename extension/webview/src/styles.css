@@ -880,19 +880,6 @@ body {
   overscroll-behavior: contain;
   scrollbar-width: thin;
 }
-  flex-shrink: 0;
-}
-
-.nk-enhance-btn:hover:not(:disabled) {
-  background: rgba(44, 170, 223, 0.28);
-  padding: 0 8px 8px;
-  color: #d7f1ff;
-}
-
-.nk-enhance-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
 
 /* Toolbar inside the card */
 .nk-input-toolbar {

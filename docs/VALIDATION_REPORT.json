@@ -1,81 +1,81 @@
 {
   "summary": {
     "models": [
-      "gpt-oss:120b-cloud"
+      "kimi-k2.5:cloud"
     ],
     "total": 11,
     "passed": 11,
     "failed": 0,
-    "memoryBefore": 286,
-    "memoryAfter": 295,
-    "memoryDelta": 9
+    "memoryBefore": 0,
+    "memoryAfter": 0,
+    "memoryDelta": 0
   },
   "results": [
     {
-      "model": "gpt-oss:120b-cloud",
+      "model": "kimi-k2.5:cloud",
       "case": "real-world-auto",
       "ok": true,
-      "durationMs": 8691
+      "durationMs": 34147
     },
     {
-      "model": "gpt-oss:120b-cloud",
+      "model": "kimi-k2.5:cloud",
       "case": "tool-search",
       "ok": true,
-      "durationMs": 30399
+      "durationMs": 30458
     },
     {
-      "model": "gpt-oss:120b-cloud",
+      "model": "kimi-k2.5:cloud",
       "case": "tool-read",
       "ok": true,
-      "durationMs": 218
+      "durationMs": 439
     },
     {
-      "model": "gpt-oss:120b-cloud",
+      "model": "kimi-k2.5:cloud",
       "case": "tool-web-search",
       "ok": true,
-      "durationMs": 1931
+      "durationMs": 3057
     },
     {
-      "model": "gpt-oss:120b-cloud",
+      "model": "kimi-k2.5:cloud",
       "case": "terminal-create-file",
       "ok": true,
-      "durationMs": 246
+      "durationMs": 422
     },
     {
-      "model": "gpt-oss:120b-cloud",
+      "model": "kimi-k2.5:cloud",
       "case": "terminal-move-file",
       "ok": true,
-      "durationMs": 258
+      "durationMs": 398
     },
     {
-      "model": "gpt-oss:120b-cloud",
+      "model": "kimi-k2.5:cloud",
       "case": "terminal-delete-file",
       "ok": true,
-      "durationMs": 267
+      "durationMs": 438
     },
     {
-      "model": "gpt-oss:120b-cloud",
+      "model": "kimi-k2.5:cloud",
       "case": "terminal-security-block",
       "ok": true,
-      "durationMs": 198
+      "durationMs": 363
     },
     {
-      "model": "gpt-oss:120b-cloud",
+      "model": "kimi-k2.5:cloud",
       "case": "edit-proposal-apply",
       "ok": true,
-      "durationMs": 2690
+      "durationMs": 38614
     },
     {
-      "model": "gpt-oss:120b-cloud",
+      "model": "kimi-k2.5:cloud",
       "case": "empty-workspace-command-lifecycle",
       "ok": true,
-      "durationMs": 2015
+      "durationMs": 14303
     },
     {
-      "model": "gpt-oss:120b-cloud",
+      "model": "kimi-k2.5:cloud",
       "case": "nextjs-blog-scaffold",
       "ok": true,
-      "durationMs": 50873
+      "durationMs": 54764
     }
   ]
 }

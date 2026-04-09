@@ -46,11 +46,48 @@ const BLOCKED_GIT_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   },
 ];
 
+export function normalizeTerminalCommand(command: string): string {
+  const trimmed = command.trim();
+  const prefixMatch = trimmed.match(
+    /^(?:pnpm\s+create\s+next-app(?:@latest)?|npx\s+create-next-app(?:@latest)?|npm\s+create-next-app(?:@latest)?)\s+/i,
+  );
+
+  if (!prefixMatch) {
+    return command;
+  }
+
+  const prefix = prefixMatch[0];
+  const remainder = trimmed.slice(prefix.length).trim();
+  if (!remainder) {
+    return command;
+  }
+
+  const segments = remainder.split(/\s+/);
+  const project = segments[0]?.trim();
+  if (
+    !project ||
+    project === "." ||
+    project === ".." ||
+    /[\\/]/.test(project)
+  ) {
+    return command;
+  }
+
+  const normalizedProject = project.toLowerCase();
+  if (normalizedProject === project) {
+    return command;
+  }
+
+  segments[0] = normalizedProject;
+  return `${prefix}${segments.join(" ")}`.trim();
+}
+
 export class TerminalTool {
   public constructor(private readonly workspaceRoot: string) {}
 
   public async run(command: string, timeoutMs = 30_000): Promise<ToolResult> {
-    const validationError = this.validateCommand(command);
+    const normalizedCommand = normalizeTerminalCommand(command);
+    const validationError = this.validateCommand(normalizedCommand);
     if (validationError) {
       return {
         ok: false,
@@ -59,7 +96,7 @@ export class TerminalTool {
     }
 
     try {
-      const { stdout, stderr } = await execAsync(command, {
+      const { stdout, stderr } = await execAsync(normalizedCommand, {
         cwd: this.workspaceRoot,
         timeout: timeoutMs,
         maxBuffer: 2 * 1024 * 1024,

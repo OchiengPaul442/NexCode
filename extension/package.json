@@ -3,7 +3,7 @@
   "displayName": "Nexcode Kiboko",
   "description": "Local-first, multi-agent AI coding assistant for VS Code.",
   "publisher": "nexcode",
-  "version": "0.1.41",
+  "version": "0.1.43",
   "private": true,
   "icon": "media/icon.png",
   "engines": {

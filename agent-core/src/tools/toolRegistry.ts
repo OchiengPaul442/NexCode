@@ -95,6 +95,24 @@ export class ToolRegistry {
           appendMatch[2] ?? "",
         );
       }
+      case "move": {
+        const moveMatch = arg.match(/^(.+?)\s*::\s*(.+)$/);
+        if (!moveMatch) {
+          return {
+            ok: false,
+            output: "Use: move <source> :: <destination>",
+          };
+        }
+
+        return this.filesystem.movePath(
+          moveMatch[1].trim(),
+          moveMatch[2].trim(),
+        );
+      }
+      case "delete":
+        return this.filesystem.deletePath(arg);
+      case "delete-contents":
+        return this.filesystem.clearDirectory(arg);
       case "mcp": {
         if (!this.mcpRegistry) {
           return {
@@ -131,7 +149,7 @@ export class ToolRegistry {
         return {
           ok: false,
           output:
-            "Unknown tool command. Use one of: search, web-search, terminal, git-status, git-diff, git-branch, test, read, write, append, mcp",
+            "Unknown tool command. Use one of: search, web-search, terminal, git-status, git-diff, git-branch, test, read, write, append, move, delete, delete-contents, mcp",
         };
     }
   }

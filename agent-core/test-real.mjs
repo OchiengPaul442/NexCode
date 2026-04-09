@@ -7,7 +7,38 @@ import { createNexcodeOrchestrator } from "./dist/index.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, "..");
-const model = process.env.NEXCODE_REAL_MODEL ?? "qwen2.5-coder:7b";
+const providerConfigPath = path.join(repoRoot, "providers", "providers.json");
+let providerConfig = {};
+
+try {
+  providerConfig = JSON.parse(await fs.readFile(providerConfigPath, "utf8"));
+} catch {
+  providerConfig = {};
+}
+
+const model =
+  process.env.NEXCODE_REAL_MODEL ??
+  providerConfig.defaultModel ??
+  "minimax-m2.7:cloud";
+const provider =
+  process.env.NEXCODE_REAL_PROVIDER ??
+  providerConfig.defaultProvider ??
+  (/cloud/i.test(model) ? "openai-compatible" : "ollama");
+const ollamaBaseUrl =
+  process.env.NEXCODE_REAL_OLLAMA_BASE_URL ??
+  providerConfig.ollama?.baseUrl ??
+  process.env.OLLAMA_BASE_URL;
+const openAIBaseUrl =
+  process.env.NEXCODE_REAL_OPENAI_BASE_URL ??
+  providerConfig.openaiCompatible?.baseUrl ??
+  process.env.OPENAI_BASE_URL ??
+  process.env.OPENAI_API_BASE;
+const openAIApiKey =
+  process.env.NEXCODE_REAL_OPENAI_API_KEY ??
+  (providerConfig.openaiCompatible?.apiKeyEnvVar
+    ? process.env[providerConfig.openaiCompatible.apiKeyEnvVar]
+    : undefined) ??
+  process.env.OPENAI_API_KEY;
 const memoryDir = path.join(os.tmpdir(), "nexcode-real-test-memory");
 const legacyWorkspaceMemoryDir = path.join(
   repoRoot,
@@ -105,7 +136,7 @@ async function runCase(orchestrator, testCase) {
   const request = {
     prompt: testCase.prompt,
     mode: testCase.mode,
-    provider: "ollama",
+    provider,
     model,
     temperature: 0.2,
     abortSignal: new AbortController().signal,
@@ -162,8 +193,11 @@ async function main() {
     workspaceRoot: repoRoot,
     promptsDir: path.join(repoRoot, "prompts"),
     memoryDir,
-    defaultProvider: "ollama",
+    defaultProvider: provider,
     defaultModel: model,
+    ollamaBaseUrl,
+    openAIBaseUrl,
+    openAIApiKey,
   });
 
   const results = [];
@@ -206,7 +240,7 @@ async function main() {
   await fs.rm(memoryDir, { recursive: true, force: true });
   await fs.rm(legacyWorkspaceMemoryDir, { recursive: true, force: true });
   console.log(
-    `\nAll ${results.length} real-model cases passed using ${model}.`,
+    `\nAll ${results.length} real-model cases passed using ${provider}/${model}.`,
   );
 }
 

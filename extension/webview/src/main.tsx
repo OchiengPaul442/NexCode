@@ -152,6 +152,12 @@ interface McpQuickResult {
   latencyMs: number;
 }
 
+interface ToolbarSelectOption {
+  value: string;
+  label: string;
+  description?: string;
+}
+
 interface SidebarSettings {
   temperature: number;
   autoApplyChanges: boolean;
@@ -427,6 +433,19 @@ function formatAgentMode(mode?: AgentMode): string {
   }
 }
 
+function formatUiMode(mode: UiMode): string {
+  switch (mode) {
+    case "agent":
+      return "Auto";
+    case "plan":
+      return "Plan";
+    case "ask":
+      return "Ask";
+    default:
+      return "Agent";
+  }
+}
+
 function formatRelativeTime(timestamp: number): string {
   const seconds = Math.floor((Date.now() - timestamp) / 1000);
   if (seconds < 60) {
@@ -608,6 +627,168 @@ function ActivityPanel({
             <div className="nk-activity-empty">No running tasks right now.</div>
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+function ProcessPanel({
+  reasoning,
+  streaming,
+}: {
+  reasoning: string[];
+  streaming: boolean;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+  const steps = reasoning.filter(Boolean).slice(-8);
+
+  if (steps.length === 0 && !streaming) {
+    return null;
+  }
+
+  const latest = steps.at(-1) ?? "Working on your request";
+
+  return (
+    <div className="nk-process-panel">
+      <div className="nk-process-head">
+        <div className="nk-process-title">
+          <Cpu size={11} />
+          <span>{streaming ? "Live steps" : "Execution trace"}</span>
+        </div>
+        {steps.length > 1 && (
+          <button
+            className="nk-process-toggle"
+            onClick={() => setCollapsed((value) => !value)}
+            type="button"
+          >
+            {collapsed ? "Expand" : "Collapse"}
+          </button>
+        )}
+      </div>
+
+      <div className="nk-process-current">{latest}</div>
+
+      {!collapsed && steps.length > 1 && (
+        <ol className="nk-process-list">
+          {steps.map((step, index) => (
+            <li
+              key={`${step}-${index}`}
+              className={`nk-process-item ${index === steps.length - 1 ? "nk-process-item--active" : ""}`}
+            >
+              <span className="nk-process-bullet" />
+              <span>{step}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
+function ToolbarSelect({
+  value,
+  options,
+  onChange,
+  label,
+  className,
+  buttonClassName,
+  menuClassName,
+}: {
+  value: string;
+  options: ToolbarSelectOption[];
+  onChange: (value: string) => void;
+  label: string;
+  className?: string;
+  buttonClassName?: string;
+  menuClassName?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleEscape);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [open]);
+
+  const selected = options.find((option) => option.value === value) ??
+    options[0] ?? {
+      value,
+      label: value,
+    };
+
+  return (
+    <div
+      ref={rootRef}
+      className={["nk-toolbar-select", open ? "is-open" : "", className]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      <button
+        className={["nk-toolbar-select-trigger", buttonClassName]
+          .filter(Boolean)
+          .join(" ")}
+        type="button"
+        title={label}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span className="nk-toolbar-select-value">{selected.label}</span>
+        <ChevronDown size={10} className="nk-toolbar-select-arrow" />
+      </button>
+
+      {open && (
+        <div
+          className={["nk-toolbar-select-menu", menuClassName]
+            .filter(Boolean)
+            .join(" ")}
+          role="listbox"
+          aria-label={label}
+        >
+          {options.map((option) => (
+            <button
+              key={option.value}
+              className={`nk-toolbar-select-option ${option.value === selected.value ? "is-selected" : ""}`}
+              type="button"
+              role="option"
+              aria-selected={option.value === selected.value}
+              onClick={() => {
+                onChange(option.value);
+                setOpen(false);
+              }}
+              title={option.description ?? option.label}
+            >
+              <span className="nk-toolbar-select-option-label">
+                {option.label}
+              </span>
+              {option.description && (
+                <span className="nk-toolbar-select-option-description">
+                  {option.description}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -1358,6 +1539,23 @@ function MessageBubble({
       <div
         className={`nk-msg-content ${isUser ? "nk-msg-content--user" : "nk-msg-content--bot"}`}
       >
+        {!isUser && message.reasoning.length > 0 && (
+          <ProcessPanel
+            reasoning={message.reasoning}
+            streaming={Boolean(message.streaming || message.thinking)}
+          />
+        )}
+
+        {!isUser &&
+          (message.activityTodos.length > 0 ||
+            message.activityFiles.length > 0) && (
+            <ActivityPanel
+              todos={message.activityTodos}
+              files={message.activityFiles}
+              note={message.activityNote}
+            />
+          )}
+
         {/* Main text */}
         {(isUser ? message.text.trim().length > 0 : true) && (
           <div
@@ -2072,6 +2270,46 @@ function App() {
     [mcpSelectedServer, mcpToolsByServer],
   );
 
+  const modelOptions = useMemo<ToolbarSelectOption[]>(() => {
+    if (!activeSession) {
+      return [];
+    }
+
+    const current = activeSession.model?.trim();
+    const merged = [
+      ...(current ? [current] : []),
+      ...(modelSuggestions[activeSession.provider] ?? []),
+    ];
+
+    return [...new Set(merged)]
+      .filter((option) => option.trim().length > 0)
+      .map((option) => ({
+        value: option,
+        label: option,
+      }));
+  }, [activeSession, modelSuggestions]);
+
+  const modeOptions = useMemo<ToolbarSelectOption[]>(
+    () => [
+      {
+        value: "agent",
+        label: "Auto",
+        description: "Plan, act, review, and verify",
+      },
+      {
+        value: "plan",
+        label: "Plan",
+        description: "Outline implementation steps only",
+      },
+      {
+        value: "ask",
+        label: "Ask",
+        description: "Explain or answer without editing first",
+      },
+    ],
+    [],
+  );
+
   const showNotice = useCallback((kind: "error" | "info", text: string) => {
     setBannerNotice({ kind, text: text.trim() });
   }, []);
@@ -2691,9 +2929,9 @@ function App() {
           if (!raw) return;
           debugRef.current.push(raw);
           const cleaned = sanitizeReasoningStatus(raw);
-          const recent = reasoningRef.current.slice(-6);
-          if (!recent.includes(cleaned)) {
-            reasoningRef.current.push(cleaned);
+          const recent = reasoningRef.current.slice(-3);
+          if (cleaned && !recent.includes(cleaned)) {
+            reasoningRef.current = [...reasoningRef.current.slice(-8), cleaned];
           }
 
           const cur = pendingRef.current;
@@ -2997,12 +3235,17 @@ function App() {
             <p className="nk-brand-title">NexCode</p>
             <p className="nk-brand-subtitle">
               {activeSession.title || "New Chat"} •{" "}
-              {formatAgentMode(mapUiModeToAgent(activeSession.mode))}
+              {formatUiMode(activeSession.mode)}
             </p>
           </div>
         </div>
 
         <div className="nk-topbar-right">
+          <TokenRing
+            sessionMessages={activeSession.messages}
+            draftText={activeDraft}
+            model={activeSession.model}
+          />
           <StatusDot
             connected={providerHealth?.connected ?? false}
             latencyMs={providerHealth?.latencyMs}
@@ -3216,7 +3459,7 @@ function App() {
                 : "Ask NexCode to build, fix, review, or explain your code"
             }
             value={activeDraft}
-            rows={4}
+            rows={3}
             onChange={(e) =>
               useStore.getState().setDraft(activeSession.id, e.target.value)
             }
@@ -3246,66 +3489,27 @@ function App() {
                 <Plus size={14} />
               </button>
 
-              {/* Model selector */}
-              <div className="nk-pill-select-wrap">
-                <select
-                  className="nk-pill-select"
-                  value={activeSession.model}
-                  onChange={(e) => onModelChange(e.target.value)}
-                  title="Model"
-                >
-                  {modelsForActiveProvider.length === 0 ? (
-                    <option value={activeSession.model}>
-                      {activeSession.model}
-                    </option>
-                  ) : (
-                    modelsForActiveProvider.map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
-                    ))
-                  )}
-                </select>
-                <ChevronDown size={10} className="nk-pill-arrow" />
-              </div>
+              <ToolbarSelect
+                value={activeSession.model}
+                options={modelOptions}
+                onChange={onModelChange}
+                label="Model"
+                className="nk-toolbar-select--model"
+                menuClassName="nk-toolbar-select-menu--model"
+              />
 
-              {/* Mode selector */}
-              <div className="nk-pill-select-wrap">
-                <select
-                  className="nk-pill-select nk-pill-select--mode"
-                  value={mapUiModeToAgent(activeSession.mode)}
-                  onChange={(e) =>
-                    onModeChange(
-                      (e.target.value === "plan"
-                        ? "plan"
-                        : e.target.value === "ask"
-                          ? "ask"
-                          : "agent") as UiMode,
-                    )
-                  }
-                  title="Routing"
-                >
-                  <option value="agent">Auto</option>
-                  <option value="plan">Plan</option>
-                  <option value="ask">Ask</option>
-                </select>
-                <ChevronDown size={10} className="nk-pill-arrow" />
-              </div>
-
-              <button
-                className="nk-toolbar-btn nk-toolbar-btn--ghost"
-                title="Open settings"
-                onClick={() => useStore.getState().setSettingsPanelOpen(true)}
-              >
-                <Settings size={13} />
-              </button>
+              <ToolbarSelect
+                value={activeSession.mode}
+                options={modeOptions}
+                onChange={(value) => onModeChange(value as UiMode)}
+                label="Mode"
+                className="nk-toolbar-select--mode"
+              />
             </div>
 
             {/* Right: queue status + stop + send */}
             <div className="nk-input-toolbar-right">
-              <span className="nk-draft-stat">
-                {Math.ceil(activeDraft.length / 4)} tok est
-              </span>
+              <span className="nk-input-hint">Enter to send</span>
               {queuedPrompts.length > 0 && (
                 <span className="nk-queue-pill">
                   {queuedPrompts.length} queued

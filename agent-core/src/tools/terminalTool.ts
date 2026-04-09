@@ -1,4 +1,4 @@
-import { exec } from "child_process";
+import { exec, spawn } from "child_process";
 import { promisify } from "util";
 import { ToolResult } from "../types";
 
@@ -118,6 +118,115 @@ export class TerminalTool {
           `${typedError.stdout ?? ""}${typedError.stderr ?? ""}${typedError.message ?? ""}`.trim(),
       };
     }
+  }
+
+  public async *stream(
+    command: string,
+    timeoutMs = 30_000,
+  ): AsyncGenerator<string, ToolResult> {
+    const normalizedCommand = normalizeTerminalCommand(command);
+    const validationError = this.validateCommand(normalizedCommand);
+    if (validationError) {
+      return {
+        ok: false,
+        output: `Command blocked by safety policy: ${validationError}`,
+      };
+    }
+
+    const child = spawn(normalizedCommand, {
+      cwd: this.workspaceRoot,
+      env: process.env,
+      shell: true,
+    });
+
+    const queue: string[] = [];
+    let resolveNext: (() => void) | null = null;
+    let settled = false;
+    let timedOut = false;
+    let exitCode: number | null = null;
+    let output = "";
+
+    const wake = () => {
+      if (resolveNext) {
+        const resolve = resolveNext;
+        resolveNext = null;
+        resolve();
+      }
+    };
+
+    const pushChunk = (chunk: string) => {
+      if (!chunk) {
+        return;
+      }
+
+      output += chunk;
+      queue.push(chunk);
+      wake();
+    };
+
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      pushChunk(`\n[command timed out after ${timeoutMs}ms]\n`);
+      child.kill();
+    }, timeoutMs);
+
+    child.stdout?.on("data", (data: Buffer | string) => {
+      pushChunk(data.toString());
+    });
+
+    child.stderr?.on("data", (data: Buffer | string) => {
+      pushChunk(data.toString());
+    });
+
+    child.on("error", (error) => {
+      pushChunk(`\n${String(error)}\n`);
+      settled = true;
+      clearTimeout(timeout);
+      wake();
+    });
+
+    child.on("close", (code) => {
+      exitCode = code;
+      if (!timedOut && typeof code === "number" && code !== 0) {
+        pushChunk(`\n[process exited with code ${code}]\n`);
+      }
+      settled = true;
+      clearTimeout(timeout);
+      wake();
+    });
+
+    try {
+      while (!settled || queue.length > 0) {
+        if (queue.length === 0) {
+          await new Promise<void>((resolve) => {
+            resolveNext = resolve;
+          });
+        }
+
+        while (queue.length > 0) {
+          const chunk = queue.shift();
+          if (chunk) {
+            yield chunk;
+          }
+        }
+      }
+    } finally {
+      clearTimeout(timeout);
+      if (!settled) {
+        child.kill();
+      }
+    }
+
+    const trimmedOutput = output.trim();
+    return {
+      ok: !timedOut && exitCode === 0,
+      output:
+        trimmedOutput.length > 0
+          ? trimmedOutput
+          : exitCode === 0
+            ? "Command completed successfully."
+            : "Command failed.",
+    };
   }
 
   private validateCommand(command: string): string | null {

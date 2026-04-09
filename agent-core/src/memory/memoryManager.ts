@@ -46,6 +46,28 @@ export class MemoryManager {
     await this.longTerm.add(entry);
   }
 
+  public async rememberNote(
+    text: string,
+    tags: string[] = [],
+    metadata?: Record<string, unknown>,
+  ): Promise<void> {
+    const normalizedText = text.trim();
+    if (!normalizedText) {
+      return;
+    }
+
+    const entry: LongTermMemoryEntry = {
+      id: randomUUID(),
+      timestamp: new Date().toISOString(),
+      type: "note",
+      text: normalizedText,
+      tags,
+      metadata,
+    };
+
+    await this.longTerm.add(entry);
+  }
+
   public async getRelevantContext(query: string, limit = 3): Promise<string> {
     const entries = await this.longTerm.search(query, limit);
     if (entries.length === 0) {

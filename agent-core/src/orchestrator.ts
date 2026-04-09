@@ -20,6 +20,7 @@ import {
   ProviderId,
   ProposedEdit,
   RequestAttachment,
+  ToolResult,
 } from "./types";
 import { McpAdapter, McpToolCall, McpToolResult } from "./mcp";
 import { McpRegistry } from "./mcp/mcpRegistry";
@@ -92,6 +93,11 @@ export interface PromptEnhancementResult {
   notes: string[];
   providerUsed: ProviderId;
   modelUsed: string;
+}
+
+interface InferredEditRequest {
+  filePath: string;
+  instruction: string;
 }
 
 const MAX_WORKSPACE_CONTEXT_CHARS = 12_000;
@@ -292,6 +298,7 @@ export class NexcodeOrchestrator {
     const diagnostics: string[] = [];
     let streamedAnyToken = false;
     let latestActivityFiles: ActivityFile[] = [];
+    let executedToolCommand: string | null = null;
 
     this.memory.appendSessionMessage(sessionId, {
       role: "user",
@@ -386,8 +393,17 @@ export class NexcodeOrchestrator {
 
       const inferredToolCommand =
         request.allowTools !== false
-          ? this.extractToolCommandRequest(request.prompt)
+          ? this.extractToolCommandRequest(
+              request.prompt,
+              request.workspaceRoot,
+              request.activeFilePath,
+            )
           : null;
+      const inferredEditRequest = this.inferNaturalLanguageEditRequest(
+        request.prompt,
+        request.workspaceRoot,
+        request.activeFilePath,
+      );
 
       let response: OrchestratorResponse | null = null;
       if (
@@ -395,6 +411,7 @@ export class NexcodeOrchestrator {
         request.allowTools !== false
       ) {
         const toolCommand = request.prompt.replace(/^\s*\/tool\s+/, "").trim();
+        executedToolCommand = toolCommand;
         const toolFiles = this.inferActivityFilesFromToolCommand(toolCommand);
         latestActivityFiles = toolFiles;
 
@@ -431,14 +448,29 @@ export class NexcodeOrchestrator {
           note: "Tool command detected",
         };
 
-        response = await this.handleToolRequest(
+        const iterator = this.streamToolRequest(
           request.prompt,
           mode,
           provider,
           model,
           diagnostics,
           request.allowWebSearch !== false,
+          request.abortSignal,
         );
+
+        while (true) {
+          const step = await iterator.next();
+          if (step.done) {
+            response = step.value;
+            break;
+          }
+
+          if (step.value.type === "token") {
+            streamedAnyToken = true;
+          }
+
+          yield step.value;
+        }
 
         yield {
           type: "activity",
@@ -467,6 +499,7 @@ export class NexcodeOrchestrator {
         };
       } else if (inferredToolCommand) {
         const inferredPrompt = `/tool ${inferredToolCommand}`;
+        executedToolCommand = inferredToolCommand;
         const inferredStatus = inferredToolCommand.startsWith("terminal ")
           ? `Running terminal command: ${inferredToolCommand.slice("terminal ".length)}`
           : `Running inferred tool command: ${inferredToolCommand}`;
@@ -505,14 +538,29 @@ export class NexcodeOrchestrator {
           note: "Inferred tool command",
         };
 
-        response = await this.handleToolRequest(
+        const iterator = this.streamToolRequest(
           inferredPrompt,
           mode,
           provider,
           model,
           diagnostics,
           request.allowWebSearch !== false,
+          request.abortSignal,
         );
+
+        while (true) {
+          const step = await iterator.next();
+          if (step.done) {
+            response = step.value;
+            break;
+          }
+
+          if (step.value.type === "token") {
+            streamedAnyToken = true;
+          }
+
+          yield step.value;
+        }
 
         yield {
           type: "activity",
@@ -612,6 +660,93 @@ export class NexcodeOrchestrator {
               detail: parsedEdit
                 ? `Target: ${parsedEdit.filePath}`
                 : "Command format needs review",
+            },
+            {
+              id: "edit-draft",
+              title: "Draft file update",
+              status: "completed",
+              detail: "Model response complete",
+            },
+            {
+              id: "edit-patch",
+              title: "Build patch preview",
+              status: "completed",
+              detail:
+                response.proposedEdits.length > 0
+                  ? `${response.proposedEdits.length} proposed edit(s)`
+                  : "No edits proposed",
+            },
+          ],
+          files: latestActivityFiles,
+          note: "Edit proposal ready",
+        };
+      } else if (inferredEditRequest) {
+        const inferredEditPrompt = `/edit ${inferredEditRequest.filePath} :: ${inferredEditRequest.instruction}`;
+        const editFiles = [
+          {
+            path: inferredEditRequest.filePath,
+            status: "in-progress" as ActivityStatus,
+            summary: "Preparing inferred patch proposal",
+          },
+        ];
+        latestActivityFiles = editFiles;
+
+        yield {
+          type: "status",
+          message: `Preparing edit proposal for ${inferredEditRequest.filePath}`,
+        };
+
+        yield {
+          type: "activity",
+          todos: [
+            {
+              id: "edit-infer",
+              title: "Infer edit target",
+              status: "completed",
+              detail: inferredEditRequest.filePath,
+            },
+            {
+              id: "edit-draft",
+              title: "Draft file update",
+              status: "in-progress",
+              detail: "Generating candidate file content",
+            },
+            {
+              id: "edit-patch",
+              title: "Build patch preview",
+              status: "not-started",
+              detail: "Pending",
+            },
+          ],
+          files: editFiles,
+          note: "Inferred file edit request",
+        };
+
+        response = await this.handleEditRequest(
+          inferredEditPrompt,
+          mode,
+          provider,
+          model,
+          temperature,
+          workspaceContext,
+          memoryContext,
+          diagnostics,
+          request.abortSignal,
+        );
+
+        latestActivityFiles =
+          response.proposedEdits.length > 0
+            ? this.buildActivityFilesFromProposedEdits(response.proposedEdits)
+            : editFiles.map((file) => ({ ...file, status: "modified" }));
+
+        yield {
+          type: "activity",
+          todos: [
+            {
+              id: "edit-infer",
+              title: "Infer edit target",
+              status: "completed",
+              detail: inferredEditRequest.filePath,
             },
             {
               id: "edit-draft",
@@ -808,14 +943,33 @@ export class NexcodeOrchestrator {
             message: `Running suggested tool command: ${suggestedToolCommand}`,
           };
 
-          response = await this.handleToolRequest(
+          executedToolCommand = suggestedToolCommand;
+          latestActivityFiles =
+            this.inferActivityFilesFromToolCommand(suggestedToolCommand);
+
+          const iterator = this.streamToolRequest(
             `/tool ${suggestedToolCommand}`,
             response.modeUsed,
             response.providerUsed,
             response.modelUsed,
             diagnostics,
             request.allowWebSearch !== false,
+            request.abortSignal,
           );
+
+          while (true) {
+            const step = await iterator.next();
+            if (step.done) {
+              response = step.value;
+              break;
+            }
+
+            if (step.value.type === "token") {
+              streamedAnyToken = true;
+            }
+
+            yield step.value;
+          }
         }
       }
 
@@ -840,6 +994,30 @@ export class NexcodeOrchestrator {
         provider,
         model,
       ]);
+
+      if (executedToolCommand) {
+        await this.memory.rememberNote(
+          `Successful tool workflow: ${executedToolCommand}`,
+          ["workflow", "tool", response.modeUsed],
+          {
+            provider: response.providerUsed,
+            model: response.modelUsed,
+          },
+        );
+      }
+
+      if (response.proposedEdits.length > 0) {
+        await this.memory.rememberNote(
+          `Successful edit workflow: ${response.proposedEdits
+            .map((edit) => edit.filePath)
+            .join(", ")}`,
+          ["workflow", "edit", response.modeUsed],
+          {
+            files: response.proposedEdits.map((edit) => edit.filePath),
+            prompt: request.prompt.slice(0, 240),
+          },
+        );
+      }
 
       const feedback = this.reflection.score(
         request.prompt,
@@ -1555,6 +1733,131 @@ export class NexcodeOrchestrator {
     };
   }
 
+  private async *streamToolRequest(
+    prompt: string,
+    mode: AgentMode,
+    provider: ProviderId,
+    model: string,
+    diagnostics: string[],
+    allowWebSearch: boolean,
+    abortSignal?: AbortSignal,
+  ): AsyncGenerator<OrchestratorEvent, OrchestratorResponse> {
+    const toolCommand = prompt.replace(/^\s*\/tool\s+/, "").trim();
+
+    if (
+      /^(web-search|search-web|online-search)\b/i.test(toolCommand) &&
+      !allowWebSearch
+    ) {
+      return {
+        text: [
+          "## Tool Execution",
+          `Command: ${toolCommand}`,
+          "",
+          "Web search is disabled in settings. Enable it and try again.",
+        ].join("\n"),
+        modeUsed: mode,
+        providerUsed: provider,
+        modelUsed: model,
+        proposedEdits: [],
+        diagnostics,
+      };
+    }
+
+    const terminalMatch = toolCommand.match(/^terminal\s+(.+)$/i);
+    if (terminalMatch) {
+      return yield* this.streamCommandToolResult(
+        toolCommand,
+        mode,
+        provider,
+        model,
+        diagnostics,
+        this.tools.terminal.stream(terminalMatch[1].trim()),
+        abortSignal,
+      );
+    }
+
+    const testMatch = toolCommand.match(/^test(?:\s+([\s\S]+))?$/i);
+    if (testMatch) {
+      return yield* this.streamCommandToolResult(
+        toolCommand,
+        mode,
+        provider,
+        model,
+        diagnostics,
+        this.tools.test.stream(testMatch[1]?.trim()),
+        abortSignal,
+      );
+    }
+
+    return this.handleToolRequest(
+      prompt,
+      mode,
+      provider,
+      model,
+      diagnostics,
+      allowWebSearch,
+    );
+  }
+
+  private async *streamCommandToolResult(
+    toolCommand: string,
+    mode: AgentMode,
+    provider: ProviderId,
+    model: string,
+    diagnostics: string[],
+    iterator: AsyncGenerator<string, ToolResult>,
+    abortSignal?: AbortSignal,
+  ): AsyncGenerator<OrchestratorEvent, OrchestratorResponse> {
+    let result: ToolResult | null = null;
+
+    while (true) {
+      this.ensureNotAborted(abortSignal);
+      const step = await iterator.next();
+      if (step.done) {
+        result = step.value;
+        break;
+      }
+
+      const chunks = chunkText(step.value, 80);
+      for (const chunk of chunks) {
+        yield {
+          type: "token",
+          token: chunk,
+        };
+      }
+    }
+
+    const finalResult = result ?? {
+      ok: false,
+      output: "Tool execution did not produce a final result.",
+    };
+    const boundedOutput = this.clampText(
+      finalResult.output,
+      MAX_TOOL_OUTPUT_CHARS,
+      "Tool output truncated",
+    );
+
+    if (!finalResult.ok) {
+      diagnostics.push(boundedOutput);
+    }
+
+    return {
+      text: [
+        "## Tool Execution",
+        `Command: ${toolCommand}`,
+        "",
+        "```text",
+        boundedOutput,
+        "```",
+      ].join("\n"),
+      modeUsed: mode,
+      providerUsed: provider,
+      modelUsed: model,
+      proposedEdits: [],
+      diagnostics,
+    };
+  }
+
   private async handleEditRequest(
     prompt: string,
     mode: AgentMode,
@@ -1784,7 +2087,69 @@ export class NexcodeOrchestrator {
     ].join("\n");
   }
 
-  private extractToolCommandRequest(prompt: string): string | null {
+  private inferNaturalLanguageEditRequest(
+    prompt: string,
+    workspaceRoot?: string,
+    activeFilePath?: string,
+  ): InferredEditRequest | null {
+    const normalized = prompt.trim();
+    if (!normalized || normalized.startsWith("/")) {
+      return null;
+    }
+
+    if (
+      /\b(explain|describe|summari[sz]e|review|analy[sz]e|read|open|show|search|find|run|execute|test)\b/i.test(
+        normalized,
+      ) &&
+      !/\b(refactor|rewrite|modify|change|update|fix|rename|remove|delete|add|implement|improve|clean up)\b/i.test(
+        normalized,
+      )
+    ) {
+      return null;
+    }
+
+    const hasEditVerb =
+      /\b(refactor|rewrite|modify|change|update|fix|rename|remove|delete|add|implement|improve|clean up)\b/i.test(
+        normalized,
+      );
+    if (!hasEditVerb) {
+      return null;
+    }
+
+    const referencedFiles = extractLikelyFileReferences(normalized)
+      .map((candidate) => this.normalizeActivityPath(candidate, workspaceRoot))
+      .filter((candidate): candidate is string => Boolean(candidate));
+    const mentionsFileContext =
+      referencedFiles.length > 0 ||
+      /\b(file|component|module|function|class|screen|service)\b/i.test(
+        normalized,
+      ) ||
+      /\b(this|current|active|selected|attached)\s+file\b/i.test(normalized);
+
+    if (!mentionsFileContext) {
+      return null;
+    }
+
+    const filePath = this.resolvePromptTargetPath(
+      normalized,
+      workspaceRoot,
+      activeFilePath,
+    );
+    if (!filePath) {
+      return null;
+    }
+
+    return {
+      filePath,
+      instruction: normalized,
+    };
+  }
+
+  private extractToolCommandRequest(
+    prompt: string,
+    workspaceRoot?: string,
+    activeFilePath?: string,
+  ): string | null {
     const terminalCommand = this.extractTerminalCommandRequest(prompt);
     if (terminalCommand) {
       return `terminal ${terminalCommand}`;
@@ -1826,7 +2191,131 @@ export class NexcodeOrchestrator {
       return args && args.length > 0 ? `test ${args}` : "test";
     }
 
+    const moveMatch = normalized.match(
+      /^(?:please\s+)?(?:move|rename)\s+(.+?)\s+(?:to|into)\s+(.+)$/i,
+    );
+    if (moveMatch) {
+      const sourcePath = this.normalizeRequestedPath(
+        moveMatch[1],
+        workspaceRoot,
+        activeFilePath,
+      );
+      const destinationPath = this.normalizeRequestedPath(
+        moveMatch[2],
+        workspaceRoot,
+        activeFilePath,
+      );
+
+      if (sourcePath && destinationPath) {
+        return `move ${sourcePath} :: ${destinationPath}`;
+      }
+    }
+
+    const clearMatch = normalized.match(
+      /^(?:please\s+)?(?:clear|empty|delete\s+contents\s+of|remove\s+contents\s+of)\s+(.+)$/i,
+    );
+    if (clearMatch) {
+      const targetPath = this.normalizeRequestedPath(
+        clearMatch[1],
+        workspaceRoot,
+        activeFilePath,
+      );
+
+      if (targetPath) {
+        return `delete-contents ${targetPath}`;
+      }
+    }
+
+    const deleteMatch = normalized.match(
+      /^(?:please\s+)?(?:delete|remove)\s+(.+)$/i,
+    );
+    if (deleteMatch) {
+      const targetPath = this.normalizeRequestedPath(
+        deleteMatch[1],
+        workspaceRoot,
+        activeFilePath,
+      );
+
+      if (targetPath) {
+        return `delete ${targetPath}`;
+      }
+    }
+
     return null;
+  }
+
+  private resolvePromptTargetPath(
+    prompt: string,
+    workspaceRoot?: string,
+    activeFilePath?: string,
+  ): string | null {
+    const referencedFiles = extractLikelyFileReferences(prompt)
+      .map((candidate) => this.normalizeActivityPath(candidate, workspaceRoot))
+      .filter((candidate): candidate is string => Boolean(candidate));
+
+    if (referencedFiles.length > 0) {
+      return referencedFiles[0];
+    }
+
+    const normalizedActivePath = this.normalizeActivityPath(
+      activeFilePath,
+      workspaceRoot,
+    );
+    if (!normalizedActivePath) {
+      return null;
+    }
+
+    if (
+      /\b(this|current|active|selected|attached)\s+file\b/i.test(prompt) ||
+      /\b(refactor|rewrite|modify|change|update|fix|rename|remove|delete|add|implement|improve|clean up)\b/i.test(
+        prompt,
+      )
+    ) {
+      return normalizedActivePath;
+    }
+
+    return null;
+  }
+
+  private normalizeRequestedPath(
+    rawPath: string,
+    workspaceRoot?: string,
+    activeFilePath?: string,
+  ): string | null {
+    const cleaned = rawPath.trim().replace(/[.]+$/, "");
+    if (!cleaned) {
+      return null;
+    }
+
+    const normalizedActivePath = this.normalizeActivityPath(
+      activeFilePath,
+      workspaceRoot,
+    );
+
+    if (
+      /^(?:the\s+)?(?:this|current|active|selected|attached)\s+file$/i.test(
+        cleaned,
+      )
+    ) {
+      return normalizedActivePath;
+    }
+
+    if (
+      /^(?:the\s+)?(?:this|current|active|selected|attached)\s+(?:folder|directory)$/i.test(
+        cleaned,
+      )
+    ) {
+      return normalizedActivePath
+        ? path.dirname(normalizedActivePath).replace(/\\/g, "/")
+        : null;
+    }
+
+    const withoutKindPrefix = cleaned.replace(
+      /^(?:the\s+)?(?:file|folder|directory)\s+/i,
+      "",
+    );
+
+    return this.normalizeActivityPath(withoutKindPrefix, workspaceRoot);
   }
 
   private extractSuggestedToolCommand(responseText: string): string | null {
@@ -2008,6 +2497,48 @@ export class NexcodeOrchestrator {
           path: "terminal",
           status: "in-progress",
           summary: terminalMatch[1].trim(),
+        },
+      ];
+    }
+
+    const moveMatch = trimmed.match(/^move\s+(.+?)\s*::\s*(.+)$/i);
+    if (moveMatch) {
+      return [
+        {
+          path: this.normalizeActivityPath(moveMatch[1]) ?? moveMatch[1].trim(),
+          status: "modified",
+          summary: `Moved to ${moveMatch[2].trim()}`,
+        },
+        {
+          path: this.normalizeActivityPath(moveMatch[2]) ?? moveMatch[2].trim(),
+          status: "modified",
+          summary: `Created from move ${moveMatch[1].trim()}`,
+        },
+      ];
+    }
+
+    const deleteMatch = trimmed.match(/^delete\s+(.+)$/i);
+    if (deleteMatch) {
+      const targetPath =
+        this.normalizeActivityPath(deleteMatch[1]) ?? deleteMatch[1].trim();
+      return [
+        {
+          path: targetPath,
+          status: "modified",
+          summary: "Deleting path",
+        },
+      ];
+    }
+
+    const clearMatch = trimmed.match(/^delete-contents\s+(.+)$/i);
+    if (clearMatch) {
+      const targetPath =
+        this.normalizeActivityPath(clearMatch[1]) ?? clearMatch[1].trim();
+      return [
+        {
+          path: targetPath,
+          status: "modified",
+          summary: "Clearing directory contents",
         },
       ];
     }

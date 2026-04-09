@@ -63,6 +63,69 @@ export class FileSystemTool {
     }
   }
 
+  public async movePath(
+    sourcePath: string,
+    destinationPath: string,
+  ): Promise<ToolResult> {
+    try {
+      const absoluteSource = this.resolveWorkspacePath(sourcePath);
+      const absoluteDestination = this.resolveWorkspacePath(destinationPath);
+      await fs.mkdir(path.dirname(absoluteDestination), { recursive: true });
+      await fs.rename(absoluteSource, absoluteDestination);
+      return {
+        ok: true,
+        output: `Moved ${sourcePath} -> ${destinationPath}`,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        output: String(error),
+      };
+    }
+  }
+
+  public async deletePath(targetPath: string): Promise<ToolResult> {
+    try {
+      const absolutePath = this.resolveWorkspacePath(targetPath);
+      this.ensureNotWorkspaceRoot(absolutePath, targetPath);
+      await fs.rm(absolutePath, { recursive: true, force: true });
+      return {
+        ok: true,
+        output: `Deleted ${targetPath}`,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        output: String(error),
+      };
+    }
+  }
+
+  public async clearDirectory(targetPath: string): Promise<ToolResult> {
+    try {
+      const absolutePath = this.resolveWorkspacePath(targetPath);
+      this.ensureNotWorkspaceRoot(absolutePath, targetPath);
+      const entries = await fs.readdir(absolutePath, { withFileTypes: true });
+
+      for (const entry of entries) {
+        await fs.rm(path.join(absolutePath, entry.name), {
+          recursive: true,
+          force: true,
+        });
+      }
+
+      return {
+        ok: true,
+        output: `Cleared ${targetPath}`,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        output: String(error),
+      };
+    }
+  }
+
   public async makeProposedEdit(
     targetPath: string,
     newText: string,
@@ -100,5 +163,16 @@ export class FileSystemTool {
     }
 
     return absolutePath;
+  }
+
+  private ensureNotWorkspaceRoot(
+    absolutePath: string,
+    requestedPath: string,
+  ): void {
+    if (path.resolve(absolutePath) === path.resolve(this.workspaceRoot)) {
+      throw new Error(
+        `Refusing to delete the workspace root directly: ${requestedPath}`,
+      );
+    }
   }
 }

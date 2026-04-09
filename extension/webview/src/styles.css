@@ -6,21 +6,21 @@
 
 /* ── Design tokens ─────────────────────────────────────────────────────────── */
 :root {
-  --nk-bg: #0d1117;
-  --nk-bg2: #151b23;
-  --nk-bg3: #1b2430;
-  --nk-border: #30363d;
-  --nk-border2: #21262d;
-  --nk-text: #d7e0ea;
-  --nk-muted: #9aa6b2;
-  --nk-faint: #748090;
-  --nk-accent: #58a6ff;
-  --nk-accent2: #2f81f7;
-  --nk-accent-glow: rgba(88, 166, 255, 0.16);
-  --nk-green: #3fb950;
-  --nk-red: #f85149;
-  --nk-orange: #d29922;
-  --nk-user-bg: #10213a;
+  --nk-bg: #1a1a1a;
+  --nk-bg2: #2a2a2a;
+  --nk-bg3: #3a3a3a;
+  --nk-border: #4a4a4a;
+  --nk-border2: #5a5a5a;
+  --nk-text: #e0e0e0;
+  --nk-muted: #a0a0a0;
+  --nk-faint: #707070;
+  --nk-accent: #808080;
+  --nk-accent2: #909090;
+  --nk-accent-glow: rgba(128, 128, 128, 0.16);
+  --nk-green: #4ade80;
+  --nk-red: #f87171;
+  --nk-orange: #fb923c;
+  --nk-user-bg: #2d2d2d;
   --nk-topbar-h: 48px;
   color-scheme: dark;
 }

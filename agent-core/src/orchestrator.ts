@@ -34,6 +34,17 @@ import { OpenAICompatibleProvider } from "./providers/openAICompatibleProvider";
 import { ToolRegistry } from "./tools/toolRegistry";
 import { chunkText, extractFirstCodeBlock } from "./utils/text";
 import { getAgentMaxTokens } from "./agents/shared";
+import {
+  buildWorkspaceContext,
+  getWorkspaceTopLevelEntries,
+  resolvePathWithinWorkspaceRoot,
+  clampText,
+  extractLikelyFileReferences,
+  buildAttachmentContext,
+  normalizeActivityPath,
+  getWorkspaceSnapshotCache,
+  setWorkspaceSnapshotCache,
+} from "./orchestrator/contextBuilder";
 
 export interface NexcodeOrchestratorOptions {
   workspaceRoot?: string;
@@ -102,13 +113,6 @@ export class NexcodeOrchestrator {
   private readonly promptVersions: PromptVersionManager;
   private readonly mcpRegistry: McpRegistry;
   private readonly ephemeralSessionId = randomUUID();
-  private workspaceSnapshotCache:
-    | {
-        workspaceRoot: string;
-        expiresAt: number;
-        entries: string[];
-      }
-    | undefined;
 
   public constructor(options: NexcodeOrchestratorOptions = {}) {
     this.config = createRuntimeConfig({
@@ -211,7 +215,9 @@ export class NexcodeOrchestrator {
 
     const [memoryContext, workspaceContext] = await Promise.all([
       this.memory.getRelevantContext(originalPrompt).catch(() => ""),
-      this.buildWorkspaceContext(contextRequest).catch(() => ""),
+      buildWorkspaceContext(contextRequest, this.config.workspaceRoot).catch(
+        () => "",
+      ),
     ]);
 
     const rewriteMode = request.mode ?? "auto";
@@ -327,7 +333,9 @@ export class NexcodeOrchestrator {
       this.ensureNotAborted(request.abortSignal);
       const [memoryContextRaw, workspaceContextRaw] = await Promise.all([
         this.memory.getRelevantContext(request.prompt).catch(() => ""),
-        this.buildWorkspaceContext(request).catch(() => ""),
+        buildWorkspaceContext(request, this.config.workspaceRoot).catch(
+          () => "",
+        ),
       ]);
       this.ensureNotAborted(request.abortSignal);
 
@@ -2271,7 +2279,7 @@ export class NexcodeOrchestrator {
     const sections: string[] = [];
 
     try {
-      const names = await this.getWorkspaceTopLevelEntries(workspaceRoot);
+      const names = await getWorkspaceTopLevelEntries(workspaceRoot);
       sections.push(`Workspace root: ${workspaceRoot}`);
       sections.push(`Top-level entries: ${names.join(", ")}`);
     } catch {
@@ -2279,7 +2287,7 @@ export class NexcodeOrchestrator {
     }
 
     if (request.activeFilePath) {
-      const absoluteActivePath = this.resolvePathWithinWorkspaceRoot(
+      const absoluteActivePath = resolvePathWithinWorkspaceRoot(
         workspaceRoot,
         request.activeFilePath,
       );
@@ -2287,7 +2295,7 @@ export class NexcodeOrchestrator {
       if (absoluteActivePath) {
         try {
           const fileContent = await fs.readFile(absoluteActivePath, "utf8");
-          const snippet = this.clampText(
+          const snippet = clampText(
             request.selectedText && request.selectedText.trim().length > 0
               ? request.selectedText.trim()
               : fileContent,
@@ -2305,12 +2313,12 @@ export class NexcodeOrchestrator {
       }
     }
 
-    const activeRelativePath = this.normalizeActivityPath(
+    const activeRelativePath = normalizeActivityPath(
       request.activeFilePath,
       workspaceRoot,
     );
-    const referencedFiles = this.extractLikelyFileReferences(request.prompt)
-      .map((candidate) => this.normalizeActivityPath(candidate, workspaceRoot))
+    const referencedFiles = extractLikelyFileReferences(request.prompt)
+      .map((candidate) => normalizeActivityPath(candidate, workspaceRoot))
       .filter(
         (candidate): candidate is string =>
           Boolean(candidate) && candidate !== activeRelativePath,
@@ -2318,7 +2326,7 @@ export class NexcodeOrchestrator {
 
     const dedupedReferenced = [...new Set(referencedFiles)].slice(0, 3);
     for (const referencedRelativePath of dedupedReferenced) {
-      const absoluteReferencedPath = this.resolvePathWithinWorkspaceRoot(
+      const absoluteReferencedPath = resolvePathWithinWorkspaceRoot(
         workspaceRoot,
         referencedRelativePath,
       );
@@ -2333,7 +2341,7 @@ export class NexcodeOrchestrator {
         );
         sections.push(`Referenced file: ${referencedRelativePath}`);
         sections.push(
-          `Referenced snippet:\n${this.clampText(referencedContent, MAX_REFERENCED_FILE_SNIPPET_CHARS, "Referenced snippet trimmed")}`,
+          `Referenced snippet:\n${clampText(referencedContent, MAX_REFERENCED_FILE_SNIPPET_CHARS, "Referenced snippet trimmed")}`,
         );
       } catch {
         // Ignore referenced file read failures.
@@ -2341,7 +2349,7 @@ export class NexcodeOrchestrator {
     }
 
     if ((request.attachments?.length ?? 0) > 0) {
-      sections.push(this.buildAttachmentContext(request.attachments ?? []));
+      sections.push(buildAttachmentContext(request.attachments ?? []));
     }
 
     return sections.join("\n\n");
@@ -2351,12 +2359,13 @@ export class NexcodeOrchestrator {
     workspaceRoot: string,
   ): Promise<string[]> {
     const now = Date.now();
+    const cache = getWorkspaceSnapshotCache();
     if (
-      this.workspaceSnapshotCache &&
-      this.workspaceSnapshotCache.workspaceRoot === workspaceRoot &&
-      this.workspaceSnapshotCache.expiresAt > now
+      cache &&
+      cache.workspaceRoot === workspaceRoot &&
+      cache.expiresAt > now
     ) {
-      return this.workspaceSnapshotCache.entries;
+      return cache.entries;
     }
 
     const topLevel = await fs.readdir(workspaceRoot, {
@@ -2366,11 +2375,11 @@ export class NexcodeOrchestrator {
       .slice(0, 24)
       .map((entry) => (entry.isDirectory() ? `${entry.name}/` : entry.name));
 
-    this.workspaceSnapshotCache = {
+    setWorkspaceSnapshotCache({
       workspaceRoot,
       entries,
       expiresAt: now + 15_000,
-    };
+    });
 
     return entries;
   }

@@ -2955,6 +2955,7 @@ function App() {
       return;
     }
 
+    submitPrompt(rawPrompt, sess, attachmentIds);
     useStore.getState().setDraft(sess.id, "");
     if (attachmentIds.length > 0) {
       useStore.getState().setAttachments([]);

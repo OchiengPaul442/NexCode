@@ -1,0 +1,1 @@
+{"timestamp":"2026-04-09T20:08:50.018Z","prompt":"Write a simple hello world function in TypeScript","response":"```typescript\n// src/helloWorld.ts\nexport function helloWorld(): string {\n    return \"Hello, world!\";\n}\n```","score":63,"acceptedEdits":0,"rejectedEdits":0,"metadata":{"mode":"coder","provider":"ollama","model":"qwen2.5-coder:7b","diagnosticsCount":0}}

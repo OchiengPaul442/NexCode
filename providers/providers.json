@@ -1,0 +1,11 @@
+{
+  "defaultProvider": "ollama",
+  "defaultModel": "qwen2.5-coder:7b",
+  "ollama": {
+    "baseUrl": "http://localhost:11434"
+  },
+  "openaiCompatible": {
+    "baseUrl": "https://api.atlascloud.ai/v1",
+    "apiKeyEnvVar": "ATLASCLOUD_API_KEY"
+  }
+}

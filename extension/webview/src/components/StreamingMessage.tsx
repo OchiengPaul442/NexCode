@@ -1,7 +1,6 @@
 import React from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { useStreamingText } from "../hooks/useStreamingText";
+import { RichMarkdown } from "./RichMarkdown";
 
 interface StreamingMessageProps {
   text: string;
@@ -47,12 +46,13 @@ export function StreamingMessage({
     );
   }
 
-  if (markdown && !isStreaming) {
+  if (markdown) {
     return (
       <div className={rootClassName}>
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-          {displayedText}
-        </ReactMarkdown>
+        <RichMarkdown text={displayedText} />
+        {showCursor && isStreaming && (
+          <span className="nk-streaming-cursor" aria-hidden="true" />
+        )}
       </div>
     );
   }

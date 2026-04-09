@@ -220,12 +220,13 @@ export class NexcodeOrchestrator {
         role: "system",
         content: [
           "You rewrite coding-task prompts for an autonomous software agent.",
-          "Return strict JSON with keys: enhancedPrompt (string), notes (string[]).",
+          "Return plain text only. Do not use JSON or markdown fences.",
+          "Start with the rewritten prompt ready to send to the agent.",
+          "If you want to mention what changed, add a blank line followed by 'Notes:' and brief plain text lines.",
           "Preserve intent, constraints, and requested scope.",
           "Do not invent requirements or change the user objective.",
           "Preserve explicit slash commands (/tool, /edit, /plan, /code, /fix, /test, /explain).",
           "If prompt is already high quality, keep changes minimal.",
-          "No markdown, no code fences, JSON only.",
         ].join("\n"),
       },
       {
@@ -2054,19 +2055,94 @@ export class NexcodeOrchestrator {
       }
     }
 
-    const plainText = responseText.trim();
-    if (plainText) {
+    const plainText = this.parsePlainPromptEnhancement(responseText);
+    if (plainText.enhancedPrompt) {
       return {
-        enhancedPrompt: plainText,
-        notes: [
-          "Model returned plain text instead of JSON; used plain output.",
-        ],
+        enhancedPrompt: plainText.enhancedPrompt,
+        notes:
+          plainText.notes.length > 0
+            ? plainText.notes
+            : ["Model returned a plain text rewrite."],
       };
     }
 
     return {
       enhancedPrompt: fallbackPrompt,
       notes: ["Model returned empty output; original prompt was preserved."],
+    };
+  }
+
+  private parsePlainPromptEnhancement(responseText: string): {
+    enhancedPrompt: string;
+    notes: string[];
+  } {
+    const text = responseText.trim();
+    if (!text) {
+      return {
+        enhancedPrompt: "",
+        notes: [],
+      };
+    }
+
+    const lines = text.split(/\r?\n/);
+    const promptLines: string[] = [];
+    const noteLines: string[] = [];
+    let inNotes = false;
+
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+
+      if (!line) {
+        if (inNotes) {
+          noteLines.push("");
+        } else {
+          promptLines.push("");
+        }
+        continue;
+      }
+
+      const headingMatch = line.match(
+        /^(enhanced|rewritten|revised|optimized)\s+prompt\s*:\s*(.*)$/i,
+      );
+      if (headingMatch) {
+        const rest = headingMatch[2].trim();
+        if (rest) {
+          promptLines.push(rest);
+        }
+        continue;
+      }
+
+      if (/^notes\s*:\s*$/i.test(line)) {
+        inNotes = true;
+        continue;
+      }
+
+      const inlineNotesMatch = line.match(/^notes\s*:\s*(.*)$/i);
+      if (inlineNotesMatch) {
+        inNotes = true;
+        const rest = inlineNotesMatch[1].trim();
+        if (rest) {
+          noteLines.push(rest);
+        }
+        continue;
+      }
+
+      if (inNotes) {
+        noteLines.push(line.replace(/^[-*]\s*/, ""));
+      } else {
+        promptLines.push(rawLine);
+      }
+    }
+
+    const enhancedPrompt = promptLines.join("\n").trim();
+    const notes = noteLines
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0)
+      .slice(0, 5);
+
+    return {
+      enhancedPrompt,
+      notes,
     };
   }
 

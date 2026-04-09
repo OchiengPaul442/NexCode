@@ -1,3 +1,5 @@
+@import "../../../node_modules/katex/dist/katex.min.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -173,7 +175,7 @@ body {
   overflow-x: hidden;
   min-height: 0;
   position: relative;
-  padding: 6px 12px 8px;
+  padding: 6px 12px 6px;
   transition: background 0.15s;
 }
 .nk-chat-scroller.nk-drag-active {
@@ -417,30 +419,6 @@ body {
   cursor: not-allowed;
 }
 
-/* ── Details / reasoning ───────────────────────────────────────────────────── */
-.nk-details-block {
-  background: var(--nk-bg2);
-  border: 1px solid var(--nk-border2);
-  border-radius: 8px;
-  padding: 6px 10px;
-  color: var(--nk-muted);
-  font-size: 11px;
-  margin-top: 4px;
-}
-.nk-details-block summary {
-  list-style: none;
-}
-.nk-details-block summary::-webkit-details-marker {
-  display: none;
-}
-.nk-details-block[open] .details-arrow {
-  transform: rotate(90deg);
-}
-.details-arrow {
-  transition: transform 0.15s;
-  display: inline-block;
-}
-
 .nk-reasoning-panel {
   width: 100%;
   background: linear-gradient(180deg, #202228 0%, #1b1d23 100%);
@@ -455,7 +433,7 @@ body {
 }
 .nk-reasoning-panel-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
   font-size: 10px;
@@ -464,10 +442,24 @@ body {
   color: #b9c5d7;
   margin-bottom: 5px;
 }
+.nk-reasoning-head-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
 .nk-reasoning-meta {
   font-weight: 500;
   color: #7f8aa0;
   text-align: right;
+}
+.nk-reasoning-current {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #c0d0e8;
+  margin-bottom: 4px;
 }
 .nk-reasoning-list {
   margin: 0;
@@ -485,8 +477,19 @@ body {
   line-height: 1.45;
   color: #94a0b4;
 }
-.nk-reasoning-item--active {
-  color: #c0d0e8;
+.nk-reasoning-step-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: rgba(44, 170, 223, 0.16);
+  border: 1px solid rgba(44, 170, 223, 0.22);
+  color: #9ddcff;
+  font-size: 9px;
+  line-height: 1;
+  flex-shrink: 0;
 }
 
 .nk-activity-panel {
@@ -825,7 +828,7 @@ body {
 /* ── Input area ────────────────────────────────────────────────────────────── */
 .nk-input-area {
   flex-shrink: 0;
-  padding: 10px 12px 12px;
+  padding: 8px 12px 9px;
   background: linear-gradient(
     180deg,
     rgba(15, 20, 28, 0.68) 0%,
@@ -879,7 +882,7 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  padding: 0 0 6px;
+  padding: 0 0 4px;
 }
 
 /* Input card — Copilot-style unified container */
@@ -910,7 +913,7 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 8px 10px 6px;
+  padding: 7px 10px 5px;
   border-bottom: 1px solid rgba(37, 50, 67, 0.88);
   background: rgba(14, 21, 31, 0.68);
 }
@@ -971,7 +974,7 @@ body {
   font-family: inherit;
   font-size: 13.5px;
   line-height: 1.55;
-  padding: 11px 14px 8px;
+  padding: 9px 14px 7px;
   outline: none;
   min-height: 78px;
   max-height: 340px;
@@ -996,7 +999,7 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 0 10px 8px;
+  padding: 0 10px 6px;
 }
 
 .nk-command-highlight-row {
@@ -1082,7 +1085,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 7px 7px 8px;
+  padding: 6px 7px 7px;
   gap: 4px;
   border-top: 1px solid rgba(37, 50, 67, 0.82);
 }
@@ -1525,6 +1528,15 @@ body {
   line-height: 1.55;
   overflow-wrap: anywhere;
 }
+.nk-rich-markdown {
+  width: 100%;
+}
+.nk-rich-markdown > :first-child {
+  margin-top: 0;
+}
+.nk-rich-markdown > :last-child {
+  margin-bottom: 0;
+}
 .markdown-body h1,
 .markdown-body h2,
 .markdown-body h3 {
@@ -1562,6 +1574,37 @@ body {
   font-family: var(--vscode-editor-font-family, monospace);
   font-size: 11px;
   color: #9ad8ff;
+}
+.nk-math-inline {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
+  margin: 0 1px;
+  border-radius: 999px;
+  border: 1px solid rgba(44, 170, 223, 0.28);
+  background: rgba(44, 170, 223, 0.09);
+  color: #d7f0ff;
+  font-family: "Cambria Math", "STIX Two Math", Georgia, serif;
+  font-size: 0.97em;
+  line-height: 1.45;
+  white-space: nowrap;
+}
+.nk-math-block {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(44, 170, 223, 0.22);
+  background: rgba(19, 28, 40, 0.88);
+  overflow-x: auto;
+}
+.nk-math-block-text {
+  display: block;
+  color: #edf7ff;
+  font-family: "Cambria Math", "STIX Two Math", Georgia, serif;
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 .markdown-body pre {
   background: #13161d;
@@ -1673,6 +1716,9 @@ body {
   display: inline-block;
   min-width: 0;
 }
+.nk-streaming-message .markdown-body {
+  width: 100%;
+}
 .nk-streaming-cursor {
   display: inline-block;
   width: 0.55em;
@@ -1704,6 +1750,30 @@ body {
   100% {
     opacity: 0;
   }
+}
+
+/* ── Details / debug ──────────────────────────────────────────────────────── */
+.nk-details-block {
+  background: var(--nk-bg2);
+  border: 1px solid var(--nk-border2);
+  border-radius: 8px;
+  padding: 6px 10px;
+  color: var(--nk-muted);
+  font-size: 11px;
+  margin-top: 4px;
+}
+.nk-details-block summary {
+  list-style: none;
+}
+.nk-details-block summary::-webkit-details-marker {
+  display: none;
+}
+.nk-details-block[open] .details-arrow {
+  transform: rotate(90deg);
+}
+.details-arrow {
+  transition: transform 0.15s;
+  display: inline-block;
 }
 
 /* ── Permission settings ────────────────────────────────────────────────────── */
@@ -1826,16 +1896,17 @@ body {
   }
 
   .nk-chat-scroller {
-    padding: 4px 8px 6px;
+    padding: 4px 8px 4px;
   }
 
   .nk-input-area {
-    padding: 8px;
+    padding: 7px 8px 8px;
   }
 
   .nk-input-toolbar {
     flex-wrap: wrap;
     align-items: flex-start;
+    padding-bottom: 6px;
   }
 
   .nk-input-head {
@@ -1846,6 +1917,10 @@ body {
   .nk-input-head-meta {
     width: 100%;
     justify-content: flex-end;
+  }
+
+  .nk-input-meta-row {
+    align-items: flex-start;
   }
 
   .nk-quick-actions {
@@ -1863,6 +1938,10 @@ body {
 
   .nk-pill-select {
     max-width: 120px;
+  }
+
+  .nk-key-hint {
+    display: none;
   }
 
   .nk-command-chip--hint {

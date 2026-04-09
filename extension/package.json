@@ -3,7 +3,7 @@
   "displayName": "Nexcode Kiboko",
   "description": "Local-first, multi-agent AI coding assistant for VS Code.",
   "publisher": "nexcode",
-  "version": "0.1.38",
+  "version": "0.1.39",
   "private": true,
   "icon": "media/icon.png",
   "engines": {
@@ -168,8 +168,11 @@
   },
   "dependencies": {
     "@nexcode/agent-core": "^0.1.0",
+    "katex": "^0.16.45",
     "lucide-react": "^1.7.0",
-    "remark-gfm": "^4.0.1"
+    "rehype-katex": "^7.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.13.0",

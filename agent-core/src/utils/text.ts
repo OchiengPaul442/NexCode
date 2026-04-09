@@ -33,7 +33,7 @@ export function scoreKeywordOverlap(a: string, b: string): number {
     }
   }
 
-  return overlap / Math.max(aTokens.size, bTokens.size);
+  return overlap / aTokens.size;
 }
 
 function tokenize(input: string): string[] {

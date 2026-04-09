@@ -24,12 +24,23 @@ export class MemoryManager {
     response: string,
     tags: string[] = [],
   ): Promise<void> {
+    const normalizedPrompt = prompt.trim();
+    const normalizedResponse = response.replace(/\s+/g, " ").trim();
+    const responseExcerpt =
+      normalizedResponse.length > 320
+        ? `${normalizedResponse.slice(0, 320)}…`
+        : normalizedResponse;
+
     const entry: LongTermMemoryEntry = {
       id: randomUUID(),
       timestamp: new Date().toISOString(),
       type: "interaction",
-      text: `${prompt}\n\n${response}`,
+      text: `Prompt: ${normalizedPrompt}\nResponse excerpt: ${responseExcerpt}`,
       tags,
+      metadata: {
+        prompt: normalizedPrompt,
+        responseExcerpt,
+      },
     };
 
     await this.longTerm.add(entry);

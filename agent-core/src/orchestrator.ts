@@ -33,7 +33,11 @@ import { OllamaProvider } from "./providers/ollamaProvider";
 import { OpenAICompatibleProvider } from "./providers/openAICompatibleProvider";
 import { ToolRegistry } from "./tools/toolRegistry";
 import { chunkText, extractFirstCodeBlock } from "./utils/text";
-import { getAgentMaxTokens } from "./agents/shared";
+import {
+  buildGroundingNoteForMode,
+  getAgentMaxTokens,
+  normalizeAgentOutputForMode,
+} from "./agents/shared";
 import {
   buildWorkspaceContext,
   getWorkspaceTopLevelEntries,
@@ -1044,7 +1048,7 @@ export class NexcodeOrchestrator {
     }
 
     const finalText = text.trim().length
-      ? text.trim()
+      ? normalizeAgentOutputForMode(selectedMode, text.trim(), prompt)
       : `${stageLabel} agent returned an empty response.`;
 
     yield {
@@ -1187,7 +1191,11 @@ export class NexcodeOrchestrator {
         }
       }
 
-      const normalizedStageText = stageText.trim();
+      const normalizedStageText = normalizeAgentOutputForMode(
+        stage,
+        stageText.trim(),
+        prompt,
+      );
       if (!normalizedStageText) {
         const fallbackText = `${stageLabel} stage returned an empty response.`;
         composed += fallbackText;
@@ -1297,6 +1305,9 @@ export class NexcodeOrchestrator {
 
     const parts = [
       `User request:\n${input.userPrompt}`,
+      buildGroundingNoteForMode(mode, input.userPrompt)
+        ? `Grounding note:\n${buildGroundingNoteForMode(mode, input.userPrompt)}`
+        : "",
       input.plan ? `Planner output:\n${input.plan}` : "",
       input.implementationDraft
         ? `Coder output:\n${input.implementationDraft}`

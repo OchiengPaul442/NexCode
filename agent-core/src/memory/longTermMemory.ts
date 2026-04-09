@@ -14,6 +14,7 @@ export interface LongTermMemoryEntry {
 interface SearchResult {
   entry: LongTermMemoryEntry;
   score: number;
+  overlapCount: number;
 }
 
 interface ParsedMemoryQuery {
@@ -84,14 +85,15 @@ export class LongTermMemoryStore {
     });
 
     const ranked: SearchResult[] = filtered
-      .map((entry) => ({
-        entry,
-        score: scoreKeywordOverlap(
-          parsedQuery.text,
-          `${entry.text} ${entry.tags.join(" ")}`,
-        ),
-      }))
-      .filter((item) => item.score > 0)
+      .map((entry) => {
+        const searchableText = `${entry.text} ${entry.tags.join(" ")}`;
+        return {
+          entry,
+          score: scoreKeywordOverlap(parsedQuery.text, searchableText),
+          overlapCount: countKeywordOverlap(parsedQuery.text, searchableText),
+        };
+      })
+      .filter((item) => item.score >= 0.25 && item.overlapCount >= 2)
       .sort((left, right) => right.score - left.score)
       .slice(0, limit);
 
@@ -265,4 +267,26 @@ export class LongTermMemoryStore {
       "utf8",
     );
   }
+}
+
+function countKeywordOverlap(a: string, b: string): number {
+  const aTokens = tokenizeForMemorySearch(a);
+  const bTokens = new Set(tokenizeForMemorySearch(b));
+  let overlap = 0;
+
+  for (const token of aTokens) {
+    if (bTokens.has(token)) {
+      overlap += 1;
+    }
+  }
+
+  return overlap;
+}
+
+function tokenizeForMemorySearch(input: string): string[] {
+  return input
+    .toLowerCase()
+    .replace(/[^a-z0-9_\s-]/g, " ")
+    .split(/\s+/)
+    .filter((token) => token.length > 2);
 }

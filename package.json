@@ -13,6 +13,7 @@
   "scripts": {
     "build": "npm run -w agent-core build && npm run -w extension build",
     "test": "npm run -w agent-core test",
+    "test:real": "npm run -w agent-core test:real",
     "lint": "npm run -w agent-core build && npm run -w agent-core lint && npm run -w extension lint",
     "package:vsix": "npm run extension:package",
     "clean": "node tools/clean-workspace.mjs",

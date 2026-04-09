@@ -9,6 +9,7 @@
     "build": "tsc -p tsconfig.json",
     "watch": "tsc -w -p tsconfig.json",
     "test": "vitest run",
+    "test:real": "node test-real.mjs",
     "lint": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

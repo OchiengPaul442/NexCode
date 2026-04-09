@@ -2902,8 +2902,8 @@ function App() {
     if (!ta) return;
     ta.style.height = "auto";
     const scrollH = ta.scrollHeight;
-    ta.style.height = `${Math.min(scrollH, 170)}px`;
-    ta.style.overflowY = scrollH > 170 ? "auto" : "hidden";
+    ta.style.height = `${Math.min(scrollH, 240)}px`;
+    ta.style.overflowY = scrollH > 240 ? "auto" : "hidden";
   }, [activeDraft]);
 
   // DnD file handler
@@ -2951,11 +2951,12 @@ function App() {
     if (!rawPrompt) return;
 
     const attachmentIds = useStore.getState().attachments.map((a) => a.id);
-    if (!accepted) {
+
+    const submitted = submitPrompt(rawPrompt, sess, attachmentIds);
+    if (!submitted) {
       return;
     }
 
-    submitPrompt(rawPrompt, sess, attachmentIds);
     useStore.getState().setDraft(sess.id, "");
     if (attachmentIds.length > 0) {
       useStore.getState().setAttachments([]);
@@ -3205,17 +3206,6 @@ function App() {
 
         {/* Input card */}
         <div className="nk-input-card">
-          <div className="nk-input-head">
-            <div className="nk-input-head-meta">
-              <span className="nk-draft-metric">
-                {Math.ceil(activeDraft.length / 4)} tok est
-              </span>
-              <span className="nk-draft-metric">
-                {activeDraft.length} chars
-              </span>
-            </div>
-          </div>
-
           {/* Textarea */}
           <textarea
             ref={textareaRef}
@@ -3226,7 +3216,7 @@ function App() {
                 : "Ask NexCode to build, fix, review, or explain your code"
             }
             value={activeDraft}
-            rows={2}
+            rows={4}
             onChange={(e) =>
               useStore.getState().setDraft(activeSession.id, e.target.value)
             }
@@ -3302,16 +3292,20 @@ function App() {
                 <ChevronDown size={10} className="nk-pill-arrow" />
               </div>
 
-              {/* Token ring */}
-              <TokenRing
-                sessionMessages={activeSession.messages}
-                draftText={activeDraft}
-                model={activeSession.model}
-              />
+              <button
+                className="nk-toolbar-btn nk-toolbar-btn--ghost"
+                title="Open settings"
+                onClick={() => useStore.getState().setSettingsPanelOpen(true)}
+              >
+                <Settings size={13} />
+              </button>
             </div>
 
             {/* Right: queue status + stop + send */}
             <div className="nk-input-toolbar-right">
+              <span className="nk-draft-stat">
+                {Math.ceil(activeDraft.length / 4)} tok est
+              </span>
               {queuedPrompts.length > 0 && (
                 <span className="nk-queue-pill">
                   {queuedPrompts.length} queued

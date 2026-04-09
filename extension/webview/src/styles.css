@@ -6,21 +6,21 @@
 
 /* ── Design tokens ─────────────────────────────────────────────────────────── */
 :root {
-  --nk-bg: #0f141c;
-  --nk-bg2: #161e2a;
-  --nk-bg3: #1d2734;
-  --nk-border: #2f3d4f;
-  --nk-border2: #253243;
-  --nk-text: #e6edf6;
-  --nk-muted: #94a6bf;
-  --nk-faint: #597089;
-  --nk-accent: #2caadf;
-  --nk-accent2: #1d86bb;
-  --nk-accent-glow: rgba(44, 170, 223, 0.2);
-  --nk-green: #48cf98;
-  --nk-red: #ff7b86;
-  --nk-orange: #f6b963;
-  --nk-user-bg: #1a3247;
+  --nk-bg: #0d1117;
+  --nk-bg2: #151b23;
+  --nk-bg3: #1b2430;
+  --nk-border: #30363d;
+  --nk-border2: #21262d;
+  --nk-text: #d7e0ea;
+  --nk-muted: #9aa6b2;
+  --nk-faint: #748090;
+  --nk-accent: #58a6ff;
+  --nk-accent2: #2f81f7;
+  --nk-accent-glow: rgba(88, 166, 255, 0.16);
+  --nk-green: #3fb950;
+  --nk-red: #f85149;
+  --nk-orange: #d29922;
+  --nk-user-bg: #10213a;
   --nk-topbar-h: 48px;
   color-scheme: dark;
 }
@@ -72,7 +72,7 @@ body {
   background:
     radial-gradient(
       1200px 600px at 100% -20%,
-      rgba(44, 170, 223, 0.12),
+      rgba(88, 166, 255, 0.12),
       transparent 45%
     ),
     radial-gradient(
@@ -92,8 +92,8 @@ body {
   gap: 10px;
   height: var(--nk-topbar-h);
   padding: 0 10px;
-  border-bottom: 1px solid var(--nk-border2);
-  background: rgba(17, 23, 32, 0.9);
+  border-bottom: 1px solid rgba(48, 54, 61, 0.9);
+  background: rgba(13, 17, 23, 0.95);
   backdrop-filter: blur(6px);
   flex-shrink: 0;
 }
@@ -125,7 +125,7 @@ body {
   line-height: 1;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #96bee0;
+  color: #9fcbff;
   font-weight: 700;
 }
 
@@ -149,8 +149,8 @@ body {
   height: 26px;
   border-radius: 7px;
   border: 1px solid transparent;
-  background: rgba(29, 39, 52, 0.45);
-  color: #b3c5dc;
+  background: rgba(31, 38, 48, 0.75);
+  color: #c5d4e3;
   cursor: pointer;
   transition:
     background 0.12s,
@@ -160,12 +160,12 @@ body {
   flex-shrink: 0;
 }
 .nk-icon-btn:hover {
-  background: rgba(44, 170, 223, 0.18);
-  border-color: rgba(44, 170, 223, 0.35);
-  color: #e8f3ff;
+  background: rgba(88, 166, 255, 0.16);
+  border-color: rgba(88, 166, 255, 0.34);
+  color: #f0f7ff;
 }
 .nk-icon-btn:active {
-  background: rgba(44, 170, 223, 0.26);
+  background: rgba(88, 166, 255, 0.22);
 }
 
 /* ── Chat scroller ─────────────────────────────────────────────────────────── */
@@ -179,7 +179,7 @@ body {
   transition: background 0.15s;
 }
 .nk-chat-scroller.nk-drag-active {
-  background: rgba(2, 132, 199, 0.04);
+  background: rgba(88, 166, 255, 0.04);
 }
 
 /* Drop overlay */
@@ -281,10 +281,10 @@ body {
 /* ── Message bubbles ───────────────────────────────────────────────────────── */
 .nk-bubble-user {
   background: var(--nk-user-bg);
-  border: 1px solid #243850;
+  border: 1px solid rgba(88, 166, 255, 0.18);
   border-radius: 14px 14px 4px 14px;
   padding: 7px 12px;
-  color: #b8d0ec;
+  color: #d3e7ff;
   word-break: break-word;
 }
 
@@ -297,11 +297,11 @@ body {
 }
 
 .nk-bubble-error {
-  background: rgba(248, 81, 73, 0.07);
-  border: 1px solid rgba(248, 81, 73, 0.25);
+  background: rgba(248, 81, 73, 0.08);
+  border: 1px solid rgba(248, 81, 73, 0.26);
   border-radius: 8px;
   padding: 8px 12px;
-  color: #fca5a5;
+  color: #ffb4b4;
   word-break: break-word;
 }
 

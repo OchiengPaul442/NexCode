@@ -778,6 +778,35 @@ export class NexcodeOrchestrator {
         throw new Error("No response produced by orchestrator pipeline.");
       }
 
+      if (
+        request.allowTools !== false &&
+        (mode === "auto" || mode === "coder")
+      ) {
+        const suggestedToolCommand = this.extractSuggestedToolCommand(
+          response.text,
+        );
+
+        if (suggestedToolCommand) {
+          diagnostics.push(
+            `Auto-executing suggested tool command: ${suggestedToolCommand}`,
+          );
+
+          yield {
+            type: "status",
+            message: `Running suggested tool command: ${suggestedToolCommand}`,
+          };
+
+          response = await this.handleToolRequest(
+            `/tool ${suggestedToolCommand}`,
+            response.modeUsed,
+            response.providerUsed,
+            response.modelUsed,
+            diagnostics,
+            request.allowWebSearch !== false,
+          );
+        }
+      }
+
       response.diagnostics = diagnostics;
 
       if (!streamedAnyToken && response.text.trim().length > 0) {
@@ -1779,6 +1808,49 @@ export class NexcodeOrchestrator {
     }
 
     return null;
+  }
+
+  private extractSuggestedToolCommand(responseText: string): string | null {
+    const trimmed = responseText.trim();
+    if (!trimmed || /^##\s+Tool Execution/i.test(trimmed)) {
+      return null;
+    }
+
+    const candidates = trimmed
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .flatMap((line) => [line, line.replace(/^[>*-]\s*/, "")]);
+
+    for (const candidate of candidates) {
+      const toolMatch = candidate.match(
+        /(?:^|\s|`|"|')((?:\/tool\s+)?(?:terminal|search|web-search|search-web|online-search|test|read|write|append|git-status|git-diff|git-branch)\b[\s\S]*)/i,
+      );
+
+      if (!toolMatch) {
+        continue;
+      }
+
+      const normalized = this.stripTrailingNarration(toolMatch[1])
+        .replace(/^\/tool\s+/i, "")
+        .trim();
+
+      if (this.normalizeCommandCandidate(normalized)) {
+        return normalized;
+      }
+    }
+
+    return null;
+  }
+
+  private stripTrailingNarration(value: string): string {
+    const trimmed = value.trim();
+    const proseBoundary = trimmed.match(/\.(?=[A-Z][a-z])/);
+    if (proseBoundary && proseBoundary.index !== undefined) {
+      return trimmed.slice(0, proseBoundary.index).trim();
+    }
+
+    return trimmed;
   }
 
   private extractTerminalCommandRequest(prompt: string): string | null {

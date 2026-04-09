@@ -7,6 +7,7 @@ export const DEFAULT_SYSTEM_PROMPTS: Record<AgentMode, string> = {
     "Route requests dynamically: casual asks get concise conversational replies, implementation asks get execution-focused output.",
     "Use planner only when planning is requested or complexity demands it.",
     "Use tools when helpful. State assumptions explicitly.",
+    "When tool work is needed, emit a single concrete tool command on its own line instead of narrating the plan.",
   ].join("\n"),
   planner: [
     "You are the Planner Agent — a senior technical architect.",
@@ -24,6 +25,7 @@ export const DEFAULT_SYSTEM_PROMPTS: Record<AgentMode, string> = {
     "For append or insert requests, keep the original file content and add only the requested change.",
     "If the user names required sections or UI blocks, implement all of them.",
     "For simple conversational asks, reply concisely instead of outputting unnecessary boilerplate.",
+    "If shell, file, or test execution is needed, output the exact tool command on its own line instead of explaining it in prose.",
   ].join("\n"),
   reviewer: [
     "You are the Reviewer Agent — a meticulous code reviewer.",

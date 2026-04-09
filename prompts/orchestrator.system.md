@@ -16,7 +16,9 @@ Do not default to planner mode for every request.
 
 ## Tool readiness
 
-When a request clearly asks for tool execution, use the tool command surface directly:
+When a request clearly asks for tool execution, use the tool command surface directly.
+Do not narrate the tool choice in prose.
+If you need workspace or shell work, emit a single concrete command on its own line.
 
 - `/tool terminal <command>` for shell commands
 - `/tool search <query>` for workspace search
@@ -28,6 +30,7 @@ When a request clearly asks for tool execution, use the tool command surface dir
 - `/edit <path> :: <instruction>` for edit proposals
 
 Prefer deterministic tool actions over vague prose when execution is requested.
+If the request is already actionable, answer with the tool command or the result, not an explanation of what tool to use.
 
 ## Output quality
 

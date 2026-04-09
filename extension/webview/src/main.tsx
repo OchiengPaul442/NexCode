@@ -632,24 +632,16 @@ function ReasoningPanel({
   message: ChatMessage;
   onAnimatedFrame?: () => void;
 }) {
-  const streaming = Boolean(message.streaming || message.thinking);
-  const latestIndex = message.reasoning.length - 1;
-  const latestText =
-    message.reasoning.at(-1) ?? (streaming ? "Thinking..." : "");
-  const priorSteps = message.reasoning.slice(Math.max(0, latestIndex - 3), -1);
-
-  if (!latestText && priorSteps.length === 0) {
+  if (message.streaming || message.thinking || message.reasoning.length === 0) {
     return null;
   }
 
   return (
-    <div
-      className={`nk-reasoning-panel ${streaming ? "nk-reasoning-panel--live" : ""}`}
-    >
+    <div className="nk-reasoning-panel">
       <div className="nk-reasoning-panel-header">
         <div className="nk-reasoning-head-label">
           <Zap size={10} />
-          <span>{streaming ? "Live trace" : "Trace"}</span>
+          <span>Trace</span>
         </div>
         {(message.model || message.mode) && (
           <span className="nk-reasoning-meta">
@@ -660,40 +652,21 @@ function ReasoningPanel({
         )}
       </div>
 
-      <div className="nk-reasoning-current">
-        <StreamingMessage
-          text={latestText}
-          streaming={streaming}
-          markdown={false}
-          as="span"
-          className="nk-reasoning-live"
-          showCursor={false}
-          onFrame={onAnimatedFrame}
-        />
-      </div>
-
-      {priorSteps.length > 0 && (
-        <ul className="nk-reasoning-list">
-          {priorSteps.map((item, index) => {
-            return (
-              <li
-                key={`${message.id}-r-${index}`}
-                className="nk-reasoning-item"
-              >
-                <span className="nk-reasoning-step-index">{index + 1}</span>
-                <StreamingMessage
-                  text={item}
-                  markdown={false}
-                  as="span"
-                  className="nk-reasoning-live"
-                  showCursor={false}
-                  onFrame={onAnimatedFrame}
-                />
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      <ul className="nk-reasoning-list">
+        {message.reasoning.slice(-4).map((item, index) => (
+          <li key={`${message.id}-r-${index}`} className="nk-reasoning-item">
+            <span className="nk-reasoning-step-index">{index + 1}</span>
+            <StreamingMessage
+              text={item}
+              markdown={false}
+              as="span"
+              className="nk-reasoning-live"
+              showCursor={false}
+              onFrame={onAnimatedFrame}
+            />
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -1478,16 +1451,6 @@ function MessageBubble({
             )}
           </div>
         )}
-
-        {!isUser &&
-          (message.activityTodos.length > 0 ||
-            message.activityFiles.length > 0) && (
-            <ActivityPanel
-              todos={message.activityTodos}
-              files={message.activityFiles}
-              note={message.activityNote}
-            />
-          )}
 
         {/* Reasoning */}
         {!isUser && showReasoning && (

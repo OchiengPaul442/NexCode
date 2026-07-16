@@ -919,7 +919,7 @@ function findRetryPromptForMessage(
 const useStore = create<StoreState>((set, get) => {
   const initialDefaults = {
     provider: "ollama" as ProviderId,
-    model: "gpt-oss:120b-cloud",
+    model: "qwen2.5-coder:14b",
     mode: "agent" as UiMode,
   };
 
@@ -1369,8 +1369,8 @@ function getActiveSession(state: StoreState): Session | undefined {
 function inferContextWindow(model: string): number {
   const normalized = model.toLowerCase().trim();
 
-  if (/gpt-oss:120b-cloud/.test(normalized)) {
-    return 128_000;
+  if (/qwen2\.5-coder:14b/.test(normalized)) {
+    return 32_768;
   }
 
   if (/qwen2\.5-coder:7b|nemotron-mini/.test(normalized)) {

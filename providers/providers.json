@@ -1,11 +1,17 @@
 {
   "defaultProvider": "ollama",
-  "defaultModel": "qwen2.5-coder:7b",
+  "defaultModel": "qwen2.5-coder:14b",
   "ollama": {
     "baseUrl": "http://localhost:11434"
   },
   "openaiCompatible": {
-    "baseUrl": "https://api.atlascloud.ai/v1",
-    "apiKeyEnvVar": "ATLASCLOUD_API_KEY"
+    "baseUrl": "https://opencode.ai/zen/go/v1",
+    "apiKeyEnvVar": "OPENCODE_GO_API_KEY",
+    "note": "OpenCode Go — sign up at https://opencode.ai/auth, subscribe to Go, get API key"
+  },
+  "huggingface": {
+    "baseUrl": "https://api-inference.huggingface.co/v1",
+    "apiKeyEnvVar": "HUGGINGFACE_API_KEY",
+    "note": "HuggingFace Inference API — get token at https://huggingface.co/settings/tokens"
   }
 }

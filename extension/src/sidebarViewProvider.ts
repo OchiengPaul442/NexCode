@@ -975,7 +975,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
 
     return {
       provider: config.get<ProviderId>("defaultProvider", "ollama"),
-      model: config.get<string>("defaultModel", "gpt-oss:120b-cloud"),
+      model: config.get<string>("defaultModel", "qwen2.5-coder:14b"),
       mode: config.get<AgentMode>("defaultMode", "auto"),
       ollamaBaseUrl: this.normalizeOllamaBaseUrl(
         config.get<string>("ollamaBaseUrl", "http://localhost:11434"),

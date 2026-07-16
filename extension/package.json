@@ -78,7 +78,7 @@
         },
         "nexcodeKiboko.defaultModel": {
           "type": "string",
-          "default": "gpt-oss:120b-cloud",
+          "default": "qwen2.5-coder:14b",
           "description": "Default model name to send to the selected provider."
         },
         "nexcodeKiboko.defaultMode": {
@@ -101,13 +101,13 @@
         },
         "nexcodeKiboko.openAIBaseUrl": {
           "type": "string",
-          "default": "https://api.openai.com/v1",
-          "description": "Base URL for OpenAI-compatible API endpoint."
+          "default": "https://opencode.ai/zen/go/v1",
+          "description": "Base URL for OpenAI-compatible API endpoint (OpenCode Go, HuggingFace, OpenAI, etc.)"
         },
         "nexcodeKiboko.openAIApiKey": {
           "type": "string",
           "default": "",
-          "description": "API key for OpenAI-compatible provider."
+          "description": "API key for OpenAI-compatible provider (OpenCode Go key from https://opencode.ai/auth)"
         },
         "nexcodeKiboko.tavilyApiKey": {
           "type": "string",

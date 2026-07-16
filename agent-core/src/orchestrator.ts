@@ -135,7 +135,7 @@ export class NexcodeOrchestrator {
       memoryDir: options.memoryDir,
       providerDefaults: {
         provider: options.defaultProvider ?? "ollama",
-        model: options.defaultModel ?? "gpt-oss:120b-cloud",
+        model: options.defaultModel ?? "qwen2.5-coder:14b",
         ollamaBaseUrl: options.ollamaBaseUrl ?? "http://localhost:11434",
         openAIBaseUrl: options.openAIBaseUrl ?? "https://api.openai.com/v1",
         openAIApiKey: options.openAIApiKey ?? process.env.OPENAI_API_KEY,
@@ -157,7 +157,7 @@ export class NexcodeOrchestrator {
       {
         defaultProvider: this.config.providerDefaults.provider,
         defaultModel: this.config.providerDefaults.model,
-        defaultCloudModel: options.defaultCloudModel ?? "gpt-oss:120b-cloud",
+        defaultCloudModel: options.defaultCloudModel ?? "deepseek-v4-pro",
       },
     );
 

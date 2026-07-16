@@ -8,3 +8,10 @@ webview/src/**
 webview/tsconfig.json
 webview/node_modules/**
 tailwind.config.cjs
+**/*.map
+**/*.d.ts
+**/*.test.ts
+**/*.spec.ts
+**/__tests__/**
+**/test/**
+**/tests/**

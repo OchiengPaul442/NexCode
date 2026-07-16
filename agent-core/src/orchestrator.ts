@@ -19,7 +19,6 @@ import {
   OrchestratorResponse,
   ProviderId,
   ProposedEdit,
-  RequestAttachment,
   ToolResult,
 } from "./types";
 import { McpAdapter, McpToolCall, McpToolResult } from "./mcp";
@@ -41,15 +40,10 @@ import {
   normalizeAgentOutputForMode,
 } from "./agents/shared";
 import {
-  buildWorkspaceContext,
-  getWorkspaceTopLevelEntries,
-  resolvePathWithinWorkspaceRoot,
+  buildWorkspaceContext as buildWorkspaceContextImpl,
   clampText,
   extractLikelyFileReferences,
-  buildAttachmentContext,
   normalizeActivityPath,
-  getWorkspaceSnapshotCache,
-  setWorkspaceSnapshotCache,
 } from "./orchestrator/contextBuilder";
 
 export interface NexcodeOrchestratorOptions {
@@ -105,9 +99,6 @@ interface InferredEditRequest {
 const MAX_WORKSPACE_CONTEXT_CHARS = 12_000;
 const MAX_MEMORY_CONTEXT_CHARS = 4_000;
 const MAX_TOOL_OUTPUT_CHARS = 16_000;
-const MAX_ACTIVE_SNIPPET_CHARS = 3_200;
-const MAX_REFERENCED_FILE_SNIPPET_CHARS = 1_600;
-const MAX_ATTACHMENT_TEXT_CHARS = 3_000;
 
 export class NexcodeOrchestrator {
   private readonly config: RuntimeConfig;
@@ -230,7 +221,7 @@ export class NexcodeOrchestrator {
 
     const [memoryContext, workspaceContext] = await Promise.all([
       this.memory.getRelevantContext(originalPrompt).catch(() => ""),
-      buildWorkspaceContext(contextRequest, this.config.workspaceRoot).catch(
+      this.buildWorkspaceContext(contextRequest).catch(
         () => "",
       ),
     ]);
@@ -349,7 +340,7 @@ export class NexcodeOrchestrator {
       this.ensureNotAborted(request.abortSignal);
       const [memoryContextRaw, workspaceContextRaw] = await Promise.all([
         this.memory.getRelevantContext(request.prompt).catch(() => ""),
-        buildWorkspaceContext(request, this.config.workspaceRoot).catch(
+        this.buildWorkspaceContext(request).catch(
           () => "",
         ),
       ]);
@@ -2235,7 +2226,7 @@ export class NexcodeOrchestrator {
     }
 
     const referencedFiles = extractLikelyFileReferences(normalized)
-      .map((candidate) => normalizeActivityPath(candidate, workspaceRoot))
+      .map((candidate) => normalizeActivityPath(candidate, workspaceRoot ?? this.config.workspaceRoot))
       .filter((candidate): candidate is string => Boolean(candidate));
     const mentionsFileContext =
       referencedFiles.length > 0 ||
@@ -2368,7 +2359,7 @@ export class NexcodeOrchestrator {
     activeFilePath?: string,
   ): string | null {
     const referencedFiles = extractLikelyFileReferences(prompt)
-      .map((candidate) => normalizeActivityPath(candidate, workspaceRoot))
+      .map((candidate) => normalizeActivityPath(candidate, workspaceRoot ?? this.config.workspaceRoot))
       .filter((candidate): candidate is string => Boolean(candidate));
 
     if (referencedFiles.length > 0) {
@@ -2377,7 +2368,7 @@ export class NexcodeOrchestrator {
 
     const normalizedActivePath = normalizeActivityPath(
       activeFilePath,
-      workspaceRoot,
+      workspaceRoot ?? this.config.workspaceRoot,
     );
     if (!normalizedActivePath) {
       return null;
@@ -2407,7 +2398,7 @@ export class NexcodeOrchestrator {
 
     const normalizedActivePath = normalizeActivityPath(
       activeFilePath,
-      workspaceRoot,
+      workspaceRoot ?? this.config.workspaceRoot,
     );
 
     if (
@@ -2415,7 +2406,7 @@ export class NexcodeOrchestrator {
         cleaned,
       )
     ) {
-      return normalizedActivePath;
+      return normalizedActivePath ?? null;
     }
 
     if (
@@ -2433,7 +2424,7 @@ export class NexcodeOrchestrator {
       "",
     );
 
-    return normalizeActivityPath(withoutKindPrefix, workspaceRoot);
+    return normalizeActivityPath(withoutKindPrefix, workspaceRoot ?? this.config.workspaceRoot) ?? null;
   }
 
   private extractSuggestedToolCommand(responseText: string): string | null {
@@ -2698,7 +2689,7 @@ export class NexcodeOrchestrator {
 
     const pathLikeMatches = prompt.match(/[\w./\\-]+\.[a-z0-9]{1,8}/gi) ?? [];
     for (const match of pathLikeMatches.slice(0, 4)) {
-      const normalizedPath = normalizeActivityPath(match, workspaceRoot);
+      const normalizedPath = normalizeActivityPath(match, workspaceRoot ?? this.config.workspaceRoot);
       if (!normalizedPath || seen.has(normalizedPath)) {
         continue;
       }
@@ -2713,7 +2704,7 @@ export class NexcodeOrchestrator {
 
     const normalizedActivePath = normalizeActivityPath(
       activeFilePath,
-      workspaceRoot,
+      workspaceRoot ?? this.config.workspaceRoot,
     );
     if (normalizedActivePath && !seen.has(normalizedActivePath)) {
       files.push({
@@ -2724,32 +2715,6 @@ export class NexcodeOrchestrator {
     }
 
     return files.slice(0, 6);
-  }
-
-  private normalizeActivityPath(
-    rawPath: string | undefined,
-    workspaceRoot?: string,
-  ): string | null {
-    if (!rawPath) {
-      return null;
-    }
-
-    const trimmed = rawPath.trim().replace(/^['"`]|['"`]$/g, "");
-    if (!trimmed) {
-      return null;
-    }
-
-    const root = workspaceRoot ?? this.config.workspaceRoot;
-    let normalized = trimmed;
-
-    if (path.isAbsolute(trimmed) && root) {
-      const relative = path.relative(root, trimmed);
-      if (relative && !relative.startsWith("..")) {
-        normalized = relative;
-      }
-    }
-
-    return normalized.replace(/\\/g, "/");
   }
 
   private parsePromptEnhancement(
@@ -2935,160 +2900,7 @@ export class NexcodeOrchestrator {
   private async buildWorkspaceContext(
     request: OrchestratorRequest,
   ): Promise<string> {
-    const workspaceRoot = request.workspaceRoot ?? this.config.workspaceRoot;
-    const sections: string[] = [];
-
-    try {
-      const names = await getWorkspaceTopLevelEntries(workspaceRoot);
-      sections.push(`Workspace root: ${workspaceRoot}`);
-      sections.push(`Top-level entries: ${names.join(", ")}`);
-    } catch {
-      // Best-effort context only.
-    }
-
-    if (request.activeFilePath) {
-      const absoluteActivePath = resolvePathWithinWorkspaceRoot(
-        workspaceRoot,
-        request.activeFilePath,
-      );
-
-      if (absoluteActivePath) {
-        try {
-          const fileContent = await fs.readFile(absoluteActivePath, "utf8");
-          const snippet = clampText(
-            request.selectedText && request.selectedText.trim().length > 0
-              ? request.selectedText.trim()
-              : fileContent,
-            MAX_ACTIVE_SNIPPET_CHARS,
-            "Active snippet trimmed",
-          );
-
-          sections.push(
-            `Active file: ${path.relative(workspaceRoot, absoluteActivePath).replace(/\\/g, "/")}`,
-          );
-          sections.push(`Active snippet:\n${snippet}`);
-        } catch {
-          // Ignore active file read failures.
-        }
-      }
-    }
-
-    const activeRelativePath = normalizeActivityPath(
-      request.activeFilePath,
-      workspaceRoot,
-    );
-    const referencedFiles = extractLikelyFileReferences(request.prompt)
-      .map((candidate) => normalizeActivityPath(candidate, workspaceRoot))
-      .filter(
-        (candidate): candidate is string =>
-          Boolean(candidate) && candidate !== activeRelativePath,
-      );
-
-    const dedupedReferenced = [...new Set(referencedFiles)].slice(0, 3);
-    for (const referencedRelativePath of dedupedReferenced) {
-      const absoluteReferencedPath = resolvePathWithinWorkspaceRoot(
-        workspaceRoot,
-        referencedRelativePath,
-      );
-      if (!absoluteReferencedPath) {
-        continue;
-      }
-
-      try {
-        const referencedContent = await fs.readFile(
-          absoluteReferencedPath,
-          "utf8",
-        );
-        sections.push(`Referenced file: ${referencedRelativePath}`);
-        sections.push(
-          `Referenced snippet:\n${clampText(referencedContent, MAX_REFERENCED_FILE_SNIPPET_CHARS, "Referenced snippet trimmed")}`,
-        );
-      } catch {
-        // Ignore referenced file read failures.
-      }
-    }
-
-    if ((request.attachments?.length ?? 0) > 0) {
-      sections.push(buildAttachmentContext(request.attachments ?? []));
-    }
-
-    return sections.join("\n\n");
-  }
-
-  private async getWorkspaceTopLevelEntries(
-    workspaceRoot: string,
-  ): Promise<string[]> {
-    const now = Date.now();
-    const cache = getWorkspaceSnapshotCache();
-    if (
-      cache &&
-      cache.workspaceRoot === workspaceRoot &&
-      cache.expiresAt > now
-    ) {
-      return cache.entries;
-    }
-
-    const topLevel = await fs.readdir(workspaceRoot, {
-      withFileTypes: true,
-    });
-    const entries = topLevel
-      .slice(0, 24)
-      .map((entry) => (entry.isDirectory() ? `${entry.name}/` : entry.name));
-
-    setWorkspaceSnapshotCache({
-      workspaceRoot,
-      entries,
-      expiresAt: now + 15_000,
-    });
-
-    return entries;
-  }
-
-  private resolvePathWithinWorkspaceRoot(
-    workspaceRoot: string,
-    rawPath: string,
-  ): string | null {
-    const trimmed = rawPath.trim().replace(/^['"`]|['"`]$/g, "");
-    if (!trimmed) {
-      return null;
-    }
-
-    const absolutePath = path.isAbsolute(trimmed)
-      ? path.normalize(trimmed)
-      : path.normalize(path.join(workspaceRoot, trimmed));
-
-    const relative = path.relative(workspaceRoot, absolutePath);
-    if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
-      return null;
-    }
-
-    return absolutePath;
-  }
-
-  private extractLikelyFileReferences(prompt: string): string[] {
-    const matches = prompt.match(/[A-Za-z0-9._/-]+\.[a-z0-9]{1,8}/gi) ?? [];
-    return matches
-      .map((match) => match.trim())
-      .filter((match) => match.length > 2)
-      .slice(0, 8);
-  }
-
-  private clampText(
-    value: string,
-    maxChars: number,
-    noticeLabel: string,
-  ): string {
-    const text = value ?? "";
-    if (!text) {
-      return "";
-    }
-
-    if (text.length <= maxChars) {
-      return text;
-    }
-
-    const omittedChars = text.length - maxChars;
-    return `${text.slice(0, maxChars)}\n\n[${noticeLabel}; ${omittedChars} characters omitted]`;
+    return buildWorkspaceContextImpl(request, this.config.workspaceRoot);
   }
 
   private formatUserFacingError(error: unknown): string {
@@ -3136,46 +2948,6 @@ export class NexcodeOrchestrator {
     }
 
     return raw.length > 260 ? `${raw.slice(0, 260)}...` : raw;
-  }
-
-  private buildAttachmentContext(attachments: RequestAttachment[]): string {
-    const lines: string[] = ["User attachments:"];
-    const bounded = attachments.slice(0, 8);
-
-    for (const attachment of bounded) {
-      const sizeLabel = attachment.byteSize
-        ? ` (${attachment.byteSize} bytes)`
-        : "";
-      lines.push(
-        `- ${attachment.fileName} [${attachment.kind}, ${attachment.mimeType}]${sizeLabel}`,
-      );
-
-      if (attachment.kind === "text" && attachment.textContent) {
-        const snippet = clampText(
-          attachment.textContent,
-          MAX_ATTACHMENT_TEXT_CHARS,
-          "Attachment snippet trimmed",
-        );
-        lines.push(`  Text snippet:\n${snippet}`);
-      } else if (attachment.kind === "image" && attachment.base64Data) {
-        const preview = attachment.base64Data.slice(0, 320);
-        lines.push(
-          `  Image base64 preview (first 320 chars): ${preview}${attachment.base64Data.length > 320 ? "..." : ""}`,
-        );
-      } else if (attachment.base64Data) {
-        lines.push(
-          `  Binary base64 preview (first 160 chars): ${attachment.base64Data.slice(0, 160)}${attachment.base64Data.length > 160 ? "..." : ""}`,
-        );
-      }
-    }
-
-    if (attachments.length > bounded.length) {
-      lines.push(
-        `- ... ${attachments.length - bounded.length} more attachment(s) omitted`,
-      );
-    }
-
-    return lines.join("\n");
   }
 }
 

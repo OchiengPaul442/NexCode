@@ -22,6 +22,9 @@
     "Other"
   ],
   "main": "./out/extension.js",
+  "activationEvents": [
+    "onView:nexcodeKiboko.sidebarView"
+  ],
   "contributes": {
     "viewsContainers": {
       "activitybar": [

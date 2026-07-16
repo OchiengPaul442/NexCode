@@ -705,6 +705,58 @@ body {
   flex-shrink: 0;
 }
 
+.nk-reasoning-thinking {
+  padding: 4px 8px;
+  margin-bottom: 4px;
+  border-left: 2px solid var(--vscode-focusBorder);
+  background: rgba(var(--vscode-focusBorder), 0.05);
+}
+
+.nk-reasoning-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--vscode-focusBorder);
+  margin-bottom: 2px;
+}
+
+.nk-reasoning-step {
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+  font-style: italic;
+}
+
+/* ── Codex-style reasoning display ──────────────────────────────────────────── */
+.nk-codex-reasoning {
+  padding: 8px 0;
+  border-top: 1px solid var(--vscode-widget-border);
+  margin-top: 4px;
+}
+
+.nk-codex-status {
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+  margin-bottom: 6px;
+}
+
+.nk-codex-thinking {
+  font-size: 13px;
+  color: var(--vscode-descriptionForeground);
+  font-style: italic;
+  line-height: 1.5;
+  padding: 8px 12px;
+  background: rgba(121, 121, 121, 0.05);
+  border-radius: 4px;
+}
+
+.nk-codex-label {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  margin-top: 6px;
+  opacity: 0.7;
+}
+
 .nk-activity-dot {
   width: 6px;
   height: 6px;
@@ -845,14 +897,25 @@ body {
   flex-shrink: 0;
 }
 
+.nk-composer-selector {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 40px;
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: 6px;
+  background: transparent;
+}
+
 .nk-mode-selector {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
-  border-radius: var(--nk-radius-sm);
-  border: 1px solid var(--vscode-widget-border);
+  width: 40px;
+  height: 38px;
+  border: 0;
+  border-right: 1px solid var(--vscode-widget-border);
+  border-radius: 6px 0 0 6px;
   background: transparent;
   color: var(--vscode-descriptionForeground);
   cursor: pointer;
@@ -869,7 +932,6 @@ body {
 .nk-mode-selector--active {
   background: rgba(0, 122, 204, 0.15);
   color: var(--vscode-focusBorder);
-  border-color: var(--vscode-focusBorder);
 }
 
 .nk-mode-tooltip {
@@ -938,7 +1000,7 @@ body {
 /* ── Input area ────────────────────────────────────────────────────────────── */
 .nk-input-area {
   flex-shrink: 0;
-  padding: 4px 0 6px;
+  padding: 20px 24px 26px;
   overflow: visible;
 }
 
@@ -1023,27 +1085,35 @@ body {
 .nk-input-card {
   display: flex;
   flex-direction: column;
-  overflow: visible;
+  min-height: clamp(132px, 24vh, 190px);
   background: var(--vscode-input-background);
   border: 1px solid var(--vscode-widget-border);
   border-radius: var(--nk-radius-sm);
+  overflow: visible;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.16);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.nk-input-card:focus-within {
+  border-color: var(--vscode-focusBorder);
+  box-shadow: 0 0 0 1px var(--vscode-focusBorder), 0 12px 32px rgba(0, 0, 0, 0.16);
 }
 
 /* Textarea */
 .nk-textarea {
   flex: 1;
   width: 100%;
-  resize: none;
+  min-height: 0;
+  max-height: 150px;
+  padding: 18px 18px 6px;
   background: transparent;
   border: none;
   color: var(--vscode-input-foreground);
   font-family: var(--vscode-font-family, "Segoe UI", system-ui, sans-serif);
-  font-size: 13px;
-  line-height: 1.4;
-  padding: 8px 10px 4px;
+  font-size: clamp(13px, 1.7vw, 16px);
+  line-height: 1.45;
+  resize: none;
   outline: none;
-  min-height: 36px;
-  max-height: 120px;
 }
 .nk-textarea::placeholder {
   color: var(--vscode-descriptionForeground);
@@ -1054,20 +1124,20 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 6px 4px;
+  padding: 6px 16px 16px;
   gap: 8px;
 }
+
 .nk-input-toolbar-left {
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex: 1;
+  gap: 8px;
   min-width: 0;
 }
+
 .nk-input-toolbar-right {
   display: flex;
   align-items: center;
-  flex-shrink: 0;
 }
 
 /* + Attach button */
@@ -1075,20 +1145,27 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: var(--nk-radius-sm);
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
   border: 1px solid var(--vscode-widget-border);
   background: transparent;
   color: var(--vscode-descriptionForeground);
   cursor: pointer;
-  transition: background 0.1s ease, color 0.1s ease;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
   padding: 0;
   flex-shrink: 0;
 }
 .nk-toolbar-btn:hover {
   background: var(--vscode-list-hoverBackground);
   color: var(--vscode-foreground);
+}
+.nk-toolbar-btn:focus-visible,
+.nk-mode-selector:focus-visible,
+.nk-toolbar-select-trigger:focus-visible,
+.nk-send-btn:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: 2px;
 }
 .nk-toolbar-btn--ghost {
   background: transparent;
@@ -1100,33 +1177,36 @@ body {
 }
 
 .nk-toolbar-select-trigger {
+  height: 40px;
+  padding: 0 10px 0 6px;
+  border-radius: 0 6px 6px 0;
+  border: 0;
+  background: transparent;
+  color: var(--vscode-foreground);
+  font-size: 12px;
+  cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 4px;
   min-width: 0;
-  height: 26px;
-  border-radius: var(--nk-radius-sm);
-  border: 1px solid var(--vscode-widget-border);
-  background: transparent;
-  color: var(--vscode-foreground);
-  cursor: pointer;
-  padding: 0 8px;
-  font-size: 11px;
   transition: background 0.1s ease, border-color 0.1s ease;
 }
 
 .nk-toolbar-select-trigger:hover,
 .nk-toolbar-select.is-open .nk-toolbar-select-trigger {
-  border-color: var(--vscode-descriptionForeground);
   background: var(--vscode-list-hoverBackground);
 }
 
 .nk-toolbar-select--model .nk-toolbar-select-trigger {
-  min-width: 80px;
-  max-width: 120px;
-  font-size: 11px;
-  padding: 0 6px;
+  min-width: 148px;
+  max-width: min(300px, 42vw);
+  font-size: 13px;
+  padding: 0 10px 0 6px;
   justify-content: space-between;
+}
+
+.nk-composer-selector:has(.nk-toolbar-select.is-open) {
+  border-color: var(--vscode-focusBorder);
 }
 
 .nk-toolbar-select--mode .nk-toolbar-select-trigger {
@@ -1139,7 +1219,7 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11px;
+  font-size: inherit;
 }
 
 .nk-toolbar-select-arrow {
@@ -1271,27 +1351,29 @@ body {
 
 /* Send button */
 .nk-send-btn {
+  width: 44px;
+  height: 40px;
+  border-radius: 6px;
+  border: 1px solid var(--vscode-widget-border);
+  background: transparent;
+  color: var(--vscode-foreground);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
-  border-radius: var(--nk-radius-sm);
-  border: none;
-  background: var(--vscode-button-background);
-  color: var(--vscode-button-foreground);
   cursor: pointer;
   flex-shrink: 0;
 }
-.nk-send-btn:hover:not(:disabled) {
-  background: #1177bb;
-}
+
 .nk-send-btn:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
   background: var(--vscode-input-background);
   color: var(--vscode-descriptionForeground);
+  cursor: not-allowed;
 }
+
+.nk-send-btn:hover:not(:disabled) {
+  background: var(--vscode-list-hoverBackground);
+}
+
 .nk-send-btn--busy {
   background: var(--vscode-input-background);
   color: var(--vscode-descriptionForeground);
@@ -2123,26 +2205,57 @@ body {
   }
 
   .nk-input-area {
-    padding: 8px 0;
+    padding: 12px;
+  }
+
+  .nk-input-card {
+    min-height: 132px;
+  }
+
+  .nk-textarea {
+    padding: 14px 14px 6px;
   }
 
   .nk-input-toolbar {
-    flex-wrap: wrap;
-    align-items: flex-start;
-    padding-bottom: 6px;
+    flex-wrap: nowrap;
+    align-items: center;
+    padding: 6px 10px 10px;
   }
 
   .nk-input-toolbar-left {
-    width: 100%;
+    flex: 1;
+    min-width: 0;
   }
 
   .nk-input-toolbar-right {
-    width: 100%;
-    justify-content: flex-end;
+    flex-shrink: 0;
   }
 
   .nk-toolbar-select--model .nk-toolbar-select-trigger {
-    width: min(180px, calc(100vw - 84px));
+    width: min(180px, calc(100vw - 174px));
+    min-width: 0;
+    font-size: 13px;
+  }
+
+  .nk-composer-selector,
+  .nk-toolbar-btn,
+  .nk-send-btn {
+    height: 36px;
+  }
+
+  .nk-mode-selector {
+    width: 36px;
+    height: 34px;
+  }
+
+  .nk-toolbar-btn {
+    width: 36px;
+    border-radius: 6px;
+  }
+
+  .nk-send-btn {
+    width: 40px;
+    border-radius: 6px;
   }
 
   .nk-enhance-feedback {

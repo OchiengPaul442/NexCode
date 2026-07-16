@@ -6,6 +6,54 @@ import {
   ModelResponse,
 } from "../types";
 
+export interface ModelCapabilities {
+  hasThinking: boolean;
+  hasToolCalling: boolean;
+  contextWindow: number;
+}
+
+export function detectModelCapabilities(
+  model: string,
+  provider?: ProviderId,
+): ModelCapabilities {
+  const lower = model.toLowerCase();
+
+  const thinkingModels = [
+    "claude",
+    "deepseek-r1",
+    "qwen3",
+    "o1",
+    "o3",
+    "glm-5",
+    "kimi-k2",
+  ];
+  const hasThinking = thinkingModels.some((m) => lower.includes(m));
+
+  const toolModels = [
+    "qwen",
+    "deepseek",
+    "gpt",
+    "claude",
+    "glm",
+    "llama",
+    "mimo",
+  ];
+  const hasToolCalling = toolModels.some((m) => lower.includes(m));
+
+  let contextWindow = 64_000;
+  if (
+    /deepseek-v4|deepseek-r1|mimo-v2\.5|glm-5|kimi-k2|qwen3|gpt-4|gpt-4o|claude|llama-3\.3/.test(
+      lower,
+    )
+  ) {
+    contextWindow = 128_000;
+  } else if (/qwen2\.5-coder:14b|qwen2\.5-coder:7b|nemotron-mini/.test(lower)) {
+    contextWindow = 32_768;
+  }
+
+  return { hasThinking, hasToolCalling, contextWindow };
+}
+
 interface RouteCandidate {
   providerId: ProviderId;
   provider: ModelProvider;

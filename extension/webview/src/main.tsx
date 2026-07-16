@@ -43,6 +43,8 @@ import {
   Monitor,
   Radio,
   Shield,
+  Paperclip,
+  SlidersHorizontal,
 } from "lucide-react";
 import { StreamingMessage } from "./components/StreamingMessage";
 
@@ -109,6 +111,7 @@ interface ChatMessage {
   thinking?: boolean;
   error?: boolean;
   stopped?: boolean;
+  startTime?: number;
   reasoning: string[];
   debug: string[];
   proposedEdits: ProposedEdit[];
@@ -560,27 +563,44 @@ function ActivityText({
   );
 }
 
-function ReasoningIndicator({
-  reasoning,
-  streaming,
-}: {
+function hasThinkingCapability(model?: string): boolean {
+  if (!model) return false;
+  return /claude|deepseek-r1|qwen3|o1|o3|glm-5|kimi-k2/i.test(model);
+}
+
+function ReasoningIndicator({ reasoning, streaming, model, startTime }: {
   reasoning: string[];
   streaming: boolean;
+  model?: string;
+  startTime?: number;
 }) {
-  if (reasoning.length === 0) return null;
+  const [elapsed, setElapsed] = useState(0);
 
-  const latest = reasoning[reasoning.length - 1];
+  useEffect(() => {
+    if (!streaming || !startTime) return;
+    const interval = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startTime) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [streaming, startTime]);
 
-  if (streaming) {
-    return (
-      <div className="nk-reasoning-inline">
-        <span className="nk-reasoning-dots" />
-        <span>{latest}</span>
+  if (!streaming) return null;
+
+  const latest = reasoning[reasoning.length - 1] || "";
+
+  return (
+    <div className="nk-codex-reasoning">
+      <div className="nk-codex-status">
+        Working for {elapsed}s
       </div>
-    );
-  }
-
-  return null;
+      {latest && (
+        <div className="nk-codex-thinking">
+          {latest}
+        </div>
+      )}
+      <div className="nk-codex-label">Thinking</div>
+    </div>
+  );
 }
 
 function ToolbarSelect({
@@ -1075,6 +1095,7 @@ const useStore = create<StoreState>((set, get) => {
                     mode: meta?.mode,
                     streaming: true,
                     thinking: true,
+                    startTime: Date.now(),
                     reasoning: [],
                     debug: [],
                     proposedEdits: [],
@@ -1473,6 +1494,8 @@ function MessageBubble({
           <MemoizedReasoningIndicator
             reasoning={message.reasoning}
             streaming={Boolean(message.streaming || message.thinking)}
+            model={message.model}
+            startTime={message.startTime}
           />
         )}
 
@@ -2095,6 +2118,49 @@ function App() {
       input: mcpQuickInput,
     });
   }, [mcpQuickInput, mcpSelectedServer, mcpSelectedTool]);
+
+  const handleAttach = useCallback(() => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.multiple = true;
+    input.accept =
+      ".txt,.md,.json,.ts,.tsx,.js,.jsx,.py,.csv,.xlsx,.pdf,.png,.jpg,.jpeg,.gif";
+    input.onchange = (e) => {
+      const files = (e.target as HTMLInputElement).files;
+      if (files) {
+        Array.from(files).forEach(async (file) => {
+          const kind = estimateAttachmentKind(file);
+          const id = makeId("att");
+          if (kind === "text" && file.size <= 700_000) {
+            vscode.postMessage({
+              type: "addAttachment",
+              attachment: {
+                id,
+                fileName: file.name,
+                mimeType: file.type || "text/plain",
+                kind,
+                textContent: await file.text(),
+                byteSize: file.size,
+              },
+            });
+          } else {
+            vscode.postMessage({
+              type: "addAttachment",
+              attachment: {
+                id,
+                fileName: file.name,
+                mimeType: file.type || "application/octet-stream",
+                kind,
+                base64Data: arrayBufferToBase64(await file.arrayBuffer()),
+                byteSize: file.size,
+              },
+            });
+          }
+        });
+      }
+    };
+    input.click();
+  }, []);
 
   // Persist state to VS Code webview state
   useEffect(() => {
@@ -3103,18 +3169,23 @@ function App() {
           {/* Toolbar row */}
           <div className="nk-input-toolbar">
             <div className="nk-input-toolbar-left">
-              <div className="nk-mode-selector-wrap" ref={modePopupRef}>
-                <div
-                  className={`nk-mode-selector ${modePopupOpen ? "nk-mode-selector--active" : ""}`}
-                  onClick={() => setModePopupOpen(!modePopupOpen)}
-                >
-                  {activeSession.mode === "agent" && <Code2 size={14} />}
-                  {activeSession.mode === "ask" && <MessageSquare size={14} />}
-                  {activeSession.mode === "plan" && <Compass size={14} />}
-                </div>
+              <div className="nk-composer-selector">
+                <div className="nk-mode-selector-wrap" ref={modePopupRef}>
+                  <button
+                    type="button"
+                    className={`nk-mode-selector ${modePopupOpen ? "nk-mode-selector--active" : ""}`}
+                    onClick={() => setModePopupOpen(!modePopupOpen)}
+                    aria-label="Choose conversation mode"
+                    aria-expanded={modePopupOpen}
+                    aria-haspopup="menu"
+                  >
+                    {activeSession.mode === "agent" && <Code2 size={14} />}
+                    {activeSession.mode === "ask" && <MessageSquare size={14} />}
+                    {activeSession.mode === "plan" && <Compass size={14} />}
+                  </button>
 
-                {modePopupOpen && (
-                  <div className="nk-mode-popup">
+                  {modePopupOpen && (
+                    <div className="nk-mode-popup">
                     <div
                       className={`nk-mode-option ${activeSession.mode === "agent" ? "nk-mode-option--active" : ""}`}
                       onClick={() => { onModeChange("agent"); setModePopupOpen(false); }}
@@ -3145,17 +3216,36 @@ function App() {
                         <div className="nk-mode-option-desc">Architecture planning</div>
                       </div>
                     </div>
-                  </div>
-                )}
+                    </div>
+                  )}
+                </div>
+                <ToolbarSelect
+                  value={activeSession.model}
+                  options={modelOptions}
+                  onChange={onModelChange}
+                  label="Model"
+                  className="nk-toolbar-select--model"
+                  menuClassName="nk-toolbar-select-menu--model"
+                />
               </div>
-              <ToolbarSelect
-                value={activeSession.model}
-                options={modelOptions}
-                onChange={onModelChange}
-                label="Model"
-                className="nk-toolbar-select--model"
-                menuClassName="nk-toolbar-select-menu--model"
-              />
+              <button
+                className="nk-toolbar-btn"
+                type="button"
+                title="Composer settings"
+                aria-label="Composer settings"
+                aria-expanded={settingsDropdownOpen}
+                onClick={() => setSettingsDropdownOpen((open) => !open)}
+              >
+                <SlidersHorizontal size={15} />
+              </button>
+              <button
+                className="nk-toolbar-btn"
+                type="button"
+                title="Attach file"
+                onClick={handleAttach}
+              >
+                <Paperclip size={14} />
+              </button>
             </div>
             <div className="nk-input-toolbar-right">
               {isBusy ? (

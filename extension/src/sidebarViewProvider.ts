@@ -327,7 +327,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         }
         return;
       case "addAttachment":
-        this.addAttachmentFromWebview(message);
+        await this.addAttachmentFromWebview(message);
         return;
       case "removeAttachment":
         this.pendingAttachments.delete(message.attachmentId);
@@ -610,7 +610,9 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     this.postAttachments();
   }
 
-  private addAttachmentFromWebview(message: WebviewAddAttachmentMessage): void {
+  private async addAttachmentFromWebview(
+    message: WebviewAddAttachmentMessage,
+  ): Promise<void> {
     const payload = message.attachment;
     if (!payload || !payload.fileName || !payload.mimeType || !payload.kind) {
       this.postMessage({
@@ -646,10 +648,26 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
+    let textContent = payload.textContent;
+    let base64Data = payload.base64Data;
+
     if (
       payload.kind === "text" &&
-      (!payload.textContent || payload.textContent.trim().length === 0)
+      (!textContent || textContent.trim().length === 0) &&
+      this.isTextLike(normalizedMimeType, sanitizedFileName)
     ) {
+      try {
+        const workspaceRoot = this.getWorkspaceRoot();
+        const filePath = path.join(workspaceRoot, sanitizedFileName);
+        const fileUri = vscode.Uri.file(filePath);
+        const bytes = await vscode.workspace.fs.readFile(fileUri);
+        textContent = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+      } catch {
+        // File might not exist on disk — fall through to validation
+      }
+    }
+
+    if (payload.kind === "text" && (!textContent || textContent.trim().length === 0)) {
       this.postMessage({
         type: "error",
         message: "Text attachments must include text content.",
@@ -659,7 +677,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
 
     if (
       payload.kind !== "text" &&
-      (!payload.base64Data || payload.base64Data.trim().length === 0)
+      (!base64Data || base64Data.trim().length === 0)
     ) {
       this.postMessage({
         type: "error",
@@ -668,8 +686,8 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
-    const normalizedTextContent = payload.textContent
-      ? payload.textContent.slice(0, MAX_ATTACHMENT_TEXT_CHARS)
+    const normalizedTextContent = textContent
+      ? textContent.slice(0, MAX_ATTACHMENT_TEXT_CHARS)
       : undefined;
 
     const attachment: RequestAttachment = {
@@ -679,7 +697,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       kind: payload.kind,
       byteSize,
       textContent: normalizedTextContent,
-      base64Data: payload.base64Data,
+      base64Data,
     };
 
     this.pendingAttachments.set(id, attachment);
@@ -990,12 +1008,26 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
   }
 
   private isTextLike(mimeType: string, fileName: string): boolean {
+    const lowered = fileName.toLowerCase();
     return (
       mimeType.startsWith("text/") ||
-      fileName.toLowerCase().endsWith(".md") ||
-      fileName.toLowerCase().endsWith(".json") ||
-      fileName.toLowerCase().endsWith(".yaml") ||
-      fileName.toLowerCase().endsWith(".yml")
+      lowered.endsWith(".md") ||
+      lowered.endsWith(".json") ||
+      lowered.endsWith(".yaml") ||
+      lowered.endsWith(".yml") ||
+      lowered.endsWith(".ts") ||
+      lowered.endsWith(".tsx") ||
+      lowered.endsWith(".js") ||
+      lowered.endsWith(".jsx") ||
+      lowered.endsWith(".py") ||
+      lowered.endsWith(".csv") ||
+      lowered.endsWith(".txt") ||
+      lowered.endsWith(".xml") ||
+      lowered.endsWith(".html") ||
+      lowered.endsWith(".css") ||
+      lowered.endsWith(".java") ||
+      lowered.endsWith(".go") ||
+      lowered.endsWith(".rs")
     );
   }
 

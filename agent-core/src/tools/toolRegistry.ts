@@ -5,11 +5,19 @@ import { McpRegistry } from "../mcp/mcpRegistry";
 import { SearchTool } from "./searchTool";
 import { TerminalTool } from "./terminalTool";
 import { TestRunnerTool } from "./testRunnerTool";
+import { ToolApprovalPolicy } from "./toolApprovalPolicy";
+
+export interface ToolApprovalRequiredResult extends ToolResult {
+  requiresApproval: true;
+  toolName: string;
+  pendingArg: string;
+}
 
 interface ToolRegistryOptions {
   tavilyApiKey?: string;
   tavilyBaseUrl?: string;
   mcpRegistry?: McpRegistry;
+  approvalPolicy?: ToolApprovalPolicy;
 }
 
 export class ToolRegistry {
@@ -19,6 +27,7 @@ export class ToolRegistry {
   public readonly test: TestRunnerTool;
   public readonly search: SearchTool;
   private readonly mcpRegistry?: McpRegistry;
+  private readonly approvalPolicy?: ToolApprovalPolicy;
 
   public constructor(workspaceRoot: string, options: ToolRegistryOptions = {}) {
     this.filesystem = new FileSystemTool(workspaceRoot);
@@ -30,6 +39,14 @@ export class ToolRegistry {
       tavilyBaseUrl: options.tavilyBaseUrl,
     });
     this.mcpRegistry = options.mcpRegistry;
+    this.approvalPolicy = options.approvalPolicy;
+  }
+
+  public requiresApproval(toolName: string, arg: string): boolean {
+    if (!this.approvalPolicy) {
+      return false;
+    }
+    return this.approvalPolicy.requiresApproval(toolName, arg);
   }
 
   public async runToolCall(input: string): Promise<ToolResult> {
@@ -47,6 +64,19 @@ export class ToolRegistry {
         ? trimmed.toLowerCase()
         : trimmed.slice(0, firstSpace).toLowerCase();
     const arg = firstSpace === -1 ? "" : trimmed.slice(firstSpace + 1).trim();
+
+    if (
+      this.approvalPolicy &&
+      this.approvalPolicy.requiresApproval(toolName, arg)
+    ) {
+      return {
+        ok: false,
+        output: "AWAITING_APPROVAL",
+        requiresApproval: true,
+        toolName,
+        pendingArg: arg,
+      } as ToolApprovalRequiredResult;
+    }
 
     switch (toolName) {
       case "search":

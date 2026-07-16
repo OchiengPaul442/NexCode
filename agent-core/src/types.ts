@@ -115,6 +115,11 @@ export type OrchestratorEvent =
       todos?: ActivityTodo[];
       files?: ActivityFile[];
       note?: string;
+    }
+  | {
+      type: "toolApprovalRequired";
+      toolName: string;
+      pendingArg: string;
     };
 
 export interface ModelRequest {
@@ -153,6 +158,9 @@ export interface AgentResult {
 export interface ToolResult {
   ok: boolean;
   output: string;
+  requiresApproval?: boolean;
+  toolName?: string;
+  pendingArg?: string;
 }
 
 export interface InteractionFeedback {

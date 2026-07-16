@@ -4,3 +4,7 @@ tsconfig.json
 *.tgz
 ../workspace.d.ts
 ../**
+webview/src/**
+webview/tsconfig.json
+webview/node_modules/**
+tailwind.config.cjs

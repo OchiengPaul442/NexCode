@@ -337,6 +337,31 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       });
 
       for await (const event of orchestrator.stream(request)) {
+        if (event.type === "toolApprovalRequired") {
+          const choice = await vscode.window.showWarningMessage(
+            `Approval required for ${event.toolName} command:\n\n${event.pendingArg}\n\nContinue?`,
+            "Run",
+            "Cancel",
+          );
+
+          if (choice === "Run") {
+            this.postMessage({
+              type: "toolApprovalResult",
+              approved: true,
+              toolName: event.toolName,
+              pendingArg: event.pendingArg,
+            });
+          } else {
+            this.postMessage({
+              type: "toolApprovalResult",
+              approved: false,
+              toolName: event.toolName,
+              pendingArg: event.pendingArg,
+            });
+          }
+          continue;
+        }
+
         if (event.type === "final") {
           for (const edit of event.response.proposedEdits) {
             this.pendingEdits.set(edit.id, edit);
@@ -777,6 +802,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
   private getOrchestrator(workspaceRoot: string): NexcodeOrchestrator {
     if (!this.orchestrator || this.currentWorkspaceRoot !== workspaceRoot) {
       const settings = this.getRuntimeSettings();
+      const rawKeys = this.getRawApiKeys();
       this.orchestrator = createNexcodeOrchestrator({
         workspaceRoot,
         promptsDir: path.join(workspaceRoot, "prompts"),
@@ -785,8 +811,16 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         defaultModel: settings.model,
         ollamaBaseUrl: settings.ollamaBaseUrl,
         openAIBaseUrl: settings.openAIBaseUrl,
-        openAIApiKey: settings.openAIApiKey,
-        tavilyApiKey: settings.tavilyApiKey,
+        openAIApiKey: rawKeys.openAIApiKey,
+        tavilyApiKey: rawKeys.tavilyApiKey,
+        approvalCallback: async (toolName, arg) => {
+          const choice = await vscode.window.showWarningMessage(
+            `Approval required for ${toolName} command:\n\n${arg}\n\nContinue?`,
+            "Run",
+            "Cancel",
+          );
+          return choice === "Run";
+        },
       });
       this.currentWorkspaceRoot = workspaceRoot;
     }
@@ -928,8 +962,8 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     mode: AgentMode;
     ollamaBaseUrl: string;
     openAIBaseUrl: string;
-    openAIApiKey: string;
-    tavilyApiKey: string;
+    openAIApiKeyConfigured: boolean;
+    tavilyApiKeyConfigured: boolean;
     allowTools: boolean;
     requireTerminalApproval: boolean;
     temperature: number;
@@ -950,8 +984,10 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         "openAIBaseUrl",
         "https://api.openai.com/v1",
       ),
-      openAIApiKey: config.get<string>("openAIApiKey", ""),
-      tavilyApiKey: config.get<string>("tavilyApiKey", ""),
+      openAIApiKeyConfigured: !!config
+        .get<string>("openAIApiKey", "")
+        .trim(),
+      tavilyApiKeyConfigured: !!config.get<string>("tavilyApiKey", "").trim(),
       allowTools: config.get<boolean>("allowToolCommands", true),
       requireTerminalApproval: config.get<boolean>(
         "requireTerminalApproval",
@@ -961,6 +997,14 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       showReasoning: config.get<boolean>("showReasoning", true),
       autoApplyChanges: config.get<boolean>("autoApplyChanges", false),
       allowWebSearch: config.get<boolean>("allowWebSearch", true),
+    };
+  }
+
+  private getRawApiKeys(): { openAIApiKey: string; tavilyApiKey: string } {
+    const config = vscode.workspace.getConfiguration("nexcodeKiboko");
+    return {
+      openAIApiKey: config.get<string>("openAIApiKey", ""),
+      tavilyApiKey: config.get<string>("tavilyApiKey", ""),
     };
   }
 
@@ -992,8 +1036,9 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
           Accept: "application/json",
         };
 
-        if (settings.openAIApiKey.trim()) {
-          headers.Authorization = `Bearer ${settings.openAIApiKey.trim()}`;
+        const rawKeys = this.getRawApiKeys();
+        if (rawKeys.openAIApiKey.trim()) {
+          headers.Authorization = `Bearer ${rawKeys.openAIApiKey.trim()}`;
         }
 
         const response = await this.fetchWithTimeout(
@@ -1068,8 +1113,9 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
           Accept: "application/json",
         };
 
-        if (settings.openAIApiKey.trim()) {
-          headers.Authorization = `Bearer ${settings.openAIApiKey.trim()}`;
+        const rawKeys = this.getRawApiKeys();
+        if (rawKeys.openAIApiKey.trim()) {
+          headers.Authorization = `Bearer ${rawKeys.openAIApiKey.trim()}`;
         }
 
         const response = await this.fetchWithTimeout(
@@ -1215,12 +1261,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
   }
 
   private createNonce(): string {
-    const alphabet =
-      "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    let nonce = "";
-    for (let index = 0; index < 16; index += 1) {
-      nonce += alphabet.charAt(Math.floor(Math.random() * alphabet.length));
-    }
-    return nonce;
+    const { randomBytes } = require("crypto") as typeof import("crypto");
+    return randomBytes(16).toString("base64");
   }
 }

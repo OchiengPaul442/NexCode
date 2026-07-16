@@ -33,6 +33,7 @@ import { ModelRouter } from "./providers/modelRouter";
 import { OllamaProvider } from "./providers/ollamaProvider";
 import { OpenAICompatibleProvider } from "./providers/openAICompatibleProvider";
 import { ToolRegistry } from "./tools/toolRegistry";
+import { ApprovalCallback, DefaultToolApprovalPolicy } from "./tools/toolApprovalPolicy";
 import { chunkText, extractFirstCodeBlock } from "./utils/text";
 import {
   buildGroundingNoteForMode,
@@ -63,6 +64,7 @@ export interface NexcodeOrchestratorOptions {
   openAIApiKey?: string;
   tavilyApiKey?: string;
   tavilyBaseUrl?: string;
+  approvalCallback?: ApprovalCallback;
 }
 
 type AutoRoutingStrategy =
@@ -123,8 +125,10 @@ export class NexcodeOrchestrator {
   private readonly promptVersions: PromptVersionManager;
   private readonly mcpRegistry: McpRegistry;
   private readonly ephemeralSessionId = randomUUID();
+  private readonly approvalCallback?: ApprovalCallback;
 
   public constructor(options: NexcodeOrchestratorOptions = {}) {
+    this.approvalCallback = options.approvalCallback;
     this.config = createRuntimeConfig({
       workspaceRoot: options.workspaceRoot,
       promptsDir: options.promptsDir,
@@ -164,6 +168,7 @@ export class NexcodeOrchestrator {
       tavilyApiKey: this.config.toolDefaults.tavilyApiKey,
       tavilyBaseUrl: this.config.toolDefaults.tavilyBaseUrl,
       mcpRegistry: this.mcpRegistry,
+      approvalPolicy: new DefaultToolApprovalPolicy(),
     });
 
     this.planner = new PlannerAgent(this.router, this.prompts);
@@ -1706,6 +1711,74 @@ export class NexcodeOrchestrator {
     }
 
     const result = await this.tools.runToolCall(toolCommand);
+
+    if (result.requiresApproval) {
+      const toolName = result.toolName ?? "";
+      const pendingArg = result.pendingArg ?? "";
+
+      if (this.approvalCallback) {
+        const approved = await this.approvalCallback(toolName, pendingArg);
+        if (!approved) {
+          return {
+            text: [
+              "## Tool Execution",
+              `Command: ${toolCommand}`,
+              "",
+              "```text",
+              "Command cancelled by user.",
+              "```",
+            ].join("\n"),
+            modeUsed: mode,
+            providerUsed: provider,
+            modelUsed: model,
+            proposedEdits: [],
+            diagnostics,
+          };
+        }
+        // Re-run the tool after approval
+        const approvedResult = await this.tools.runToolCall(toolCommand);
+        const boundedOutput = this.clampText(
+          approvedResult.output,
+          MAX_TOOL_OUTPUT_CHARS,
+          "Tool output truncated",
+        );
+        if (!approvedResult.ok) {
+          diagnostics.push(boundedOutput);
+        }
+        return {
+          text: [
+            "## Tool Execution",
+            `Command: ${toolCommand}`,
+            "",
+            "```text",
+            boundedOutput,
+            "```",
+          ].join("\n"),
+          modeUsed: mode,
+          providerUsed: provider,
+          modelUsed: model,
+          proposedEdits: [],
+          diagnostics,
+        };
+      }
+
+      return {
+        text: [
+          "## Tool Execution",
+          `Command: ${toolCommand}`,
+          "",
+          "```text",
+          "AWAITING_APPROVAL",
+          "```",
+        ].join("\n"),
+        modeUsed: mode,
+        providerUsed: provider,
+        modelUsed: model,
+        proposedEdits: [],
+        diagnostics,
+      };
+    }
+
     const boundedOutput = this.clampText(
       result.output,
       MAX_TOOL_OUTPUT_CHARS,
@@ -1765,6 +1838,50 @@ export class NexcodeOrchestrator {
 
     const terminalMatch = toolCommand.match(/^terminal\s+(.+)$/i);
     if (terminalMatch) {
+      const terminalArg = terminalMatch[1].trim();
+      if (this.tools.requiresApproval("terminal", terminalArg)) {
+        if (this.approvalCallback) {
+          const approved = await this.approvalCallback("terminal", terminalArg);
+          if (!approved) {
+            return {
+              text: [
+                "## Tool Execution",
+                `Command: ${toolCommand}`,
+                "",
+                "```text",
+                "Command cancelled by user.",
+                "```",
+              ].join("\n"),
+              modeUsed: mode,
+              providerUsed: provider,
+              modelUsed: model,
+              proposedEdits: [],
+              diagnostics,
+            };
+          }
+        } else {
+          yield {
+            type: "toolApprovalRequired",
+            toolName: "terminal",
+            pendingArg: terminalArg,
+          };
+          return {
+            text: [
+              "## Tool Execution",
+              `Command: ${toolCommand}`,
+              "",
+              "```text",
+              "AWAITING_APPROVAL",
+              "```",
+            ].join("\n"),
+            modeUsed: mode,
+            providerUsed: provider,
+            modelUsed: model,
+            proposedEdits: [],
+            diagnostics,
+          };
+        }
+      }
       return yield* this.streamCommandToolResult(
         toolCommand,
         mode,

@@ -15,6 +15,7 @@
     "test": "npm run -w agent-core test",
     "test:real": "npm run -w agent-core test:real",
     "lint": "npm run -w agent-core build && npm run -w agent-core lint && npm run -w extension lint",
+    "typecheck:webview": "tsc -p extension/webview/tsconfig.json",
     "package:vsix": "npm run extension:package",
     "clean": "node tools/clean-workspace.mjs",
     "validate:models": "node tools/validate-model-matrix.js",

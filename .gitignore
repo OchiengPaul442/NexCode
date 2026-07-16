@@ -16,7 +16,7 @@ Thumbs.db
 
 # Generated runtime memory files
 memory/feedback-log.jsonl
-memory/long-term-memory.json
+memory/long-term-memory.jsonl
 memory/prompt-versions.json
 
 # Local simulation and audit artifacts

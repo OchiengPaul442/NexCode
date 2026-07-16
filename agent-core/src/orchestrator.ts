@@ -355,12 +355,12 @@ export class NexcodeOrchestrator {
       ]);
       this.ensureNotAborted(request.abortSignal);
 
-      const memoryContext = this.clampText(
+      const memoryContext = clampText(
         memoryContextRaw,
         MAX_MEMORY_CONTEXT_CHARS,
         "Memory context trimmed",
       );
-      const workspaceContext = this.clampText(
+      const workspaceContext = clampText(
         workspaceContextRaw,
         MAX_WORKSPACE_CONTEXT_CHARS,
         "Workspace context trimmed",
@@ -1177,7 +1177,7 @@ export class NexcodeOrchestrator {
       note: `${stageLabel} stage started`,
     };
 
-    let text = "";
+    const textChunks: string[] = [];
 
     try {
       for await (const token of this.streamAgentTokens(
@@ -1197,7 +1197,7 @@ export class NexcodeOrchestrator {
           continue;
         }
 
-        text += token;
+        textChunks.push(token);
         yield {
           type: "token",
           token,
@@ -1222,7 +1222,7 @@ export class NexcodeOrchestrator {
       ].join("\n");
 
       for (const token of chunkText(fallback, 32)) {
-        text += token;
+        textChunks.push(token);
         yield {
           type: "token",
           token,
@@ -1230,8 +1230,9 @@ export class NexcodeOrchestrator {
       }
     }
 
-    const finalText = text.trim().length
-      ? normalizeAgentOutputForMode(selectedMode, text.trim(), prompt)
+    const joinedText = textChunks.join("");
+    const finalText = joinedText.trim().length
+      ? normalizeAgentOutputForMode(selectedMode, joinedText.trim(), prompt)
       : `${stageLabel} agent returned an empty response.`;
 
     yield {
@@ -1272,7 +1273,7 @@ export class NexcodeOrchestrator {
     pipeline: Exclude<AgentMode, "auto">[],
     abortSignal?: AbortSignal,
   ): AsyncGenerator<OrchestratorEvent, OrchestratorResponse> {
-    let composed = "";
+    const composedChunks: string[] = [];
     let planContent: string | undefined;
     let implementationDraft: string | undefined;
     const stageTodos: ActivityTodo[] = pipeline.map((stage, index) => ({
@@ -1310,8 +1311,8 @@ export class NexcodeOrchestrator {
         note: `${stageLabel} stage running`,
       };
 
-      const sectionPrefix = `${composed.length > 0 ? "\n\n" : ""}## ${stageLabel}\n\n`;
-      composed += sectionPrefix;
+      const sectionPrefix = `${composedChunks.length > 0 ? "\n\n" : ""}## ${stageLabel}\n\n`;
+      composedChunks.push(sectionPrefix);
       yield {
         type: "token",
         token: sectionPrefix,
@@ -1340,7 +1341,7 @@ export class NexcodeOrchestrator {
           }
 
           stageText += token;
-          composed += token;
+          composedChunks.push(token);
           yield {
             type: "token",
             token,
@@ -1366,7 +1367,7 @@ export class NexcodeOrchestrator {
 
         for (const token of chunkText(fallback, 32)) {
           stageText += token;
-          composed += token;
+          composedChunks.push(token);
           yield {
             type: "token",
             token,
@@ -1381,7 +1382,7 @@ export class NexcodeOrchestrator {
       );
       if (!normalizedStageText) {
         const fallbackText = `${stageLabel} stage returned an empty response.`;
-        composed += fallbackText;
+        composedChunks.push(fallbackText);
         yield {
           type: "token",
           token: fallbackText,
@@ -1425,7 +1426,7 @@ export class NexcodeOrchestrator {
     }
 
     return {
-      text: composed.trim(),
+      text: composedChunks.join("").trim(),
       modeUsed: "auto",
       providerUsed: provider,
       modelUsed: model,
@@ -1475,12 +1476,12 @@ export class NexcodeOrchestrator {
     },
   ): Promise<ChatMessage[]> {
     const systemPrompt = await this.prompts.getPrompt(mode);
-    const boundedWorkspaceContext = this.clampText(
+    const boundedWorkspaceContext = clampText(
       input.workspaceContext ?? "",
       MAX_WORKSPACE_CONTEXT_CHARS,
       "Workspace context trimmed",
     );
-    const boundedMemoryContext = this.clampText(
+    const boundedMemoryContext = clampText(
       input.memoryContext ?? "",
       MAX_MEMORY_CONTEXT_CHARS,
       "Memory context trimmed",
@@ -1737,7 +1738,7 @@ export class NexcodeOrchestrator {
         }
         // Re-run the tool after approval
         const approvedResult = await this.tools.runToolCall(toolCommand);
-        const boundedOutput = this.clampText(
+        const boundedOutput = clampText(
           approvedResult.output,
           MAX_TOOL_OUTPUT_CHARS,
           "Tool output truncated",
@@ -1779,7 +1780,7 @@ export class NexcodeOrchestrator {
       };
     }
 
-    const boundedOutput = this.clampText(
+    const boundedOutput = clampText(
       result.output,
       MAX_TOOL_OUTPUT_CHARS,
       "Tool output truncated",
@@ -1948,7 +1949,7 @@ export class NexcodeOrchestrator {
       ok: false,
       output: "Tool execution did not produce a final result.",
     };
-    const boundedOutput = this.clampText(
+    const boundedOutput = clampText(
       finalResult.output,
       MAX_TOOL_OUTPUT_CHARS,
       "Tool output truncated",
@@ -2234,7 +2235,7 @@ export class NexcodeOrchestrator {
     }
 
     const referencedFiles = extractLikelyFileReferences(normalized)
-      .map((candidate) => this.normalizeActivityPath(candidate, workspaceRoot))
+      .map((candidate) => normalizeActivityPath(candidate, workspaceRoot))
       .filter((candidate): candidate is string => Boolean(candidate));
     const mentionsFileContext =
       referencedFiles.length > 0 ||
@@ -2367,14 +2368,14 @@ export class NexcodeOrchestrator {
     activeFilePath?: string,
   ): string | null {
     const referencedFiles = extractLikelyFileReferences(prompt)
-      .map((candidate) => this.normalizeActivityPath(candidate, workspaceRoot))
+      .map((candidate) => normalizeActivityPath(candidate, workspaceRoot))
       .filter((candidate): candidate is string => Boolean(candidate));
 
     if (referencedFiles.length > 0) {
       return referencedFiles[0];
     }
 
-    const normalizedActivePath = this.normalizeActivityPath(
+    const normalizedActivePath = normalizeActivityPath(
       activeFilePath,
       workspaceRoot,
     );
@@ -2404,7 +2405,7 @@ export class NexcodeOrchestrator {
       return null;
     }
 
-    const normalizedActivePath = this.normalizeActivityPath(
+    const normalizedActivePath = normalizeActivityPath(
       activeFilePath,
       workspaceRoot,
     );
@@ -2432,7 +2433,7 @@ export class NexcodeOrchestrator {
       "",
     );
 
-    return this.normalizeActivityPath(withoutKindPrefix, workspaceRoot);
+    return normalizeActivityPath(withoutKindPrefix, workspaceRoot);
   }
 
   private extractSuggestedToolCommand(responseText: string): string | null {
@@ -2559,7 +2560,7 @@ export class NexcodeOrchestrator {
     const deduped = new Map<string, ActivityFile>();
 
     for (const edit of edits) {
-      const normalizedPath = this.normalizeActivityPath(edit.filePath);
+      const normalizedPath = normalizeActivityPath(edit.filePath, this.config.workspaceRoot);
       if (!normalizedPath) {
         continue;
       }
@@ -2584,7 +2585,7 @@ export class NexcodeOrchestrator {
 
     const readMatch = trimmed.match(/^read\s+(.+)$/i);
     if (readMatch) {
-      const filePath = this.normalizeActivityPath(readMatch[1]);
+      const filePath = normalizeActivityPath(readMatch[1], this.config.workspaceRoot);
       if (filePath) {
         return [
           {
@@ -2622,12 +2623,12 @@ export class NexcodeOrchestrator {
     if (moveMatch) {
       return [
         {
-          path: this.normalizeActivityPath(moveMatch[1]) ?? moveMatch[1].trim(),
+          path: normalizeActivityPath(moveMatch[1], this.config.workspaceRoot) ?? moveMatch[1].trim(),
           status: "modified",
           summary: `Moved to ${moveMatch[2].trim()}`,
         },
         {
-          path: this.normalizeActivityPath(moveMatch[2]) ?? moveMatch[2].trim(),
+          path: normalizeActivityPath(moveMatch[2], this.config.workspaceRoot) ?? moveMatch[2].trim(),
           status: "modified",
           summary: `Created from move ${moveMatch[1].trim()}`,
         },
@@ -2637,7 +2638,7 @@ export class NexcodeOrchestrator {
     const deleteMatch = trimmed.match(/^delete\s+(.+)$/i);
     if (deleteMatch) {
       const targetPath =
-        this.normalizeActivityPath(deleteMatch[1]) ?? deleteMatch[1].trim();
+        normalizeActivityPath(deleteMatch[1], this.config.workspaceRoot) ?? deleteMatch[1].trim();
       return [
         {
           path: targetPath,
@@ -2650,7 +2651,7 @@ export class NexcodeOrchestrator {
     const clearMatch = trimmed.match(/^delete-contents\s+(.+)$/i);
     if (clearMatch) {
       const targetPath =
-        this.normalizeActivityPath(clearMatch[1]) ?? clearMatch[1].trim();
+        normalizeActivityPath(clearMatch[1], this.config.workspaceRoot) ?? clearMatch[1].trim();
       return [
         {
           path: targetPath,
@@ -2684,7 +2685,7 @@ export class NexcodeOrchestrator {
 
     const parsedEdit = this.parseEditCommand(prompt);
     if (parsedEdit) {
-      const editPath = this.normalizeActivityPath(parsedEdit.filePath);
+      const editPath = normalizeActivityPath(parsedEdit.filePath, this.config.workspaceRoot);
       if (editPath) {
         files.push({
           path: editPath,
@@ -2697,7 +2698,7 @@ export class NexcodeOrchestrator {
 
     const pathLikeMatches = prompt.match(/[\w./\\-]+\.[a-z0-9]{1,8}/gi) ?? [];
     for (const match of pathLikeMatches.slice(0, 4)) {
-      const normalizedPath = this.normalizeActivityPath(match, workspaceRoot);
+      const normalizedPath = normalizeActivityPath(match, workspaceRoot);
       if (!normalizedPath || seen.has(normalizedPath)) {
         continue;
       }
@@ -2710,7 +2711,7 @@ export class NexcodeOrchestrator {
       seen.add(normalizedPath);
     }
 
-    const normalizedActivePath = this.normalizeActivityPath(
+    const normalizedActivePath = normalizeActivityPath(
       activeFilePath,
       workspaceRoot,
     );
@@ -3150,7 +3151,7 @@ export class NexcodeOrchestrator {
       );
 
       if (attachment.kind === "text" && attachment.textContent) {
-        const snippet = this.clampText(
+        const snippet = clampText(
           attachment.textContent,
           MAX_ATTACHMENT_TEXT_CHARS,
           "Attachment snippet trimmed",

@@ -9,7 +9,7 @@ export class FileSystemTool {
 
   public async readFile(targetPath: string): Promise<ToolResult> {
     try {
-      const absolutePath = this.resolveWorkspacePath(targetPath);
+      const absolutePath = await this.resolveWorkspacePathSafe(targetPath);
       const output = await fs.readFile(absolutePath, "utf8");
       return {
         ok: true,
@@ -28,7 +28,7 @@ export class FileSystemTool {
     content: string,
   ): Promise<ToolResult> {
     try {
-      const absolutePath = this.resolveWorkspacePath(targetPath);
+      const absolutePath = await this.resolveWorkspacePathSafe(targetPath);
       await fs.mkdir(path.dirname(absolutePath), { recursive: true });
       await fs.writeFile(absolutePath, content, "utf8");
       return {
@@ -48,7 +48,7 @@ export class FileSystemTool {
     content: string,
   ): Promise<ToolResult> {
     try {
-      const absolutePath = this.resolveWorkspacePath(targetPath);
+      const absolutePath = await this.resolveWorkspacePathSafe(targetPath);
       await fs.mkdir(path.dirname(absolutePath), { recursive: true });
       await fs.appendFile(absolutePath, content, "utf8");
       return {
@@ -68,8 +68,8 @@ export class FileSystemTool {
     destinationPath: string,
   ): Promise<ToolResult> {
     try {
-      const absoluteSource = this.resolveWorkspacePath(sourcePath);
-      const absoluteDestination = this.resolveWorkspacePath(destinationPath);
+      const absoluteSource = await this.resolveWorkspacePathSafe(sourcePath);
+      const absoluteDestination = await this.resolveWorkspacePathSafe(destinationPath);
       await fs.mkdir(path.dirname(absoluteDestination), { recursive: true });
       await fs.rename(absoluteSource, absoluteDestination);
       return {
@@ -86,7 +86,7 @@ export class FileSystemTool {
 
   public async deletePath(targetPath: string): Promise<ToolResult> {
     try {
-      const absolutePath = this.resolveWorkspacePath(targetPath);
+      const absolutePath = await this.resolveWorkspacePathSafe(targetPath);
       this.ensureNotWorkspaceRoot(absolutePath, targetPath);
       await fs.rm(absolutePath, { recursive: true, force: true });
       return {
@@ -103,7 +103,7 @@ export class FileSystemTool {
 
   public async clearDirectory(targetPath: string): Promise<ToolResult> {
     try {
-      const absolutePath = this.resolveWorkspacePath(targetPath);
+      const absolutePath = await this.resolveWorkspacePathSafe(targetPath);
       this.ensureNotWorkspaceRoot(absolutePath, targetPath);
       const entries = await fs.readdir(absolutePath, { withFileTypes: true });
 
@@ -131,7 +131,7 @@ export class FileSystemTool {
     newText: string,
     summary: string,
   ): Promise<ProposedEdit> {
-    const absolutePath = this.resolveWorkspacePath(targetPath);
+    const absolutePath = await this.resolveWorkspacePathSafe(targetPath);
     let oldText = "";
 
     try {
@@ -150,6 +150,28 @@ export class FileSystemTool {
       newText,
       patch: createPatch(oldText, newText),
     };
+  }
+
+  public async resolveWorkspacePathSafe(targetPath: string): Promise<string> {
+    const absolutePath = path.isAbsolute(targetPath)
+      ? path.normalize(targetPath)
+      : path.normalize(path.join(this.workspaceRoot, targetPath));
+
+    let resolvedPath: string;
+    try {
+      resolvedPath = await fs.realpath(absolutePath);
+    } catch {
+      // Path doesn't exist yet - use normalized path for writes
+      // For reads, this will fail with ENOENT which is correct
+      resolvedPath = absolutePath;
+    }
+
+    const relative = path.relative(this.workspaceRoot, resolvedPath);
+    if (relative.startsWith("..") || path.isAbsolute(relative)) {
+      throw new Error(`Path escapes workspace root: ${targetPath}`);
+    }
+
+    return resolvedPath;
   }
 
   public resolveWorkspacePath(targetPath: string): string {

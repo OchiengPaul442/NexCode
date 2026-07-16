@@ -514,10 +514,12 @@ function ActivityPanel({
   todos,
   files,
   note,
+  streaming,
 }: {
   todos: ActivityTodo[];
   files: ActivityFile[];
   note?: string;
+  streaming: boolean;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const [runningOnly, setRunningOnly] = useState(false);
@@ -538,12 +540,14 @@ function ActivityPanel({
     return null;
   }
 
+  const allDone = runningCount === 0 && !streaming;
+
   return (
     <div className="nk-activity-panel">
       <div className="nk-activity-panel-head">
         <div className="nk-activity-head-label">
           <ListTodo size={10} />
-          <span>Live activity</span>
+          <span>LIVE ACTIVITY</span>
         </div>
         <div className="nk-activity-head-controls">
           <div className="nk-activity-filter-group">
@@ -574,6 +578,12 @@ function ActivityPanel({
 
       {note && <div className="nk-activity-note">{note}</div>}
 
+      {!note && allDone && (
+        <div className="nk-activity-note" style={{ color: "var(--nk-green)" }}>
+          Response ready
+        </div>
+      )}
+
       {collapsed ? (
         <div className="nk-activity-collapsed">
           {runningCount} running • {totalItems} total
@@ -595,8 +605,12 @@ function ActivityPanel({
                       </div>
                     )}
                   </div>
-                  <span className="nk-activity-badge">
-                    {activityStatusLabel(todo.status)}
+                  <span className={`nk-activity-badge ${activityStatusClass(todo.status)}`}>
+                    {todo.status === "completed"
+                      ? "DONE"
+                      : todo.status === "in-progress"
+                        ? "RUNNING"
+                        : activityStatusLabel(todo.status)}
                   </span>
                 </li>
               ))}
@@ -616,7 +630,11 @@ function ActivityPanel({
                   <span
                     className={`nk-activity-file-badge ${activityStatusClass(file.status)}`}
                   >
-                    {activityStatusLabel(file.status)}
+                    {file.status === "completed"
+                      ? "DONE"
+                      : file.status === "in-progress"
+                        ? "RUNNING"
+                        : activityStatusLabel(file.status)}
                   </span>
                 </li>
               ))}
@@ -653,9 +671,15 @@ function ProcessPanel({
       <div className="nk-process-head">
         <div className="nk-process-title">
           <Cpu size={11} />
-          <span>{streaming ? "Live steps" : "Execution trace"}</span>
+          <span>{streaming ? "EXECUTION TRACE" : "EXECUTION TRACE"}</span>
         </div>
-        {steps.length > 1 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          {streaming && (
+            <span className="nk-process-status nk-process-status--active">
+              <span className="nk-process-spinner" />
+              Running
+            </span>
+          )}
           <button
             className="nk-process-toggle"
             onClick={() => setCollapsed((value) => !value)}
@@ -663,7 +687,7 @@ function ProcessPanel({
           >
             {collapsed ? "Expand" : "Collapse"}
           </button>
-        )}
+        </div>
       </div>
 
       <div className="nk-process-current">{latest}</div>
@@ -1378,7 +1402,7 @@ function inferContextWindow(model: string): number {
   }
 
   if (
-    /qwen3-coder:480b-cloud|gpt-4|gpt-4o|claude|deepseek|llama-3\.3/.test(
+    /deepseek-v4|deepseek-r1|mimo-v2\.5|glm-5|kimi-k2|qwen3|gpt-4|gpt-4o|claude|llama-3\.3/.test(
       normalized,
     )
   ) {
@@ -1540,7 +1564,7 @@ function MessageBubble({
         className={`nk-msg-content ${isUser ? "nk-msg-content--user" : "nk-msg-content--bot"}`}
       >
         {!isUser && message.reasoning.length > 0 && (
-          <ProcessPanel
+          <MemoizedProcessPanel
             reasoning={message.reasoning}
             streaming={Boolean(message.streaming || message.thinking)}
           />
@@ -1549,10 +1573,11 @@ function MessageBubble({
         {!isUser &&
           (message.activityTodos.length > 0 ||
             message.activityFiles.length > 0) && (
-            <ActivityPanel
+            <MemoizedActivityPanel
               todos={message.activityTodos}
               files={message.activityFiles}
               note={message.activityNote}
+              streaming={message.streaming}
             />
           )}
 
@@ -1707,7 +1732,9 @@ function MessageBubble({
   );
 }
 
-// ─── Sessions Drawer ──────────────────────────────────────────────────────────
+const MemoizedActivityPanel = React.memo(ActivityPanel);
+const MemoizedProcessPanel = React.memo(ProcessPanel);
+const MemoizedMessageBubble = React.memo(MessageBubble);
 function SessionsDrawer({
   sessions,
   activeSessionId,
@@ -2309,6 +2336,19 @@ function App() {
     ],
     [],
   );
+
+  const retryableMessageIds = useMemo(() => {
+    if (!activeSession) return new Set<string>();
+    const ids = new Set<string>();
+    for (const msg of activeSession.messages) {
+      if (msg.role === "assistant" && !msg.streaming && !msg.thinking) {
+        if (findRetryPromptForMessage(activeSession, msg.id)) {
+          ids.add(msg.id);
+        }
+      }
+    }
+    return ids;
+  }, [activeSession]);
 
   const showNotice = useCallback((kind: "error" | "info", text: string) => {
     setBannerNotice({ kind, text: text.trim() });
@@ -3357,14 +3397,12 @@ function App() {
           <div className="nk-messages-list">
             <AnimatePresence initial={false}>
               {activeSession.messages.map((msg) => (
-                <MessageBubble
+                <MemoizedMessageBubble
                   key={msg.id}
                   message={msg}
                   showDebug={settings.showDebugPanel}
                   canRetry={
-                    Boolean(findRetryPromptForMessage(activeSession, msg.id)) &&
-                    !msg.streaming &&
-                    !msg.thinking
+                    retryableMessageIds.has(msg.id)
                   }
                   copied={copiedMessageId === msg.id}
                   isBusy={isBusy}
@@ -3634,5 +3672,12 @@ function App() {
 
 const root = document.getElementById("root");
 if (root) {
-  createRoot(root).render(<App />);
+  try {
+    createRoot(root).render(<App />);
+  } catch (err: unknown) {
+    root.innerHTML =
+      '<pre style="color:#ff6b6b;padding:16px;font-size:12px;white-space:pre-wrap;">Render error: ' +
+      String(err) +
+      "</pre>";
+  }
 }

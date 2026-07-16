@@ -32,20 +32,20 @@ describe("DefaultToolApprovalPolicy", () => {
     expect(policy.requiresApproval("search", "TODO")).toBe(false);
   });
 
-  it("does NOT require approval for write", () => {
-    expect(policy.requiresApproval("write", "f.ts :: content")).toBe(false);
+  it("requires approval for write", () => {
+    expect(policy.requiresApproval("write", "f.ts :: content")).toBe(true);
   });
 
-  it("does NOT require approval for append", () => {
-    expect(policy.requiresApproval("append", "f.ts :: content")).toBe(false);
+  it("requires approval for append", () => {
+    expect(policy.requiresApproval("append", "f.ts :: content")).toBe(true);
   });
 
   it("does NOT require approval for git-status", () => {
     expect(policy.requiresApproval("git-status", "")).toBe(false);
   });
 
-  it("does NOT require approval for unknown tools", () => {
-    expect(policy.requiresApproval("mcp", "server:tool :: input")).toBe(false);
+  it("requires approval for mcp", () => {
+    expect(policy.requiresApproval("mcp", "server:tool :: input")).toBe(true);
   });
 });
 
@@ -101,6 +101,24 @@ describe("ToolRegistry with approval policy", () => {
     expect(result.toolName).toBe("terminal");
   });
 
+  it("returns AWAITING_APPROVAL for write", async () => {
+    const registry = new ToolRegistry(workspaceRoot, {
+      approvalPolicy: policy,
+    });
+    const result = await registry.runToolCall("write src/file.ts :: content");
+    expect(result.requiresApproval).toBe(true);
+    expect(result.toolName).toBe("write");
+  });
+
+  it("returns AWAITING_APPROVAL for append", async () => {
+    const registry = new ToolRegistry(workspaceRoot, {
+      approvalPolicy: policy,
+    });
+    const result = await registry.runToolCall("append src/file.ts :: content");
+    expect(result.requiresApproval).toBe(true);
+    expect(result.toolName).toBe("append");
+  });
+
   it("does NOT require approval for read without policy", async () => {
     const registry = new ToolRegistry(workspaceRoot);
     const result = await registry.requiresApproval("read", "file.ts");
@@ -112,6 +130,8 @@ describe("ToolRegistry with approval policy", () => {
       approvalPolicy: policy,
     });
     expect(registry.requiresApproval("delete", "file.ts")).toBe(true);
+    expect(registry.requiresApproval("write", "file.ts")).toBe(true);
+    expect(registry.requiresApproval("append", "file.ts")).toBe(true);
     expect(registry.requiresApproval("read", "file.ts")).toBe(false);
   });
 

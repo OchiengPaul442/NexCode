@@ -7,7 +7,7 @@ export type ApprovalCallback = (
   arg: string,
 ) => Promise<boolean>;
 
-const DEFAULT_APPROVAL_TOOLS = ["delete", "delete-contents", "move", "terminal"];
+const DEFAULT_APPROVAL_TOOLS = ["delete", "delete-contents", "move", "terminal", "write", "append", "mcp"];
 
 export class DefaultToolApprovalPolicy implements ToolApprovalPolicy {
   private readonly bypassTools: Set<string>;

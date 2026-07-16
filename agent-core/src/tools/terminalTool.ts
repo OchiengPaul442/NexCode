@@ -27,6 +27,37 @@ const BLOCKED_COMMAND_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
     : item,
 );
 
+const SHELL_EXPANSION_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
+  {
+    pattern: /\$\(/,
+    reason: "Command substitution $(...) is blocked.",
+  },
+  {
+    pattern: /`[^`]*`/,
+    reason: "Command substitution using backticks is blocked.",
+  },
+  {
+    pattern: /\$\{[^}]*\}/,
+    reason: "Parameter expansion ${...} is blocked.",
+  },
+  {
+    pattern: /;\s*\w/,
+    reason: "Inline command chaining with semicolons is blocked. Use separate tool calls.",
+  },
+  {
+    pattern: /\|[^|]/,
+    reason: "Pipes are blocked. Use separate tool calls for piped operations.",
+  },
+  {
+    pattern: />[^>]/,
+    reason: "Output redirects (>) are blocked. Use the write tool for file output.",
+  },
+  {
+    pattern: /<[^<]/,
+    reason: "Input redirects (<) are blocked.",
+  },
+];
+
 const BLOCKED_GIT_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   {
     pattern: /\bgit\s+reset\s+--hard\b/i,
@@ -246,6 +277,12 @@ export class TerminalTool {
     }
 
     for (const blocked of BLOCKED_GIT_PATTERNS) {
+      if (blocked.pattern.test(trimmed)) {
+        return blocked.reason;
+      }
+    }
+
+    for (const blocked of SHELL_EXPANSION_PATTERNS) {
       if (blocked.pattern.test(trimmed)) {
         return blocked.reason;
       }

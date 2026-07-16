@@ -4,24 +4,33 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Design tokens ─────────────────────────────────────────────────────────── */
+/* ── Design tokens — Modern dark theme ──────────────────────────────────────── */
 :root {
-  --nk-bg: #0d1117;
-  --nk-bg2: #161b22;
-  --nk-bg3: #1f2630;
-  --nk-border: #2d333b;
-  --nk-border2: #3b4552;
-  --nk-text: #e6edf3;
-  --nk-muted: #9da7b3;
-  --nk-faint: #7d8590;
-  --nk-accent: #58a6ff;
-  --nk-accent2: #79c0ff;
-  --nk-accent-glow: rgba(88, 166, 255, 0.18);
+  --nk-bg: #0f1118;
+  --nk-bg2: #161922;
+  --nk-bg3: #1c2030;
+  --nk-surface: #222638;
+  --nk-border: #2a2e3e;
+  --nk-border2: #363b4f;
+  --nk-text: #e8ecf4;
+  --nk-muted: #8b92a8;
+  --nk-faint: #5c6380;
+  --nk-accent: #6c8cff;
+  --nk-accent2: #8ba4ff;
+  --nk-accent-glow: rgba(108, 140, 255, 0.15);
   --nk-green: #4ade80;
   --nk-red: #f87171;
   --nk-orange: #fb923c;
-  --nk-user-bg: #2a2d31;
-  --nk-topbar-h: 48px;
+  --nk-user-bg: #1a2540;
+  --nk-user-border: rgba(108, 140, 255, 0.2);
+  --nk-topbar-h: 44px;
+  --nk-radius-sm: 6px;
+  --nk-radius-md: 10px;
+  --nk-radius-lg: 14px;
+  --nk-radius-xl: 18px;
+  --nk-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.2);
+  --nk-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.25);
+  --nk-shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.35);
   color-scheme: dark;
 }
 
@@ -37,7 +46,7 @@ body {
   background: var(--nk-bg);
   color: var(--nk-text);
   font-family:
-    "Segoe UI Variable", "Bahnschrift",
+    "Segoe UI Variable", "Inter", "Bahnschrift",
     var(--vscode-font-family, "Segoe UI", system-ui, sans-serif);
   font-size: 13px;
   -webkit-font-smoothing: antialiased;
@@ -49,14 +58,14 @@ body {
 /* Scrollbar */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #3a3a3e transparent;
+  scrollbar-color: #2a2e3e transparent;
 }
 *::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 *::-webkit-scrollbar-thumb {
-  background: #3a3a3e;
+  background: #2a2e3e;
   border-radius: 99px;
 }
 *::-webkit-scrollbar-track {
@@ -81,10 +90,9 @@ body {
   justify-content: space-between;
   gap: 8px;
   height: var(--nk-topbar-h);
-  padding: 0 8px;
+  padding: 0 10px;
   border-bottom: 1px solid var(--nk-border);
   background: var(--nk-bg2);
-  backdrop-filter: blur(6px);
   flex-shrink: 0;
 }
 
@@ -98,7 +106,7 @@ body {
 .nk-topbar-right {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   flex-shrink: 0;
 }
 
@@ -111,9 +119,9 @@ body {
 
 .nk-brand-title {
   margin: 0;
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--nk-text);
   font-weight: 700;
@@ -121,7 +129,7 @@ body {
 
 .nk-brand-subtitle {
   margin: 0;
-  font-size: 10px;
+  font-size: 9px;
   line-height: 1.2;
   color: var(--nk-muted);
   max-width: 220px;
@@ -135,27 +143,24 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 7px;
-  border: 1px solid var(--nk-border);
-  background: var(--nk-bg3);
+  width: 26px;
+  height: 26px;
+  border-radius: var(--nk-radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
   color: var(--nk-muted);
   cursor: pointer;
-  transition:
-    background 0.12s,
-    color 0.12s,
-    border-color 0.12s;
+  transition: all 0.15s ease;
   padding: 0;
   flex-shrink: 0;
 }
 .nk-icon-btn:hover {
-  background: rgba(110, 125, 144, 0.18);
-  border-color: rgba(110, 125, 144, 0.45);
+  background: var(--nk-surface);
+  border-color: var(--nk-border);
   color: var(--nk-text);
 }
 .nk-icon-btn:active {
-  background: rgba(110, 125, 144, 0.28);
+  transform: scale(0.95);
 }
 
 /* ── Chat scroller ─────────────────────────────────────────────────────────── */
@@ -166,10 +171,9 @@ body {
   min-height: 0;
   position: relative;
   padding: 0;
-  transition: background 0.15s;
 }
 .nk-chat-scroller.nk-drag-active {
-  background: rgba(110, 125, 144, 0.05);
+  background: var(--nk-accent-glow);
 }
 
 /* Drop overlay */
@@ -180,9 +184,9 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(15, 15, 18, 0.6);
+  background: rgba(15, 17, 24, 0.85);
   border: 2px dashed var(--nk-accent);
-  border-radius: 8px;
+  border-radius: var(--nk-radius-md);
   pointer-events: none;
 }
 .nk-drop-hint {
@@ -197,13 +201,13 @@ body {
 
 /* Messages list */
 .nk-messages-list {
-  padding: 8px 10px 14px;
+  padding: 12px 12px 16px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
-/* Message rows (no avatars) */
+/* Message rows */
 .nk-msg-row {
   display: flex;
   width: 100%;
@@ -231,35 +235,77 @@ body {
   max-width: 100%;
 }
 
-/* Empty state */
+/* ── Empty state ───────────────────────────────────────────────────────────── */
 .nk-empty-chat {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 220px;
-  padding: 24px 8px 16px;
+  min-height: 300px;
+  padding: 32px 16px 24px;
   text-align: center;
 }
+
+.nk-empty-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--nk-accent-glow), rgba(108, 140, 255, 0.08));
+  border: 1px solid rgba(108, 140, 255, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+  color: var(--nk-accent);
+}
+
+.nk-empty-title {
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--nk-text);
+  letter-spacing: -0.01em;
+}
+
+.nk-empty-subtitle {
+  margin: 0 0 20px;
+  font-size: 12px;
+  color: var(--nk-muted);
+  max-width: 260px;
+  line-height: 1.5;
+}
+
 .nk-empty-hints {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
+  gap: 6px;
   justify-content: center;
-  margin-top: 10px;
+  max-width: 340px;
 }
+
 .nk-empty-hint {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  background: var(--nk-bg2);
-  border: 1px solid var(--nk-border2);
-  border-radius: 4px;
-  color: var(--nk-faint);
-  font-family: var(--vscode-editor-font-family, monospace);
-  font-size: 10px;
-  padding: 2px 7px;
+  gap: 5px;
+  background: var(--nk-surface);
+  border: 1px solid var(--nk-border);
+  border-radius: var(--nk-radius-sm);
+  color: var(--nk-muted);
+  font-size: 11px;
+  padding: 5px 10px;
+  cursor: pointer;
+  transition: all 0.15s ease;
 }
+.nk-empty-hint:hover {
+  background: var(--nk-bg3);
+  border-color: var(--nk-border2);
+  color: var(--nk-text);
+}
+.nk-empty-hint-icon {
+  color: var(--nk-accent);
+  opacity: 0.7;
+}
+
 .nk-empty {
   display: flex;
   align-items: center;
@@ -271,12 +317,13 @@ body {
 
 /* ── Message bubbles ───────────────────────────────────────────────────────── */
 .nk-bubble-user {
-  background: #18202a;
-  border: 1px solid rgba(88, 166, 255, 0.18);
-  border-radius: 14px 14px 6px 14px;
-  padding: 9px 12px;
+  background: var(--nk-user-bg);
+  border: 1px solid var(--nk-user-border);
+  border-radius: var(--nk-radius-lg) var(--nk-radius-lg) var(--nk-radius-sm) var(--nk-radius-lg);
+  padding: 10px 14px;
   color: var(--nk-text);
   word-break: break-word;
+  max-width: 85%;
 }
 
 .nk-bubble-bot {
@@ -290,9 +337,9 @@ body {
 .nk-process-panel {
   width: 100%;
   border: 1px solid var(--nk-border);
-  border-radius: 10px;
-  background: rgba(22, 27, 34, 0.92);
-  padding: 8px 10px;
+  border-radius: var(--nk-radius-md);
+  background: var(--nk-bg2);
+  padding: 10px 12px;
 }
 
 .nk-process-head {
@@ -308,7 +355,7 @@ body {
   gap: 6px;
   font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--nk-muted);
 }
@@ -359,15 +406,45 @@ body {
   width: 6px;
   height: 6px;
   border-radius: 999px;
-  background: rgba(88, 166, 255, 0.45);
+  background: rgba(108, 140, 255, 0.45);
   flex-shrink: 0;
+}
+
+.nk-process-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 999px;
+}
+
+.nk-process-status--active {
+  background: rgba(108, 140, 255, 0.12);
+  color: var(--nk-accent);
+}
+
+.nk-process-spinner {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--nk-accent);
+  animation: nk-pulse-dot 1.2s ease-in-out infinite;
+}
+
+@keyframes nk-pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
 }
 
 .nk-bubble-error {
   background: rgba(248, 81, 73, 0.08);
-  border: 1px solid rgba(248, 81, 73, 0.26);
-  border-radius: 8px;
-  padding: 8px 12px;
+  border: 1px solid rgba(248, 81, 73, 0.2);
+  border-radius: var(--nk-radius-md);
+  padding: 10px 14px;
   color: #ffb4b4;
   word-break: break-word;
 }
@@ -452,7 +529,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  margin-top: 1px;
+  margin-top: 2px;
 }
 .nk-msg-actions--user {
   justify-content: flex-end;
@@ -464,34 +541,31 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 5px;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--nk-radius-sm);
   border: 1px solid transparent;
   background: transparent;
-  color: #70839a;
+  color: var(--nk-faint);
   cursor: pointer;
-  transition:
-    color 0.12s,
-    background 0.12s,
-    border-color 0.12s;
+  transition: all 0.15s ease;
 }
 .nk-msg-action-btn:hover:not(:disabled) {
-  color: #c5d5eb;
-  background: #232a36;
-  border-color: #2f3a4b;
+  color: var(--nk-text);
+  background: var(--nk-surface);
+  border-color: var(--nk-border);
 }
 .nk-msg-action-btn:disabled {
-  opacity: 0.45;
+  opacity: 0.4;
   cursor: not-allowed;
 }
 
 .nk-activity-panel {
   width: 100%;
-  background: rgba(13, 17, 23, 0.9);
+  background: var(--nk-bg2);
   border: 1px solid var(--nk-border);
-  border-radius: 10px;
-  padding: 8px 10px;
+  border-radius: var(--nk-radius-md);
+  padding: 10px 12px;
 }
 
 .nk-activity-panel-head {
@@ -499,7 +573,7 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 5px;
+  margin-bottom: 6px;
 }
 
 .nk-activity-head-controls {
@@ -511,43 +585,45 @@ body {
 .nk-activity-filter-group {
   display: inline-flex;
   align-items: center;
-  border: 1px solid #364050;
+  border: 1px solid var(--nk-border2);
   border-radius: 999px;
-  background: #232834;
+  background: var(--nk-surface);
   overflow: hidden;
 }
 
 .nk-activity-toggle {
   border: none;
   background: transparent;
-  color: #8ea0ba;
+  color: var(--nk-muted);
   font-size: 9px;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  padding: 2px 7px;
+  padding: 3px 8px;
   cursor: pointer;
+  transition: all 0.15s ease;
 }
 
 .nk-activity-toggle--active {
-  background: rgba(110, 125, 144, 0.24);
-  color: var(--nk-text);
+  background: var(--nk-accent);
+  color: #fff;
 }
 
 .nk-activity-collapse-btn {
-  border: 1px solid #364050;
+  border: 1px solid var(--nk-border2);
   border-radius: 999px;
-  background: #232834;
-  color: #8ea0ba;
+  background: var(--nk-surface);
+  color: var(--nk-muted);
   font-size: 9px;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  padding: 2px 7px;
+  padding: 3px 8px;
   cursor: pointer;
+  transition: all 0.15s ease;
 }
 
 .nk-activity-collapse-btn:hover,
 .nk-activity-toggle:hover {
-  color: #d5e4f8;
+  color: var(--nk-text);
 }
 
 .nk-activity-head-label {
@@ -555,21 +631,21 @@ body {
   align-items: center;
   gap: 4px;
   font-size: 10px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--nk-muted);
 }
 
 .nk-activity-note {
   font-size: 10px;
-  color: #7f8ea6;
+  color: var(--nk-muted);
   margin-bottom: 4px;
 }
 
 .nk-activity-collapsed,
 .nk-activity-empty {
   font-size: 10px;
-  color: #8fa0b8;
+  color: var(--nk-muted);
   padding: 4px 2px 1px;
 }
 
@@ -604,7 +680,7 @@ body {
 
 .nk-activity-item-detail {
   font-size: 10px;
-  color: #8292ab;
+  color: var(--nk-muted);
   line-height: 1.3;
 }
 
@@ -624,17 +700,17 @@ body {
   font-size: 9px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  padding: 1px 6px;
-  border: 1px solid rgba(128, 128, 145, 0.35);
-  color: #95a2b8;
-  background: rgba(128, 128, 145, 0.1);
+  padding: 2px 7px;
+  border: 1px solid var(--nk-border);
+  color: var(--nk-muted);
+  background: var(--nk-surface);
   white-space: nowrap;
 }
 
 .nk-activity-files {
   margin-top: 6px;
   padding-top: 6px;
-  border-top: 1px solid #2a303c;
+  border-top: 1px solid var(--nk-border);
 }
 
 .nk-activity-file-item {
@@ -656,15 +732,15 @@ body {
 }
 
 .nk-activity-status--in-progress {
-  background: #0284c7;
+  background: var(--nk-accent);
 }
 
 .nk-activity-status--completed {
-  background: #22c55e;
+  background: var(--nk-green);
 }
 
 .nk-activity-status--failed {
-  background: #f87171;
+  background: var(--nk-red);
 }
 
 .nk-activity-status--viewed {
@@ -672,71 +748,71 @@ body {
 }
 
 .nk-activity-status--modified {
-  background: #f59e0b;
+  background: var(--nk-orange);
 }
 
 .nk-activity-badge.nk-activity-status--not-started,
 .nk-activity-file-badge.nk-activity-status--not-started {
-  background: rgba(94, 102, 117, 0.18);
-  border-color: rgba(148, 163, 184, 0.35);
+  background: rgba(94, 102, 117, 0.15);
+  border-color: rgba(148, 163, 184, 0.3);
   color: #9aa8bc;
 }
 
 .nk-activity-badge.nk-activity-status--in-progress,
 .nk-activity-file-badge.nk-activity-status--in-progress {
-  background: rgba(110, 125, 144, 0.16);
-  border-color: rgba(110, 125, 144, 0.34);
-  color: #d4dde8;
+  background: rgba(108, 140, 255, 0.12);
+  border-color: rgba(108, 140, 255, 0.3);
+  color: #b4c8ff;
 }
 
 .nk-activity-badge.nk-activity-status--completed,
 .nk-activity-file-badge.nk-activity-status--completed {
-  background: rgba(34, 197, 94, 0.18);
-  border-color: rgba(34, 197, 94, 0.36);
-  color: #9ef3be;
+  background: rgba(74, 222, 128, 0.12);
+  border-color: rgba(74, 222, 128, 0.3);
+  color: #86efac;
 }
 
 .nk-activity-badge.nk-activity-status--failed,
 .nk-activity-file-badge.nk-activity-status--failed {
-  background: rgba(248, 113, 113, 0.18);
-  border-color: rgba(248, 113, 113, 0.38);
+  background: rgba(248, 113, 113, 0.12);
+  border-color: rgba(248, 113, 113, 0.3);
   color: #fecaca;
 }
 
 .nk-activity-badge.nk-activity-status--viewed,
 .nk-activity-file-badge.nk-activity-status--viewed {
-  background: rgba(148, 163, 184, 0.18);
-  border-color: rgba(148, 163, 184, 0.36);
+  background: rgba(148, 163, 184, 0.12);
+  border-color: rgba(148, 163, 184, 0.3);
   color: #c2cedf;
 }
 
 .nk-activity-badge.nk-activity-status--modified,
 .nk-activity-file-badge.nk-activity-status--modified {
-  background: rgba(245, 158, 11, 0.2);
-  border-color: rgba(245, 158, 11, 0.4);
-  color: #f9dca6;
+  background: rgba(251, 146, 60, 0.12);
+  border-color: rgba(251, 146, 60, 0.3);
+  color: #fdba74;
 }
 
 .nk-summary-card {
   width: 100%;
   margin-top: 2px;
-  background: #1d2026;
-  border: 1px solid #2f3540;
-  border-radius: 8px;
-  padding: 5px 8px;
+  background: var(--nk-bg2);
+  border: 1px solid var(--nk-border);
+  border-radius: var(--nk-radius-md);
+  padding: 6px 10px;
 }
 .nk-summary-title {
   margin: 0;
   font-size: 10px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #9eabc0;
+  color: var(--nk-muted);
 }
 .nk-summary-line {
   margin: 5px 0 4px;
   font-size: 11px;
   line-height: 1.45;
-  color: #ced5e3;
+  color: var(--nk-text);
 }
 .nk-summary-list {
   margin: 0;
@@ -748,18 +824,18 @@ body {
 }
 .nk-summary-list li {
   font-size: 10px;
-  color: #8f9cb2;
-  background: #232832;
-  border: 1px solid #323947;
+  color: var(--nk-muted);
+  background: var(--nk-surface);
+  border: 1px solid var(--nk-border);
   border-radius: 999px;
-  padding: 1px 7px;
+  padding: 2px 8px;
 }
 
 /* ── Edit card ─────────────────────────────────────────────────────────────── */
 .nk-edit-card {
   background: var(--nk-bg2);
   border: 1px solid var(--nk-border);
-  border-radius: 8px;
+  border-radius: var(--nk-radius-md);
   padding: 8px 10px;
 }
 
@@ -769,34 +845,34 @@ body {
   gap: 3px;
   font-size: 10px;
   font-weight: 600;
-  padding: 1px 7px;
+  padding: 2px 8px;
   border-radius: 999px;
   white-space: nowrap;
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
 .nk-edit-badge--pending {
-  background: rgba(110, 125, 144, 0.12);
-  color: #d7e0ea;
-  border: 1px solid rgba(110, 125, 144, 0.3);
+  background: rgba(108, 140, 255, 0.1);
+  color: #b4c8ff;
+  border: 1px solid rgba(108, 140, 255, 0.25);
 }
 .nk-edit-badge--applied {
-  background: rgba(63, 185, 80, 0.12);
+  background: rgba(74, 222, 128, 0.1);
   color: #86efac;
-  border: 1px solid rgba(63, 185, 80, 0.3);
+  border: 1px solid rgba(74, 222, 128, 0.25);
 }
 .nk-edit-badge--rejected {
-  background: rgba(248, 81, 73, 0.1);
+  background: rgba(248, 113, 113, 0.1);
   color: #fca5a5;
-  border: 1px solid rgba(248, 81, 73, 0.3);
+  border: 1px solid rgba(248, 113, 113, 0.25);
 }
 
 .nk-code-block {
   display: block;
-  background: #141416;
-  border: 1px solid var(--nk-border2);
-  border-radius: 6px;
-  padding: 8px 10px;
+  background: var(--nk-bg);
+  border: 1px solid var(--nk-border);
+  border-radius: var(--nk-radius-sm);
+  padding: 10px 12px;
   font-family: var(
     --vscode-editor-font-family,
     "Cascadia Code",
@@ -810,7 +886,7 @@ body {
 }
 
 .nk-code-inline {
-  background: #252530;
+  background: var(--nk-surface);
   border-radius: 3px;
   padding: 1px 5px;
   font-family: inherit;
@@ -821,7 +897,7 @@ body {
 /* ── Input area ────────────────────────────────────────────────────────────── */
 .nk-input-area {
   flex-shrink: 0;
-  padding: 8px 10px 10px;
+  padding: 8px 10px 12px;
   background: var(--nk-bg);
   border-top: 1px solid var(--nk-border);
 }
@@ -831,8 +907,8 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 7px 10px;
-  border-radius: 9px;
+  padding: 8px 12px;
+  border-radius: var(--nk-radius-md);
   border: 1px solid transparent;
   margin-bottom: 8px;
   font-size: 11px;
@@ -840,15 +916,15 @@ body {
 }
 
 .nk-banner--error {
-  background: rgba(248, 113, 113, 0.12);
-  border-color: rgba(248, 113, 113, 0.32);
+  background: rgba(248, 113, 113, 0.1);
+  border-color: rgba(248, 113, 113, 0.25);
   color: #ffd5d9;
 }
 
 .nk-banner--info {
-  background: rgba(110, 125, 144, 0.14);
-  border-color: rgba(110, 125, 144, 0.35);
-  color: #d7dde5;
+  background: var(--nk-surface);
+  border-color: var(--nk-border);
+  color: var(--nk-text);
 }
 
 .nk-banner-close {
@@ -859,7 +935,7 @@ body {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  opacity: 0.85;
+  opacity: 0.7;
 }
 
 .nk-banner-close:hover {
@@ -903,26 +979,22 @@ body {
   color: var(--nk-text);
 }
 
-/* Input card — Copilot-style unified container */
+/* Input card */
 .nk-input-card {
   background: var(--nk-bg2);
-  border: 1px solid var(--nk-border2);
-  border-radius: 14px;
+  border: 1px solid var(--nk-border);
+  border-radius: var(--nk-radius-lg);
   display: flex;
   flex-direction: column;
   overflow: visible;
-  transition:
-    border-color 0.15s,
-    box-shadow 0.15s;
+  transition: all 0.2s ease;
 }
 .nk-input-card:focus-within {
   border-color: var(--nk-accent);
-  box-shadow:
-    0 0 0 1px rgba(88, 166, 255, 0.24),
-    0 10px 30px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 0 0 2px var(--nk-accent-glow);
 }
 
-/* Textarea inside the card */
+/* Textarea */
 .nk-textarea {
   flex: 1;
   resize: none;
@@ -930,21 +1002,21 @@ body {
   border: none;
   color: var(--nk-text);
   font-family: inherit;
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.55;
   padding: 14px 14px 10px;
   outline: none;
-  min-height: 104px;
+  min-height: 100px;
   max-height: 220px;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
 }
 .nk-textarea::placeholder {
-  color: #c8ccd2;
+  color: var(--nk-faint);
 }
 
-/* Toolbar inside the card */
+/* Toolbar */
 .nk-input-toolbar {
   display: flex;
   align-items: center;
@@ -976,19 +1048,16 @@ body {
   height: 30px;
   border-radius: 999px;
   border: 1px solid var(--nk-border);
-  background: var(--nk-bg3);
+  background: var(--nk-surface);
   color: var(--nk-muted);
   cursor: pointer;
-  transition:
-    background 0.1s,
-    color 0.1s,
-    border-color 0.1s;
+  transition: all 0.15s ease;
   padding: 0;
   flex-shrink: 0;
 }
 .nk-toolbar-btn:hover {
-  background: rgba(88, 166, 255, 0.14);
-  border-color: rgba(88, 166, 255, 0.32);
+  background: var(--nk-accent-glow);
+  border-color: rgba(108, 140, 255, 0.3);
   color: var(--nk-text);
 }
 .nk-toolbar-btn--ghost {
@@ -1008,20 +1077,17 @@ body {
   height: 30px;
   border-radius: 999px;
   border: 1px solid var(--nk-border);
-  background: var(--nk-bg3);
+  background: var(--nk-surface);
   color: var(--nk-text);
   cursor: pointer;
   padding: 0 12px;
-  transition:
-    border-color 0.12s,
-    background 0.12s,
-    color 0.12s;
+  transition: all 0.15s ease;
 }
 
 .nk-toolbar-select-trigger:hover,
 .nk-toolbar-select.is-open .nk-toolbar-select-trigger {
-  border-color: rgba(88, 166, 255, 0.36);
-  background: rgba(88, 166, 255, 0.12);
+  border-color: rgba(108, 140, 255, 0.3);
+  background: var(--nk-accent-glow);
 }
 
 .nk-toolbar-select--model .nk-toolbar-select-trigger {
@@ -1060,10 +1126,10 @@ body {
   max-width: min(280px, calc(100vw - 24px));
   max-height: 240px;
   overflow: auto;
-  border-radius: 12px;
+  border-radius: var(--nk-radius-md);
   border: 1px solid var(--nk-border2);
   background: var(--nk-bg2);
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.42);
+  box-shadow: var(--nk-shadow-lg);
   padding: 6px;
 }
 
@@ -1078,7 +1144,7 @@ body {
   gap: 2px;
   width: 100%;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--nk-radius-sm);
   background: transparent;
   color: var(--nk-text);
   cursor: pointer;
@@ -1088,8 +1154,8 @@ body {
 
 .nk-toolbar-select-option:hover,
 .nk-toolbar-select-option.is-selected {
-  background: rgba(88, 166, 255, 0.14);
-  border-color: rgba(88, 166, 255, 0.22);
+  background: var(--nk-accent-glow);
+  border-color: rgba(108, 140, 255, 0.2);
 }
 
 .nk-toolbar-select-option-label {
@@ -1103,7 +1169,7 @@ body {
   color: var(--nk-muted);
 }
 
-/* Pill selectors inside input toolbar */
+/* Pill selectors */
 .nk-pill-select-wrap {
   position: relative;
   display: inline-flex;
@@ -1112,7 +1178,7 @@ body {
 }
 .nk-pill-select {
   appearance: none;
-  background: var(--nk-bg3);
+  background: var(--nk-surface);
   border: 1px solid var(--nk-border);
   border-radius: 999px;
   color: var(--nk-text);
@@ -1123,22 +1189,17 @@ body {
   max-width: 150px;
   height: 30px;
   line-height: 1;
-  transition:
-    border-color 0.12s,
-    background 0.12s,
-    color 0.12s;
+  transition: all 0.15s ease;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .nk-pill-select:hover {
-  border-color: rgba(110, 125, 144, 0.45);
-  background: rgba(110, 125, 144, 0.12);
-  color: var(--nk-text);
+  border-color: var(--nk-border2);
+  background: var(--nk-bg3);
 }
 .nk-pill-select:focus {
   border-color: var(--nk-accent);
-  color: var(--nk-text);
 }
 .nk-pill-select--mode {
   max-width: 92px;
@@ -1159,7 +1220,7 @@ body {
   height: 30px;
   border-radius: 999px;
   border: 1px solid var(--nk-border);
-  background: var(--nk-bg3);
+  background: var(--nk-surface);
   color: var(--nk-faint);
   font-size: 10px;
   padding: 0 10px;
@@ -1184,30 +1245,28 @@ body {
   height: 30px;
   border-radius: 999px;
   border: 1px solid transparent;
-  background: transparent;
-  color: var(--nk-text);
+  background: var(--nk-accent);
+  color: #fff;
   cursor: pointer;
-  transition:
-    background 0.13s,
-    border-color 0.13s,
-    color 0.13s,
-    opacity 0.13s;
+  transition: all 0.15s ease;
   flex-shrink: 0;
 }
 .nk-send-btn:hover:not(:disabled) {
-  background: rgba(88, 166, 255, 0.18);
-  border-color: rgba(88, 166, 255, 0.34);
+  background: var(--nk-accent2);
+  box-shadow: 0 0 12px var(--nk-accent-glow);
 }
 .nk-send-btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;
+  background: var(--nk-surface);
+  color: var(--nk-muted);
 }
 .nk-send-btn--busy {
-  background: var(--nk-bg3);
+  background: var(--nk-surface);
   color: var(--nk-muted);
 }
 .nk-send-btn--queue {
-  background: var(--nk-bg3);
+  background: var(--nk-surface);
   border: 1px solid var(--nk-border);
   color: var(--nk-text);
 }
@@ -1219,14 +1278,14 @@ body {
   width: 30px;
   height: 30px;
   border-radius: 999px;
-  border: 1px solid rgba(248, 113, 113, 0.35);
+  border: 1px solid rgba(248, 113, 113, 0.3);
   background: rgba(248, 113, 113, 0.1);
   color: #ffd2d7;
   cursor: pointer;
-  transition: background 0.12s;
+  transition: all 0.15s ease;
 }
 .nk-stop-btn:hover {
-  background: rgba(248, 113, 113, 0.18);
+  background: rgba(248, 113, 113, 0.2);
 }
 
 .nk-queue-pill {
@@ -1235,7 +1294,7 @@ body {
   height: 28px;
   border-radius: 999px;
   border: 1px solid var(--nk-border);
-  background: var(--nk-bg3);
+  background: var(--nk-surface);
   color: var(--nk-muted);
   font-size: 10px;
   padding: 0 10px;
@@ -1247,7 +1306,7 @@ body {
   inset: 0;
   z-index: 70;
   display: flex;
-  background: rgba(1, 4, 9, 0.36);
+  background: rgba(0, 0, 0, 0.5);
 }
 
 .nk-drawer-backdrop--right {
@@ -1261,7 +1320,7 @@ body {
   height: 100%;
   background: var(--nk-bg2);
   border-right: 1px solid var(--nk-border);
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.38);
+  box-shadow: var(--nk-shadow-lg);
 }
 
 .nk-drawer--right {
@@ -1278,9 +1337,7 @@ body {
   background: transparent;
   color: inherit;
   cursor: pointer;
-  transition:
-    background 0.12s,
-    border-color 0.12s;
+  transition: all 0.15s ease;
 }
 
 .nk-scroll-bottom-btn {
@@ -1292,19 +1349,19 @@ body {
   height: 24px;
   border-radius: 999px;
   border: 1px solid var(--nk-border);
-  background: var(--nk-bg3);
+  background: var(--nk-surface);
   color: var(--nk-muted);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.12s;
+  transition: all 0.15s ease;
 }
 .nk-session-item:hover {
-  background: var(--nk-bg3);
+  background: var(--nk-surface);
 }
 .nk-session-item--active {
-  background: rgba(110, 125, 144, 0.1);
-  border-color: rgba(110, 125, 144, 0.22);
+  background: var(--nk-accent-glow);
+  border-color: rgba(108, 140, 255, 0.2);
 }
 .nk-session-item:hover .nk-icon-btn {
   opacity: 1 !important;
@@ -1316,7 +1373,7 @@ body {
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
   color: var(--nk-faint);
   margin-bottom: 2px;
 }
@@ -1324,9 +1381,9 @@ body {
 .nk-select {
   appearance: none;
   width: 100%;
-  background: var(--nk-bg3);
+  background: var(--nk-surface);
   border: 1px solid var(--nk-border);
-  border-radius: 6px;
+  border-radius: var(--nk-radius-sm);
   color: var(--nk-text);
   font-size: 12px;
   padding: 6px 10px;
@@ -1344,9 +1401,9 @@ body {
 
 .nk-input {
   width: 100%;
-  background: var(--nk-bg3);
+  background: var(--nk-surface);
   border: 1px solid var(--nk-border);
-  border-radius: 6px;
+  border-radius: var(--nk-radius-sm);
   color: var(--nk-text);
   font-size: 12px;
   padding: 6px 10px;
@@ -1377,13 +1434,11 @@ body {
   position: relative;
   width: 32px;
   height: 18px;
-  background: var(--nk-bg3);
+  background: var(--nk-surface);
   border: 1px solid var(--nk-border);
   border-radius: 999px;
   cursor: pointer;
-  transition:
-    background 0.2s,
-    border-color 0.2s;
+  transition: all 0.2s ease;
   flex-shrink: 0;
 }
 .nk-toggle--on {
@@ -1398,7 +1453,7 @@ body {
   height: 12px;
   background: #fff;
   border-radius: 50%;
-  transition: left 0.2s;
+  transition: left 0.2s ease;
 }
 .nk-toggle--on .nk-toggle-thumb {
   left: 16px;
@@ -1406,9 +1461,9 @@ body {
 
 /* Info box */
 .nk-info-box {
-  background: var(--nk-bg3);
-  border: 1px solid var(--nk-border2);
-  border-radius: 8px;
+  background: var(--nk-surface);
+  border: 1px solid var(--nk-border);
+  border-radius: var(--nk-radius-md);
   padding: 10px 12px;
 }
 
@@ -1417,16 +1472,14 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--nk-bg2);
+  background: var(--nk-surface);
   border: 1px solid var(--nk-border);
-  border-radius: 6px;
+  border-radius: var(--nk-radius-sm);
   color: var(--nk-muted);
   cursor: pointer;
   padding: 5px 12px;
   font-size: 12px;
-  transition:
-    background 0.12s,
-    color 0.12s;
+  transition: all 0.15s ease;
 }
 .nk-btn-ghost:hover {
   background: var(--nk-bg3);
@@ -1437,34 +1490,34 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: rgba(110, 125, 144, 0.15);
-  border: 1px solid rgba(110, 125, 144, 0.3);
-  border-radius: 6px;
+  background: var(--nk-accent-glow);
+  border: 1px solid rgba(108, 140, 255, 0.25);
+  border-radius: var(--nk-radius-sm);
   color: var(--nk-text);
   cursor: pointer;
   padding: 5px 12px;
   font-size: 12px;
-  transition: background 0.12s;
+  transition: all 0.15s ease;
 }
 .nk-btn-accent:hover {
-  background: rgba(110, 125, 144, 0.24);
+  background: rgba(108, 140, 255, 0.2);
 }
 
 .nk-btn-danger {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: rgba(248, 81, 73, 0.1);
-  border: 1px solid rgba(248, 81, 73, 0.3);
-  border-radius: 6px;
+  background: rgba(248, 113, 113, 0.1);
+  border: 1px solid rgba(248, 113, 113, 0.25);
+  border-radius: var(--nk-radius-sm);
   color: #fca5a5;
   cursor: pointer;
   padding: 5px 12px;
   font-size: 12px;
-  transition: background 0.12s;
+  transition: all 0.15s ease;
 }
 .nk-btn-danger:hover {
-  background: rgba(248, 81, 73, 0.2);
+  background: rgba(248, 113, 113, 0.2);
 }
 
 /* ── Modal ─────────────────────────────────────────────────────────────────── */
@@ -1475,17 +1528,17 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(10, 10, 12, 0.7);
+  background: rgba(0, 0, 0, 0.6);
   padding: 16px;
 }
 .nk-modal {
   width: 100%;
   max-width: 300px;
-  background: #222225;
+  background: var(--nk-bg2);
   border: 1px solid var(--nk-border);
-  border-radius: 12px;
+  border-radius: var(--nk-radius-lg);
   padding: 16px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--nk-shadow-lg);
 }
 
 /* ── Markdown ──────────────────────────────────────────────────────────────── */
@@ -1522,7 +1575,7 @@ body {
 }
 .markdown-body p {
   margin: 7px 0;
-  color: #d4d4d4;
+  color: var(--nk-text);
 }
 .markdown-body ul,
 .markdown-body ol {
@@ -1531,11 +1584,11 @@ body {
 }
 .markdown-body li {
   margin: 3px 0;
-  color: #d4d4d4;
+  color: var(--nk-text);
 }
 .markdown-body code {
-  background: #242731;
-  border-radius: 4px;
+  background: var(--nk-surface);
+  border-radius: 3px;
   padding: 1px 5px;
   font-family: var(--vscode-editor-font-family, monospace);
   font-size: 11px;
@@ -1547,8 +1600,8 @@ body {
   padding: 0 6px;
   margin: 0 1px;
   border-radius: 999px;
-  border: 1px solid rgba(110, 125, 144, 0.28);
-  background: rgba(110, 125, 144, 0.09);
+  border: 1px solid var(--nk-border);
+  background: var(--nk-surface);
   color: #dfe6ee;
   font-family: "Cambria Math", "STIX Two Math", Georgia, serif;
   font-size: 0.97em;
@@ -1558,9 +1611,9 @@ body {
 .nk-math-block {
   margin: 10px 0;
   padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(110, 125, 144, 0.22);
-  background: rgba(37, 39, 41, 0.92);
+  border-radius: var(--nk-radius-md);
+  border: 1px solid var(--nk-border);
+  background: var(--nk-bg2);
   overflow-x: auto;
 }
 .nk-math-block-text {
@@ -1573,9 +1626,9 @@ body {
   word-break: break-word;
 }
 .markdown-body pre {
-  background: #13161d;
-  border: 1px solid #2c3340;
-  border-radius: 8px;
+  background: var(--nk-bg);
+  border: 1px solid var(--nk-border);
+  border-radius: var(--nk-radius-sm);
   padding: 10px 12px;
   overflow-x: auto;
   margin: 9px 0;
@@ -1588,20 +1641,21 @@ body {
   white-space: pre;
 }
 .markdown-body a {
-  color: #ccd7e4;
-  text-decoration: underline;
+  color: var(--nk-accent);
+  text-decoration: none;
 }
 .markdown-body a:hover {
-  color: #eef3f9;
+  color: var(--nk-accent2);
+  text-decoration: underline;
 }
 .markdown-body blockquote {
-  border-left: 3px solid #344258;
+  border-left: 3px solid var(--nk-accent);
   margin: 8px 0;
   padding: 5px 12px;
-  color: #9fb0c7;
+  color: var(--nk-muted);
   font-style: normal;
-  background: rgba(52, 66, 88, 0.18);
-  border-radius: 0 6px 6px 0;
+  background: var(--nk-accent-glow);
+  border-radius: 0 var(--nk-radius-sm) var(--nk-radius-sm) 0;
 }
 .markdown-body hr {
   border: none;
@@ -1617,7 +1671,7 @@ body {
   overflow-x: auto;
 }
 .markdown-body thead {
-  background: var(--nk-bg3);
+  background: var(--nk-surface);
 }
 .markdown-body th,
 .markdown-body td {
@@ -1655,7 +1709,7 @@ body {
   animation: pulse 1.5s ease-in-out infinite;
 }
 
-/* ── Token ring with label ──────────────────────────────────────────────────── */
+/* ── Token ring ──────────────────────────────────────────────────────────────── */
 .nk-token-ring-wrap {
   display: inline-flex;
   align-items: center;
@@ -1665,12 +1719,12 @@ body {
   padding: 0 8px;
   border-radius: 999px;
   border: 1px solid var(--nk-border);
-  background: var(--nk-bg3);
+  background: var(--nk-surface);
 }
 
 .nk-token-ring-label {
   font-size: 10px;
-  color: #7f8aa0;
+  color: var(--nk-muted);
   letter-spacing: 0.01em;
 }
 
@@ -1713,8 +1767,8 @@ body {
 /* ── Details / debug ──────────────────────────────────────────────────────── */
 .nk-details-block {
   background: var(--nk-bg2);
-  border: 1px solid var(--nk-border2);
-  border-radius: 8px;
+  border: 1px solid var(--nk-border);
+  border-radius: var(--nk-radius-sm);
   padding: 6px 10px;
   color: var(--nk-muted);
   font-size: 11px;
@@ -1749,22 +1803,20 @@ body {
   flex-direction: column;
   gap: 1px;
   text-align: left;
-  padding: 6px 8px;
+  padding: 8px 10px;
   border: 1px solid var(--nk-border);
-  border-radius: 6px;
-  background: var(--nk-bg3);
+  border-radius: var(--nk-radius-sm);
+  background: var(--nk-surface);
   cursor: pointer;
-  transition:
-    border-color 0.15s,
-    background 0.15s;
+  transition: all 0.15s ease;
 }
 .nk-permission-option:hover {
-  border-color: #555;
-  background: var(--nk-bg2);
+  border-color: var(--nk-border2);
+  background: var(--nk-bg3);
 }
 .nk-permission-option--active {
   border-color: var(--nk-accent);
-  background: rgba(110, 125, 144, 0.08);
+  background: var(--nk-accent-glow);
 }
 .nk-permission-option-title {
   font-size: 11px;
@@ -1797,13 +1849,13 @@ body {
 .nk-mcp-meta {
   margin: 6px 0 0;
   font-size: 10px;
-  color: #8b9ab0;
+  color: var(--nk-muted);
 }
 
 .nk-mcp-empty {
   margin: 8px 0 0;
   font-size: 11px;
-  color: #8b8b9a;
+  color: var(--nk-muted);
 }
 
 .nk-mcp-input {
@@ -1812,10 +1864,10 @@ body {
   min-height: 60px;
   max-height: 140px;
   resize: vertical;
-  background: #25262d;
-  border: 1px solid #3a3a3e;
-  border-radius: 6px;
-  color: #d5d7de;
+  background: var(--nk-surface);
+  border: 1px solid var(--nk-border);
+  border-radius: var(--nk-radius-sm);
+  color: var(--nk-text);
   padding: 7px 9px;
   font-size: 12px;
   line-height: 1.4;
@@ -1823,7 +1875,7 @@ body {
 }
 
 .nk-mcp-input:focus {
-  border-color: #0284c7;
+  border-color: var(--nk-accent);
 }
 
 .nk-mcp-result {
@@ -1836,7 +1888,7 @@ body {
 .nk-mcp-result-meta {
   margin: 0;
   font-size: 10px;
-  color: #8da2bf;
+  color: var(--nk-muted);
 }
 
 @media (max-width: 720px) {

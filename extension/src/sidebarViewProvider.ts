@@ -1,5 +1,5 @@
 import path from "path";
-import { randomUUID } from "crypto";
+import { randomBytes, randomUUID } from "crypto";
 import * as vscode from "vscode";
 import {
   AgentMode,
@@ -1261,7 +1261,6 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
   }
 
   private createNonce(): string {
-    const { randomBytes } = require("crypto") as typeof import("crypto");
     return randomBytes(16).toString("base64");
   }
 }

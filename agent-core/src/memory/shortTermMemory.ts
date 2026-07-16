@@ -1,7 +1,10 @@
 import { ChatMessage } from "../types";
 
+const MAX_SESSIONS = 50;
+
 export class ShortTermMemory {
   private readonly sessions = new Map<string, ChatMessage[]>();
+  private readonly accessOrder: string[] = [];
 
   public constructor(private readonly maxMessagesPerSession = 40) {}
 
@@ -14,13 +17,38 @@ export class ShortTermMemory {
     }
 
     this.sessions.set(sessionId, existing);
+    this.touchSession(sessionId);
+
+    if (this.sessions.size > MAX_SESSIONS) {
+      this.evictOldest();
+    }
   }
 
   public getSession(sessionId: string): ChatMessage[] {
+    this.touchSession(sessionId);
     return [...(this.sessions.get(sessionId) ?? [])];
   }
 
   public clearSession(sessionId: string): void {
     this.sessions.delete(sessionId);
+    const idx = this.accessOrder.indexOf(sessionId);
+    if (idx !== -1) {
+      this.accessOrder.splice(idx, 1);
+    }
+  }
+
+  private touchSession(sessionId: string): void {
+    const idx = this.accessOrder.indexOf(sessionId);
+    if (idx !== -1) {
+      this.accessOrder.splice(idx, 1);
+    }
+    this.accessOrder.push(sessionId);
+  }
+
+  private evictOldest(): void {
+    while (this.sessions.size > MAX_SESSIONS && this.accessOrder.length > 0) {
+      const oldest = this.accessOrder.shift()!;
+      this.sessions.delete(oldest);
+    }
   }
 }

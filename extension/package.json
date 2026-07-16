@@ -82,7 +82,7 @@
         "nexcodeKiboko.defaultModel": {
           "type": "string",
           "default": "qwen2.5-coder:14b",
-          "description": "Default model name to send to the selected provider."
+          "description": "Default model name. For Ollama: qwen2.5-coder:14b. For OpenCode Go: deepseek-v4-flash, mimo-v2.5. For HuggingFace: deepseek-ai/DeepSeek-R1:fastest."
         },
         "nexcodeKiboko.defaultMode": {
           "type": "string",
@@ -105,12 +105,12 @@
         "nexcodeKiboko.openAIBaseUrl": {
           "type": "string",
           "default": "https://opencode.ai/zen/go/v1",
-          "description": "Base URL for OpenAI-compatible API endpoint (OpenCode Go, HuggingFace, OpenAI, etc.)"
+          "description": "Base URL for OpenAI-compatible API. OpenCode Go: https://opencode.ai/zen/go/v1. HuggingFace: https://router.huggingface.co/v1. OpenAI: https://api.openai.com/v1"
         },
         "nexcodeKiboko.openAIApiKey": {
           "type": "string",
           "default": "",
-          "description": "API key for OpenAI-compatible provider (OpenCode Go key from https://opencode.ai/auth)"
+          "description": "API key for the OpenAI-compatible provider. OpenCode Go key: https://opencode.ai/auth. HuggingFace token: https://huggingface.co/settings/tokens"
         },
         "nexcodeKiboko.tavilyApiKey": {
           "type": "string",

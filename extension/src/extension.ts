@@ -30,7 +30,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const picked = await vscode.window.showInputBox({
         title: "NEXCODE-KIBOKO Model",
         prompt:
-          "Enter model name (e.g. qwen2.5-coder:14b, deepseek-v4-pro, minimax-m3)",
+          "Enter model name. Ollama: qwen2.5-coder:14b. OpenCode Go: deepseek-v4-flash, mimo-v2.5. HuggingFace: deepseek-ai/DeepSeek-R1:fastest",
         value: currentModel,
         ignoreFocusOut: true,
       });

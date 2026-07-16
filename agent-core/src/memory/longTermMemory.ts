@@ -2,6 +2,8 @@ import fs from "fs/promises";
 import path from "path";
 import { scoreKeywordOverlap } from "../utils/text";
 
+const MAX_ENTRIES = 2000;
+
 export interface LongTermMemoryEntry {
   id: string;
   timestamp: string;
@@ -44,6 +46,23 @@ export class LongTermMemoryStore {
       if (this.cache) {
         this.cache.push(entry);
         this.cacheMtimeMs = Date.now();
+
+        if (this.cache.length > MAX_ENTRIES) {
+          this.cache.sort(
+            (a, b) =>
+              new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+          );
+          this.cache = this.cache.slice(this.cache.length - MAX_ENTRIES);
+          const recovered = this.cache
+            .map((e) => JSON.stringify(e))
+            .join("\n");
+          await fs.writeFile(
+            this.filePath,
+            `${recovered}${recovered ? "\n" : ""}`,
+            "utf8",
+          );
+          this.cacheMtimeMs = Date.now();
+        }
       }
     });
 

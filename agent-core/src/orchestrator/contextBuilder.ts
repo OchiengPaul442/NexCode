@@ -51,13 +51,9 @@ export async function buildWorkspaceContext(
     if (absoluteActivePath) {
       try {
         const fileContent = await fs.readFile(absoluteActivePath, "utf8");
-        const snippet = clampText(
-          request.selectedText && request.selectedText.trim().length > 0
-            ? request.selectedText.trim()
-            : fileContent,
-          MAX_ACTIVE_SNIPPET_CHARS,
-          "Active snippet trimmed",
-        );
+        const snippet = request.selectedText && request.selectedText.trim().length > 0
+          ? clampText(request.selectedText.trim(), MAX_ACTIVE_SNIPPET_CHARS, "Selected text trimmed")
+          : extractRelevantSnippet(fileContent, request.prompt, MAX_ACTIVE_SNIPPET_CHARS);
 
         sections.push(
           `Active file: ${path.relative(workspaceRoot, absoluteActivePath).replace(/\\/g, "/")}`,
@@ -95,10 +91,13 @@ export async function buildWorkspaceContext(
         absoluteReferencedPath,
         "utf8",
       );
-      sections.push(`Referenced file: ${referencedRelativePath}`);
-      sections.push(
-        `Referenced snippet:\n${clampText(referencedContent, MAX_REFERENCED_FILE_SNIPPET_CHARS, "Referenced snippet trimmed")}`,
+      const snippet = extractRelevantSnippet(
+        referencedContent,
+        request.prompt,
+        MAX_REFERENCED_FILE_SNIPPET_CHARS,
       );
+      sections.push(`Referenced file: ${referencedRelativePath}`);
+      sections.push(`Referenced snippet:\n${snippet}`);
     } catch {
       // Ignore referenced file read failures.
     }
@@ -109,6 +108,93 @@ export async function buildWorkspaceContext(
   }
 
   return sections.join("\n\n");
+}
+
+function extractRelevantSnippet(
+  content: string,
+  query: string,
+  maxChars: number,
+): string {
+  if (content.length <= maxChars) {
+    return content;
+  }
+
+  const keywords = query
+    .toLowerCase()
+    .replace(/[^a-z0-9_\s-]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 2);
+
+  if (keywords.length === 0) {
+    return clampText(content, maxChars, "File content trimmed");
+  }
+
+  const lines = content.split("\n");
+  const scoredLines: Array<{ index: number; score: number }> = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const lower = lines[i].toLowerCase();
+    let score = 0;
+    for (const kw of keywords) {
+      if (lower.includes(kw)) {
+        score += 1;
+      }
+    }
+    if (score > 0) {
+      scoredLines.push({ index: i, score });
+    }
+  }
+
+  if (scoredLines.length === 0) {
+    return clampText(content, maxChars, "File content trimmed");
+  }
+
+  scoredLines.sort((a, b) => b.score - a.score);
+
+  const selectedIndices = new Set<number>();
+  let totalChars = 0;
+
+  for (const { index } of scoredLines) {
+    if (totalChars >= maxChars) {
+      break;
+    }
+
+    const contextStart = Math.max(0, index - 5);
+    const contextEnd = Math.min(lines.length, index + 10);
+
+    for (let i = contextStart; i < contextEnd; i++) {
+      if (selectedIndices.has(i)) {
+        continue;
+      }
+      if (totalChars + lines[i].length + 1 > maxChars) {
+        break;
+      }
+      selectedIndices.add(i);
+      totalChars += lines[i].length + 1;
+    }
+  }
+
+  if (selectedIndices.size === 0) {
+    return clampText(content, maxChars, "File content trimmed");
+  }
+
+  const sortedIndices = [...selectedIndices].sort((a, b) => a - b);
+  const selectedLines: string[] = [];
+  let prevIndex = -1;
+
+  for (const idx of sortedIndices) {
+    if (prevIndex !== -1 && idx > prevIndex + 1) {
+      selectedLines.push(`... (${idx - prevIndex - 1} lines omitted) ...`);
+    }
+    selectedLines.push(lines[idx]);
+    prevIndex = idx;
+  }
+
+  const result = selectedLines.join("\n");
+  if (result.length < content.length) {
+    return `${result}\n\n[Extracted relevant sections from ${lines.length} lines]`;
+  }
+  return result;
 }
 
 async function getWorkspaceTopLevelEntries(

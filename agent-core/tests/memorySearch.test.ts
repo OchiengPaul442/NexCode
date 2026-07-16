@@ -74,6 +74,97 @@ describe("memory relevance safeguards", () => {
     expect(results).toHaveLength(1);
     expect(results[0].text).toContain("Prompt: Explain retries");
     expect(results[0].text).toContain("Response excerpt:");
-    expect(results[0].text.length).toBeLessThan(420);
+    expect(results[0].text.length).toBeLessThan(500);
+  });
+
+  it("stores rich metadata in remembered interactions", async () => {
+    const memoryDir = await createTempDir();
+    const manager = new MemoryManager(memoryDir);
+
+    await manager.rememberInteraction(
+      "Fix the bug in auth.ts",
+      "Fixed the authentication timeout issue",
+      ["bugfix"],
+      {
+        mode: "coder",
+        provider: "ollama",
+        model: "qwen2.5-coder:14b",
+        filesEdited: ["src/auth.ts"],
+        toolUsed: ["terminal npm test"],
+      },
+    );
+
+    const results = await manager.longTerm.search("Fix the bug in auth.ts", 5);
+    expect(results).toHaveLength(1);
+    expect(results[0].text).toContain("Files edited: src/auth.ts");
+    expect(results[0].text).toContain("Tools used: terminal npm test");
+    expect(results[0].tags).toContain("coder");
+  });
+
+  it("returns session context summary", async () => {
+    const memoryDir = await createTempDir();
+    const manager = new MemoryManager(memoryDir);
+    const sessionId = "test-session";
+
+    manager.appendSessionMessage(sessionId, {
+      role: "user",
+      content: "Hello, how are you?",
+    });
+    manager.appendSessionMessage(sessionId, {
+      role: "assistant",
+      content: "I'm doing well, thanks!",
+    });
+
+    const context = manager.getSessionContext(sessionId);
+    expect(context).toContain("User: Hello, how are you?");
+    expect(context).toContain("Assistant: I'm doing well, thanks!");
+  });
+
+  it("applies recency bonus to recent entries", async () => {
+    const memoryDir = await createTempDir();
+    const store = new LongTermMemoryStore(memoryDir);
+
+    await store.add({
+      id: "old",
+      timestamp: new Date(Date.now() - 30 * 86_400_000).toISOString(),
+      type: "interaction",
+      text: "Prompt: implement retry logic for HTTP requests",
+      tags: ["networking"],
+    });
+
+    await store.add({
+      id: "recent",
+      timestamp: new Date().toISOString(),
+      type: "interaction",
+      text: "Prompt: implement retry logic for HTTP requests",
+      tags: ["networking"],
+    });
+
+    const results = await store.search(
+      "implement retry logic for HTTP requests",
+      5,
+    );
+    expect(results.length).toBeGreaterThanOrEqual(1);
+    expect(results[0].id).toBe("recent");
+  });
+
+  it("loads persisted sessions on init", async () => {
+    const memoryDir = await createTempDir();
+    const manager1 = new MemoryManager(memoryDir);
+    const sessionId = "persist-test";
+
+    manager1.appendSessionMessage(sessionId, {
+      role: "user",
+      content: "Test message",
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    const manager2 = new MemoryManager(memoryDir);
+    await manager2.initialize();
+
+    const messages = manager2.getSessionMessages(sessionId);
+    expect(messages).toHaveLength(1);
+    expect(messages[0].content).toBe("Test message");
   });
 });

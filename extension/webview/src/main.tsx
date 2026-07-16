@@ -9,7 +9,6 @@ import { createRoot } from "react-dom/client";
 import { AnimatePresence, motion } from "framer-motion";
 import { create } from "zustand";
 import {
-  MessageSquarePlus,
   PanelLeft,
   Settings,
   Plus,
@@ -29,6 +28,8 @@ import {
   Cpu,
   Globe,
   Code2,
+  MessageSquare,
+  Compass,
   GitBranch,
   Search,
   Terminal,
@@ -38,6 +39,10 @@ import {
   Pencil,
   RotateCcw,
   ListTodo,
+  Edit,
+  Monitor,
+  Radio,
+  Shield,
 } from "lucide-react";
 import { StreamingMessage } from "./components/StreamingMessage";
 
@@ -159,6 +164,9 @@ interface ToolbarSelectOption {
 }
 
 interface SidebarSettings {
+  provider?: ProviderId;
+  model?: string;
+  autoApprove: boolean;
   temperature: number;
   autoApplyChanges: boolean;
   requireTerminalApproval: boolean;
@@ -204,6 +212,7 @@ interface StoreState {
   setAttachments: (attachments: AttachmentChip[]) => void;
   setSettingsPanelOpen: (open: boolean) => void;
   setSettings: (update: Partial<SidebarSettings>) => void;
+  updateSetting: (key: keyof SidebarSettings, value: unknown) => void;
   newSession: () => void;
   deleteSession: (sessionId: string) => void;
   setActiveSession: (sessionId: string) => void;
@@ -263,6 +272,7 @@ interface StoreState {
   ) => void;
   setProviderStatus: (status: ProviderStatus) => void;
   setModelSuggestions: (provider: ProviderId, models: string[]) => void;
+  updateSetting: (key: string, value: unknown) => void;
   setDraft: (sessionId: string, value: string) => void;
 }
 
@@ -369,11 +379,11 @@ function mapAgentModeToUi(mode: AgentMode): UiMode {
 function mapUiModeToAgent(mode: UiMode): AgentMode {
   switch (mode) {
     case "agent":
-      return "auto";
+      return "coder";
     case "plan":
       return "planner";
     case "ask":
-      return "coder";
+      return "auto";
     default:
       return "auto";
   }
@@ -466,6 +476,20 @@ function formatRelativeTime(timestamp: number): string {
   return `${days}d ago`;
 }
 
+function getTimeAgo(timestamp: number): string {
+  const diff = Date.now() - timestamp;
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  const days = Math.floor(diff / 86400000);
+  const weeks = Math.floor(diff / 604800000);
+
+  if (minutes < 1) return "now";
+  if (minutes < 60) return `${minutes}m`;
+  if (hours < 24) return `${hours}h`;
+  if (days < 7) return `${days}d`;
+  return `${weeks}w`;
+}
+
 function isRunningActivityStatus(status: ActivityStatus): boolean {
   return status === "in-progress" || status === "pending";
 }
@@ -510,203 +534,53 @@ function activityStatusClass(status: ActivityStatus): string {
   }
 }
 
-function ActivityPanel({
+function ActivityText({
   todos,
   files,
-  note,
   streaming,
 }: {
   todos: ActivityTodo[];
   files: ActivityFile[];
-  note?: string;
   streaming: boolean;
 }) {
-  const [collapsed, setCollapsed] = useState(false);
-  const [runningOnly, setRunningOnly] = useState(false);
+  if (todos.length === 0 && files.length === 0) return null;
+  if (!streaming) return null;
 
-  const totalItems = todos.length + files.length;
-  const runningCount =
-    todos.filter((todo) => isRunningActivityStatus(todo.status)).length +
-    files.filter((file) => isRunningActivityStatus(file.status)).length;
+  const running =
+    todos.filter((t) => t.status === "in-progress").length +
+    files.filter((f) => f.status === "in-progress").length;
 
-  const visibleTodos = runningOnly
-    ? todos.filter((todo) => isRunningActivityStatus(todo.status))
-    : todos;
-  const visibleFiles = runningOnly
-    ? files.filter((file) => isRunningActivityStatus(file.status))
-    : files;
-
-  if (totalItems === 0) {
-    return null;
-  }
-
-  const allDone = runningCount === 0 && !streaming;
+  if (running === 0) return null;
 
   return (
-    <div className="nk-activity-panel">
-      <div className="nk-activity-panel-head">
-        <div className="nk-activity-head-label">
-          <ListTodo size={10} />
-          <span>LIVE ACTIVITY</span>
-        </div>
-        <div className="nk-activity-head-controls">
-          <div className="nk-activity-filter-group">
-            <button
-              className={`nk-activity-toggle ${!runningOnly ? "nk-activity-toggle--active" : ""}`}
-              onClick={() => setRunningOnly(false)}
-              type="button"
-            >
-              All
-            </button>
-            <button
-              className={`nk-activity-toggle ${runningOnly ? "nk-activity-toggle--active" : ""}`}
-              onClick={() => setRunningOnly(true)}
-              type="button"
-            >
-              Running
-            </button>
-          </div>
-          <button
-            className="nk-activity-collapse-btn"
-            onClick={() => setCollapsed((value) => !value)}
-            type="button"
-          >
-            {collapsed ? "Expand" : "Collapse"}
-          </button>
-        </div>
-      </div>
-
-      {note && <div className="nk-activity-note">{note}</div>}
-
-      {!note && allDone && (
-        <div className="nk-activity-note" style={{ color: "var(--nk-green)" }}>
-          Response ready
-        </div>
-      )}
-
-      {collapsed ? (
-        <div className="nk-activity-collapsed">
-          {runningCount} running • {totalItems} total
-        </div>
-      ) : (
-        <>
-          {visibleTodos.length > 0 && (
-            <ul className="nk-activity-todos">
-              {visibleTodos.slice(0, 8).map((todo) => (
-                <li key={todo.id} className="nk-activity-item">
-                  <span
-                    className={`nk-activity-status-dot ${activityStatusClass(todo.status)}`}
-                  />
-                  <div className="nk-activity-item-content">
-                    <div className="nk-activity-item-title">{todo.title}</div>
-                    {todo.detail && (
-                      <div className="nk-activity-item-detail">
-                        {todo.detail}
-                      </div>
-                    )}
-                  </div>
-                  <span className={`nk-activity-badge ${activityStatusClass(todo.status)}`}>
-                    {todo.status === "completed"
-                      ? "DONE"
-                      : todo.status === "in-progress"
-                        ? "RUNNING"
-                        : activityStatusLabel(todo.status)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          {visibleFiles.length > 0 && (
-            <ul className="nk-activity-files">
-              {visibleFiles.slice(0, 6).map((file, index) => (
-                <li
-                  key={`${file.path}-${index}`}
-                  className="nk-activity-file-item"
-                  title={file.summary ?? file.path}
-                >
-                  <FileText size={10} className="shrink-0" />
-                  <span className="nk-activity-file-path">{file.path}</span>
-                  <span
-                    className={`nk-activity-file-badge ${activityStatusClass(file.status)}`}
-                  >
-                    {file.status === "completed"
-                      ? "DONE"
-                      : file.status === "in-progress"
-                        ? "RUNNING"
-                        : activityStatusLabel(file.status)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          {visibleTodos.length === 0 && visibleFiles.length === 0 && (
-            <div className="nk-activity-empty">No running tasks right now.</div>
-          )}
-        </>
-      )}
+    <div className="nk-activity-text">
+      <span className="nk-activity-dot" />
+      <span>Working on {running} task{running > 1 ? "s" : ""}...</span>
     </div>
   );
 }
 
-function ProcessPanel({
+function ReasoningIndicator({
   reasoning,
   streaming,
 }: {
   reasoning: string[];
   streaming: boolean;
 }) {
-  const [collapsed, setCollapsed] = useState(false);
-  const steps = reasoning.filter(Boolean).slice(-8);
+  if (reasoning.length === 0) return null;
 
-  if (steps.length === 0 && !streaming) {
-    return null;
+  const latest = reasoning[reasoning.length - 1];
+
+  if (streaming) {
+    return (
+      <div className="nk-reasoning-inline">
+        <span className="nk-reasoning-dots" />
+        <span>{latest}</span>
+      </div>
+    );
   }
 
-  const latest = steps.at(-1) ?? "Working on your request";
-
-  return (
-    <div className="nk-process-panel">
-      <div className="nk-process-head">
-        <div className="nk-process-title">
-          <Cpu size={11} />
-          <span>{streaming ? "EXECUTION TRACE" : "EXECUTION TRACE"}</span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          {streaming && (
-            <span className="nk-process-status nk-process-status--active">
-              <span className="nk-process-spinner" />
-              Running
-            </span>
-          )}
-          <button
-            className="nk-process-toggle"
-            onClick={() => setCollapsed((value) => !value)}
-            type="button"
-          >
-            {collapsed ? "Expand" : "Collapse"}
-          </button>
-        </div>
-      </div>
-
-      <div className="nk-process-current">{latest}</div>
-
-      {!collapsed && steps.length > 1 && (
-        <ol className="nk-process-list">
-          {steps.map((step, index) => (
-            <li
-              key={`${step}-${index}`}
-              className={`nk-process-item ${index === steps.length - 1 ? "nk-process-item--active" : ""}`}
-            >
-              <span className="nk-process-bullet" />
-              <span>{step}</span>
-            </li>
-          ))}
-        </ol>
-      )}
-    </div>
-  );
+  return null;
 }
 
 function ToolbarSelect({
@@ -994,6 +868,32 @@ const useStore = create<StoreState>((set, get) => {
             ? [createSession(defaults)]
             : state.sessions;
 
+        const activeSessionId =
+          state.activeSessionId ?? sessions[0]?.id ?? null;
+
+        const updatedSessions = sessions.map((session) => {
+          if (session.id !== activeSessionId) {
+            return session;
+          }
+
+          const needsUpdate =
+            session.provider !== config.provider ||
+            session.model !== config.model ||
+            session.mode !== mapAgentModeToUi(config.mode);
+
+          if (!needsUpdate) {
+            return session;
+          }
+
+          return {
+            ...session,
+            provider: config.provider,
+            model: config.model,
+            mode: mapAgentModeToUi(config.mode),
+            updatedAt: Date.now(),
+          };
+        });
+
         const settings: SidebarSettings = {
           ...state.settings,
           temperature: config.temperature ?? state.settings.temperature,
@@ -1013,8 +913,8 @@ const useStore = create<StoreState>((set, get) => {
 
         return {
           defaults,
-          sessions,
-          activeSessionId: state.activeSessionId ?? sessions[0].id,
+          sessions: updatedSessions,
+          activeSessionId,
           settings,
         };
       });
@@ -1374,6 +1274,12 @@ const useStore = create<StoreState>((set, get) => {
         },
       }));
     },
+    updateSetting: (key: string, value: unknown) => {
+      vscode.postMessage({ type: "updateSetting", key, value });
+      set((state) => ({
+        settings: { ...state.settings, [key]: value },
+      }));
+    },
     setDraft: (sessionId, value) => {
       set((state) => ({
         drafts: {
@@ -1564,7 +1470,7 @@ function MessageBubble({
         className={`nk-msg-content ${isUser ? "nk-msg-content--user" : "nk-msg-content--bot"}`}
       >
         {!isUser && message.reasoning.length > 0 && (
-          <MemoizedProcessPanel
+          <MemoizedReasoningIndicator
             reasoning={message.reasoning}
             streaming={Boolean(message.streaming || message.thinking)}
           />
@@ -1573,10 +1479,9 @@ function MessageBubble({
         {!isUser &&
           (message.activityTodos.length > 0 ||
             message.activityFiles.length > 0) && (
-            <MemoizedActivityPanel
+            <MemoizedActivityText
               todos={message.activityTodos}
               files={message.activityFiles}
-              note={message.activityNote}
               streaming={message.streaming}
             />
           )}
@@ -1732,492 +1637,25 @@ function MessageBubble({
   );
 }
 
-const MemoizedActivityPanel = React.memo(ActivityPanel);
-const MemoizedProcessPanel = React.memo(ProcessPanel);
+function SubagentIndicator({
+  description,
+  status,
+}: {
+  description: string;
+  status: string;
+}) {
+  return (
+    <div className="nk-subagent-indicator">
+      <span className="nk-subagent-dot" />
+      <span className="nk-subagent-text">{description}</span>
+      <span className="nk-subagent-status">{status}</span>
+    </div>
+  );
+}
+
+const MemoizedActivityText = React.memo(ActivityText);
+const MemoizedReasoningIndicator = React.memo(ReasoningIndicator);
 const MemoizedMessageBubble = React.memo(MessageBubble);
-function SessionsDrawer({
-  sessions,
-  activeSessionId,
-  onSelect,
-  onNew,
-  onDeleteRequest,
-  onClose,
-}: {
-  sessions: Session[];
-  activeSessionId: string | null;
-  onSelect: (id: string) => void;
-  onNew: () => void;
-  onDeleteRequest: (id: string) => void;
-  onClose: () => void;
-}) {
-  return (
-    <motion.div
-      className="nk-drawer-backdrop"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      onClick={onClose}
-    >
-      <motion.aside
-        className="nk-drawer"
-        initial={{ x: -16, opacity: 0 }}
-        animate={{ x: 0, opacity: 1 }}
-        exit={{ x: -16, opacity: 0 }}
-        transition={{ type: "spring", stiffness: 320, damping: 32 }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between px-3 pt-3 pb-2">
-          <span
-            className="text-[11px] font-semibold uppercase tracking-widest"
-            style={{ color: "#6b6b75" }}
-          >
-            Chats
-          </span>
-          <div className="flex items-center gap-1">
-            <button
-              className="nk-icon-btn"
-              title="New chat"
-              onClick={() => {
-                onNew();
-                onClose();
-              }}
-            >
-              <MessageSquarePlus size={15} />
-            </button>
-            <button className="nk-icon-btn" title="Close" onClick={onClose}>
-              <X size={15} />
-            </button>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-auto px-0 pb-0 space-y-0">
-          <AnimatePresence initial={false}>
-            {sessions.map((s) => (
-              <motion.button
-                key={s.id}
-                layout
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                onClick={() => {
-                  onSelect(s.id);
-                  onClose();
-                }}
-                className={`nk-session-item w-full text-left ${s.id === activeSessionId ? "nk-session-item--active" : ""}`}
-              >
-                <div className="flex items-start justify-between gap-1 min-w-0">
-                  <div className="min-w-0 flex-1">
-                    <div
-                      className="text-[12px] font-medium leading-snug line-clamp-2"
-                      style={{ color: "#e2e2e2" }}
-                    >
-                      {s.title}
-                    </div>
-                    <div
-                      className="text-[10px] mt-0.5"
-                      style={{ color: "#6b6b75" }}
-                    >
-                      {formatRelativeTime(s.updatedAt)}
-                    </div>
-                  </div>
-                  <button
-                    className="nk-icon-btn shrink-0 opacity-0 group-hover:opacity-100"
-                    title="Delete"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onDeleteRequest(s.id);
-                    }}
-                  >
-                    <Trash2 size={12} />
-                  </button>
-                </div>
-              </motion.button>
-            ))}
-          </AnimatePresence>
-        </div>
-      </motion.aside>
-    </motion.div>
-  );
-}
-
-// ─── Settings Drawer ──────────────────────────────────────────────────────────
-function SettingsDrawer({
-  activeSession,
-  settings,
-  modelsForProvider,
-  mcpServers,
-  mcpTools,
-  mcpSelectedServer,
-  mcpSelectedTool,
-  mcpInput,
-  mcpInvokeBusy,
-  mcpInvokeResult,
-  onProviderChange,
-  onModelChange,
-  onMcpRefresh,
-  onMcpServerChange,
-  onMcpToolChange,
-  onMcpInputChange,
-  onMcpInvoke,
-  onClose,
-}: {
-  activeSession: Session;
-  settings: SidebarSettings;
-  modelsForProvider: string[];
-  mcpServers: string[];
-  mcpTools: string[];
-  mcpSelectedServer: string;
-  mcpSelectedTool: string;
-  mcpInput: string;
-  mcpInvokeBusy: boolean;
-  mcpInvokeResult: McpQuickResult | null;
-  onProviderChange: (p: ProviderId) => void;
-  onModelChange: (m: string) => void;
-  onMcpRefresh: () => void;
-  onMcpServerChange: (server: string) => void;
-  onMcpToolChange: (tool: string) => void;
-  onMcpInputChange: (input: string) => void;
-  onMcpInvoke: () => void;
-  onClose: () => void;
-}) {
-  return (
-    <motion.div
-      className="nk-drawer-backdrop nk-drawer-backdrop--right"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      onClick={onClose}
-    >
-      <motion.aside
-        className="nk-drawer nk-drawer--right"
-        initial={{ x: 16, opacity: 0 }}
-        animate={{ x: 0, opacity: 1 }}
-        exit={{ x: 16, opacity: 0 }}
-        transition={{ type: "spring", stiffness: 320, damping: 32 }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between px-3 pt-3 pb-2">
-          <span
-            className="text-[11px] font-semibold uppercase tracking-widest"
-            style={{ color: "#6b6b75" }}
-          >
-            Settings
-          </span>
-          <button className="nk-icon-btn" onClick={onClose}>
-            <X size={15} />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-auto px-3 pb-3 space-y-3">
-          {/* Provider */}
-          <div>
-            <label className="nk-label">Provider</label>
-            <select
-              className="nk-select mt-1"
-              value={activeSession.provider}
-              onChange={(e) => onProviderChange(e.target.value as ProviderId)}
-            >
-              <option value="ollama">Ollama</option>
-              <option value="openai-compatible">OpenAI compatible</option>
-            </select>
-          </div>
-
-          {/* Model */}
-          <div>
-            <label className="nk-label">Model</label>
-            <select
-              className="nk-select mt-1"
-              value={activeSession.model}
-              onChange={(e) => onModelChange(e.target.value)}
-            >
-              {modelsForProvider.length === 0 ? (
-                <option value={activeSession.model}>
-                  {activeSession.model}
-                </option>
-              ) : (
-                modelsForProvider.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))
-              )}
-            </select>
-            <input
-              className="nk-input mt-1"
-              placeholder="Or type model name…"
-              value={activeSession.model}
-              onChange={(e) => onModelChange(e.target.value)}
-            />
-          </div>
-
-          {/* Temperature */}
-          <div>
-            <label className="nk-label">
-              Temperature{" "}
-              <span style={{ color: "#6b6b75" }}>
-                ({settings.temperature.toFixed(2)})
-              </span>
-            </label>
-            <input
-              type="range"
-              min={0}
-              max={2}
-              step={0.05}
-              value={settings.temperature}
-              className="mt-2 w-full nk-range"
-              onChange={(e) =>
-                useStore
-                  .getState()
-                  .setSettings({ temperature: parseFloat(e.target.value) })
-              }
-            />
-            <div
-              className="flex justify-between text-[10px] mt-0.5"
-              style={{ color: "#6b6b75" }}
-            >
-              <span>Precise</span>
-              <span>Creative</span>
-            </div>
-          </div>
-
-          {/* Toggles */}
-          {(
-            [
-              ["Show debug panel", "showDebugPanel"],
-              ["Enable web search tool", "enableWebSearch"],
-              ["Auto-apply changes", "autoApplyChanges"],
-              ["Require terminal approval", "requireTerminalApproval"],
-            ] as [string, keyof SidebarSettings][]
-          ).map(([label, key]) => (
-            <label key={key} className="nk-toggle-row">
-              <span className="text-[12px]" style={{ color: "#cccccc" }}>
-                {label}
-              </span>
-              <div
-                className={`nk-toggle ${settings[key] ? "nk-toggle--on" : ""}`}
-                onClick={() =>
-                  useStore.getState().setSettings({
-                    [key]: !settings[key],
-                  } as Partial<SidebarSettings>)
-                }
-              >
-                <div className="nk-toggle-thumb" />
-              </div>
-            </label>
-          ))}
-
-          {/* Permission Level */}
-          <div className="nk-permission-section">
-            <label className="nk-label">Permissions</label>
-            <div className="nk-permission-options">
-              {(
-                [
-                  {
-                    value: "default" as PermissionLevel,
-                    title: "Default Approvals",
-                    desc: "Copilot uses your configured settings",
-                  },
-                  {
-                    value: "bypass" as PermissionLevel,
-                    title: "Bypass Approvals",
-                    desc: "All tool calls are auto-approved",
-                  },
-                  {
-                    value: "autopilot" as PermissionLevel,
-                    title: "Autopilot (Preview)",
-                    desc: "Autonomously iterates from start to finish",
-                  },
-                ] as const
-              ).map((opt) => (
-                <button
-                  key={opt.value}
-                  className={`nk-permission-option ${settings.permissionLevel === opt.value ? "nk-permission-option--active" : ""}`}
-                  onClick={() =>
-                    useStore
-                      .getState()
-                      .setSettings({ permissionLevel: opt.value })
-                  }
-                >
-                  <span className="nk-permission-option-title">
-                    {opt.title}
-                  </span>
-                  <span className="nk-permission-option-desc">{opt.desc}</span>
-                </button>
-              ))}
-            </div>
-            <a
-              className="nk-permission-learn-more"
-              href="https://code.visualstudio.com/docs/copilot/agents/agent-tools#_permission-levels"
-              title="Learn more about permissions"
-            >
-              Learn more about permissions
-            </a>
-          </div>
-
-          <div className="nk-info-box">
-            <div className="nk-mcp-header">
-              <p
-                className="text-[11px] font-semibold"
-                style={{ color: "#cccccc", margin: 0 }}
-              >
-                MCP management
-              </p>
-              <button
-                className="nk-btn-ghost text-[10px] px-2 py-1"
-                onClick={onMcpRefresh}
-                type="button"
-              >
-                Refresh
-              </button>
-            </div>
-
-            <p className="nk-mcp-meta">
-              {mcpServers.length} registered server
-              {mcpServers.length === 1 ? "" : "s"}
-            </p>
-
-            {mcpServers.length === 0 ? (
-              <p className="nk-mcp-empty">No MCP adapters registered yet.</p>
-            ) : (
-              <>
-                <label className="nk-label mt-2">Server</label>
-                <select
-                  className="nk-select mt-1"
-                  value={mcpSelectedServer}
-                  onChange={(event) => onMcpServerChange(event.target.value)}
-                >
-                  {mcpServers.map((server) => (
-                    <option key={server} value={server}>
-                      {server}
-                    </option>
-                  ))}
-                </select>
-
-                <label className="nk-label mt-2">Tool</label>
-                <select
-                  className="nk-select mt-1"
-                  value={mcpSelectedTool}
-                  onChange={(event) => onMcpToolChange(event.target.value)}
-                  disabled={mcpTools.length === 0}
-                >
-                  {mcpTools.length === 0 ? (
-                    <option value="">No tools available</option>
-                  ) : (
-                    mcpTools.map((tool) => (
-                      <option key={tool} value={tool}>
-                        {tool}
-                      </option>
-                    ))
-                  )}
-                </select>
-
-                <label className="nk-label mt-2">Quick input</label>
-                <textarea
-                  className="nk-mcp-input"
-                  value={mcpInput}
-                  onChange={(event) => onMcpInputChange(event.target.value)}
-                  placeholder="Input passed to the selected MCP tool"
-                  rows={3}
-                />
-
-                <button
-                  className="nk-btn-accent w-full mt-2"
-                  onClick={onMcpInvoke}
-                  disabled={
-                    mcpInvokeBusy || !mcpSelectedServer || !mcpSelectedTool
-                  }
-                  type="button"
-                >
-                  {mcpInvokeBusy ? "Invoking..." : "Quick invoke"}
-                </button>
-
-                {mcpInvokeResult && (
-                  <div className="nk-mcp-result">
-                    <p className="nk-mcp-result-meta">
-                      {mcpInvokeResult.ok ? "Success" : "Failed"} •{" "}
-                      {mcpInvokeResult.server}:{mcpInvokeResult.tool} •{" "}
-                      {mcpInvokeResult.latencyMs}ms
-                    </p>
-                    <pre className="nk-code-block">
-                      {mcpInvokeResult.output}
-                    </pre>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-
-          {/* Open in tab */}
-          <button
-            className="nk-btn-ghost w-full flex items-center justify-center gap-2 mt-2"
-            onClick={() => vscode.postMessage({ type: "openInTab" })}
-          >
-            <ExternalLink size={13} />
-            <span className="text-[12px]">Open in editor tab</span>
-          </button>
-
-          {/* Slash commands reference */}
-          <div className="nk-info-box">
-            <p
-              className="text-[11px] font-semibold mb-1"
-              style={{ color: "#cccccc" }}
-            >
-              Slash commands
-            </p>
-            {[
-              ["/plan", "Generate implementation plan"],
-              ["/code", "Write clean code"],
-              ["/fix", "Diagnose & fix a bug"],
-              ["/test", "Write test cases"],
-              ["/explain", "Explain selected code"],
-            ].map(([cmd, desc]) => (
-              <div key={cmd} className="flex gap-2 text-[11px] leading-relaxed">
-                <code className="nk-code-inline shrink-0">{cmd}</code>
-                <span style={{ color: "#8b8b9a" }}>{desc}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* Modes reference */}
-          <div className="nk-info-box">
-            <p
-              className="text-[11px] font-semibold mb-1"
-              style={{ color: "#cccccc" }}
-            >
-              Agent modes
-            </p>
-            {[
-              [
-                "Agent",
-                "Full autonomous mode – plans, codes, reviews, and fixes. Uses all sub-agents to complete tasks end-to-end.",
-              ],
-              [
-                "Plan",
-                "Planning only – decomposes tasks into steps with dependencies and acceptance criteria. No code execution.",
-              ],
-              [
-                "Ask",
-                "Q&A mode – conversational answers for code and architecture questions. Keeps responses concise and practical.",
-              ],
-            ].map(([name, desc]) => (
-              <div key={name} className="mb-1.5">
-                <span
-                  className="text-[11px] font-medium"
-                  style={{ color: "#e2e2e2" }}
-                >
-                  {name}
-                </span>
-                <p className="text-[10px] mt-0.5" style={{ color: "#8b8b9a" }}>
-                  {desc}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </motion.aside>
-    </motion.div>
-  );
-}
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 function App() {
@@ -2226,12 +1664,10 @@ function App() {
   const drafts = useStore((s) => s.drafts);
   const attachments = useStore((s) => s.attachments);
   const isBusy = useStore((s) => s.isBusy);
-  const settingsPanelOpen = useStore((s) => s.settingsPanelOpen);
   const settings = useStore((s) => s.settings);
   const providerStatus = useStore((s) => s.providerStatus);
   const modelSuggestions = useStore((s) => s.modelSuggestions);
 
-  const [sessionsOpen, setSessionsOpen] = useState(false);
   const [deleteTargetSessionId, setDeleteTargetSessionId] = useState<
     string | null
   >(null);
@@ -2256,6 +1692,13 @@ function App() {
     kind: "error" | "info";
     text: string;
   } | null>(null);
+  const [subagentInfo, setSubagentInfo] = useState<{
+    description: string;
+    status: string;
+  } | null>(null);
+  const [settingsDropdownOpen, setSettingsDropdownOpen] = useState(false);
+  const [modePopupOpen, setModePopupOpen] = useState(false);
+  const modePopupRef = useRef<HTMLDivElement | null>(null);
 
   // Fixed DnD: counter-based to avoid nested element false leaves
   const dragCounterRef = useRef(0);
@@ -2263,6 +1706,7 @@ function App() {
 
   const chatScrollerRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const settingsDropdownRef = useRef<HTMLDivElement | null>(null);
   const mcpSelectedServerRef = useRef("");
   const pendingRef = useRef<{ sessionId: string; messageId: string } | null>(
     null,
@@ -2677,13 +2121,12 @@ function App() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        if (settingsPanelOpen) useStore.getState().setSettingsPanelOpen(false);
-        if (sessionsOpen) setSessionsOpen(false);
+        // Escape handling is done per-component
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [settingsPanelOpen, sessionsOpen]);
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -2721,6 +2164,45 @@ function App() {
       window.clearTimeout(timer);
     };
   }, [bannerNotice]);
+
+  useEffect(() => {
+    if (!settingsDropdownOpen) {
+      return;
+    }
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        settingsDropdownRef.current &&
+        !settingsDropdownRef.current.contains(event.target as Node)
+      ) {
+        setSettingsDropdownOpen(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setSettingsDropdownOpen(false);
+      }
+    };
+
+    window.addEventListener("pointerdown", handleClickOutside);
+    window.addEventListener("keydown", handleEscape);
+    return () => {
+      window.removeEventListener("pointerdown", handleClickOutside);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [settingsDropdownOpen]);
+
+  useEffect(() => {
+    if (!modePopupOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (modePopupRef.current && !modePopupRef.current.contains(e.target as Node)) {
+        setModePopupOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [modePopupOpen]);
 
   // Token flush machinery
   useEffect(() => {
@@ -3133,6 +2615,52 @@ function App() {
         case "cleared":
           useStore.getState().clearActiveSession();
           return;
+        case "subagentSpawned": {
+          const cur = pendingRef.current;
+          if (cur) {
+            const taskId = String(payload.taskId ?? "");
+            const description = String(payload.description ?? "");
+            debugRef.current.push(`Subagent spawned: ${description} (${taskId})`);
+            reasoningRef.current = [
+              ...reasoningRef.current.slice(-8),
+              `Subagent spawned: ${description}`,
+            ];
+            useStore
+              .getState()
+              .updateAssistantTrace(
+                cur.sessionId,
+                cur.messageId,
+                [...reasoningRef.current],
+                [...debugRef.current],
+              );
+          }
+          setSubagentInfo({
+            description: String(payload.description ?? "Working..."),
+            status: "Running",
+          });
+          return;
+        }
+        case "subagentCompleted": {
+          const cur = pendingRef.current;
+          if (cur) {
+            const taskId = String(payload.taskId ?? "");
+            debugRef.current.push(`Subagent completed: ${taskId}`);
+            reasoningRef.current = [
+              ...reasoningRef.current.slice(-8),
+              `Subagent completed: ${taskId}`,
+            ];
+            useStore
+              .getState()
+              .updateAssistantTrace(
+                cur.sessionId,
+                cur.messageId,
+                [...reasoningRef.current],
+                [...debugRef.current],
+              );
+          }
+          setSubagentInfo(null);
+          return;
+        }
         default:
           return;
       }
@@ -3253,6 +2781,20 @@ function App() {
     useStore.getState().updateActiveSession({ mode });
   }
 
+  const modeDescriptions: Record<UiMode, string> = {
+    agent: "Build - Full coding assistant",
+    ask: "Ask - Quick questions",
+    plan: "Plan - Architecture planning",
+  };
+
+  const cycleMode = useCallback(() => {
+    const modes: UiMode[] = ["agent", "ask", "plan"];
+    const currentMode = activeSession?.mode ?? "agent";
+    const currentIndex = modes.indexOf(currentMode);
+    const nextMode = modes[(currentIndex + 1) % modes.length];
+    onModeChange(nextMode);
+  }, [activeSession?.mode]);
+
   if (!activeSession) {
     return <div className="nk-empty">Initializing…</div>;
   }
@@ -3261,72 +2803,107 @@ function App() {
 
   return (
     <div className="nk-shell">
-      {/* ── Top bar ── */}
-      <header className="nk-topbar">
-        <div className="nk-topbar-left">
-          <button
-            className="nk-icon-btn"
-            title="Chat history"
-            onClick={() => setSessionsOpen(true)}
-          >
-            <PanelLeft size={15} />
-          </button>
-          <div className="nk-brand-block">
-            <p className="nk-brand-title">NexCode</p>
-            <p className="nk-brand-subtitle">
-              {activeSession.title || "New Chat"} •{" "}
-              {formatUiMode(activeSession.mode)}
-            </p>
-          </div>
-        </div>
+      {/* ── Header ── */}
+      <header className="nk-header">
+        <span className="nk-header-title">Tasks</span>
+        <div className="nk-header-actions" ref={settingsDropdownRef}>
+          <div className="nk-settings-dropdown-wrap">
+            <button
+              className="nk-icon-btn"
+              title="Settings"
+              onClick={() => setSettingsDropdownOpen(!settingsDropdownOpen)}
+            >
+              <Settings size={14} />
+            </button>
+            {settingsDropdownOpen && (
+              <div className="nk-settings-dropdown">
+                {/* Provider Selection */}
+                <div className="nk-settings-section">
+                  <div className="nk-settings-label">Provider</div>
+                  <select
+                    className="nk-settings-select"
+                    value={activeSession.provider}
+                    onChange={(e) => {
+                      const provider = e.target.value as ProviderId;
+                      useStore.getState().updateActiveSession({ provider });
+                      vscode.postMessage({ type: "refreshProviderStatus", provider });
+                      vscode.postMessage({ type: "requestModelSuggestions", provider });
+                    }}
+                  >
+                    <option value="ollama">Ollama (Local)</option>
+                    <option value="openai-compatible">OpenAI Compatible</option>
+                  </select>
+                </div>
 
-        <div className="nk-topbar-right">
-          <TokenRing
-            sessionMessages={activeSession.messages}
-            draftText={activeDraft}
-            model={activeSession.model}
-          />
-          <StatusDot
-            connected={providerHealth?.connected ?? false}
-            latencyMs={providerHealth?.latencyMs}
-            error={providerHealth?.error}
-          />
-          <button
-            className="nk-icon-btn"
-            title="Refresh connection"
-            onClick={() => {
-              vscode.postMessage({
-                type: "refreshProviderStatus",
-                provider: activeSession.provider,
-              });
-              vscode.postMessage({
-                type: "requestModelSuggestions",
-                provider: activeSession.provider,
-              });
-            }}
-          >
-            <RefreshCw size={14} />
-          </button>
-          <button
-            className="nk-icon-btn"
-            title="Clear conversation"
-            onClick={() => useStore.getState().clearActiveSession()}
-          >
-            <Eraser size={14} />
-          </button>
+                {/* Model Selection */}
+                <div className="nk-settings-section">
+                  <div className="nk-settings-label">Model</div>
+                  <select
+                    className="nk-settings-select"
+                    value={activeSession.model}
+                    onChange={(e) => {
+                      useStore.getState().updateActiveSession({ model: e.target.value });
+                    }}
+                  >
+                    {modelsForActiveProvider.length === 0 ? (
+                      <option value={activeSession.model}>
+                        {activeSession.model}
+                      </option>
+                    ) : (
+                      modelsForActiveProvider.map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </div>
+
+                {/* Auto-approve Toggle */}
+                <div className="nk-settings-section">
+                  <label className="nk-settings-toggle-row">
+                    <span>Auto-approve tools</span>
+                    <div
+                      className={`nk-toggle ${settings.autoApprove ? "nk-toggle--on" : ""}`}
+                      onClick={() =>
+                        useStore.getState().updateSetting("autoApprove", !settings.autoApprove)
+                      }
+                    >
+                      <div className="nk-toggle-thumb" />
+                    </div>
+                  </label>
+                </div>
+
+                {/* Links */}
+                <div className="nk-settings-section nk-settings-links">
+                  <div
+                    className="nk-settings-link"
+                    onClick={() => {
+                      vscode.postMessage({ type: "openSettings" });
+                      setSettingsDropdownOpen(false);
+                    }}
+                  >
+                    All Settings
+                  </div>
+                  <div
+                    className="nk-settings-link"
+                    onClick={() => {
+                      vscode.postMessage({ type: "openShortcuts" });
+                      setSettingsDropdownOpen(false);
+                    }}
+                  >
+                    Keyboard Shortcuts
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
           <button
             className="nk-icon-btn"
             title="New chat"
             onClick={() => useStore.getState().newSession()}
           >
-            <MessageSquarePlus size={14} />
-          </button>
-          <button
-            className="nk-icon-btn"
-            title="Settings"
-            onClick={() => useStore.getState().setSettingsPanelOpen(true)}
-          >
-            <Settings size={14} />
+            <Edit size={14} />
           </button>
         </div>
       </header>
@@ -3367,33 +2944,46 @@ function App() {
         )}
 
         {activeSession.messages.length === 0 ? (
-          <div className="nk-empty-chat">
-            <Cpu size={24} style={{ color: "#3a3a48" }} />
-            <p
-              className="mt-3 text-[13px] font-medium"
-              style={{ color: "#6b6b75" }}
-            >
-              Ask me anything about your code
-            </p>
-            <div className="nk-empty-hints">
-              <span className="nk-empty-hint">
-                <Code2 size={10} /> /code
-              </span>
-              <span className="nk-empty-hint">
-                <GitBranch size={10} /> /plan
-              </span>
-              <span className="nk-empty-hint">
-                <Search size={10} /> /fix
-              </span>
-              <span className="nk-empty-hint">
-                <Globe size={10} /> web-search
-              </span>
-              <span className="nk-empty-hint">
-                <Terminal size={10} /> terminal
-              </span>
-            </div>
+          <div className="nk-session-list-inline">
+            {sessions.slice(0, 5).map((session) => (
+              <div
+                key={session.id}
+                className={`nk-session-item-inline ${session.id === activeSessionId ? "nk-session-item-inline--active" : ""}`}
+                onClick={() => useStore.getState().setActiveSession(session.id)}
+              >
+                <span className="nk-session-title">
+                  {session.title || "New task"}
+                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <span className="nk-session-time">
+                    {getTimeAgo(session.updatedAt)}
+                  </span>
+                  <button
+                    className="nk-session-delete"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      useStore.getState().deleteSession(session.id);
+                    }}
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              </div>
+            ))}
+            {sessions.length > 5 && (
+              <div className="nk-session-view-all">
+                View all ({sessions.length})
+              </div>
+            )}
           </div>
         ) : (
+          <>
+          {subagentInfo && (
+            <SubagentIndicator
+              description={subagentInfo.description}
+              status={subagentInfo.status}
+            />
+          )}
           <div className="nk-messages-list">
             <AnimatePresence initial={false}>
               {activeSession.messages.map((msg) => (
@@ -3429,6 +3019,7 @@ function App() {
               ))}
             </AnimatePresence>
           </div>
+          </>
         )}
 
         {showScrollToBottom && (
@@ -3445,7 +3036,7 @@ function App() {
         )}
       </div>
 
-      {/* ── Copilot-style Input Card ── */}
+      {/* ── Input area ── */}
       <div className="nk-input-area">
         {bannerNotice && (
           <div className={`nk-banner nk-banner--${bannerNotice.kind}`}>
@@ -3487,15 +3078,10 @@ function App() {
 
         {/* Input card */}
         <div className="nk-input-card">
-          {/* Textarea */}
           <textarea
             ref={textareaRef}
             className="nk-textarea"
-            placeholder={
-              isBusy
-                ? "NexCode is responding... write next prompt to queue it"
-                : "Ask NexCode to build, fix, review, or explain your code"
-            }
+            placeholder="Ask anything..."
             value={activeDraft}
             rows={3}
             onChange={(e) =>
@@ -3516,17 +3102,52 @@ function App() {
 
           {/* Toolbar row */}
           <div className="nk-input-toolbar">
-            {/* Left: attach + selectors */}
             <div className="nk-input-toolbar-left">
-              {/* Attach */}
-              <button
-                className="nk-toolbar-btn"
-                title="Attach file"
-                onClick={() => vscode.postMessage({ type: "pickAttachments" })}
-              >
-                <Plus size={14} />
-              </button>
+              <div className="nk-mode-selector-wrap" ref={modePopupRef}>
+                <div
+                  className={`nk-mode-selector ${modePopupOpen ? "nk-mode-selector--active" : ""}`}
+                  onClick={() => setModePopupOpen(!modePopupOpen)}
+                >
+                  {activeSession.mode === "agent" && <Code2 size={14} />}
+                  {activeSession.mode === "ask" && <MessageSquare size={14} />}
+                  {activeSession.mode === "plan" && <Compass size={14} />}
+                </div>
 
+                {modePopupOpen && (
+                  <div className="nk-mode-popup">
+                    <div
+                      className={`nk-mode-option ${activeSession.mode === "agent" ? "nk-mode-option--active" : ""}`}
+                      onClick={() => { onModeChange("agent"); setModePopupOpen(false); }}
+                    >
+                      <Code2 size={14} />
+                      <div>
+                        <div className="nk-mode-option-title">Build</div>
+                        <div className="nk-mode-option-desc">Full coding assistant</div>
+                      </div>
+                    </div>
+                    <div
+                      className={`nk-mode-option ${activeSession.mode === "ask" ? "nk-mode-option--active" : ""}`}
+                      onClick={() => { onModeChange("ask"); setModePopupOpen(false); }}
+                    >
+                      <MessageSquare size={14} />
+                      <div>
+                        <div className="nk-mode-option-title">Ask</div>
+                        <div className="nk-mode-option-desc">Quick questions</div>
+                      </div>
+                    </div>
+                    <div
+                      className={`nk-mode-option ${activeSession.mode === "plan" ? "nk-mode-option--active" : ""}`}
+                      onClick={() => { onModeChange("plan"); setModePopupOpen(false); }}
+                    >
+                      <Compass size={14} />
+                      <div>
+                        <div className="nk-mode-option-title">Plan</div>
+                        <div className="nk-mode-option-desc">Architecture planning</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
               <ToolbarSelect
                 value={activeSession.model}
                 options={modelOptions}
@@ -3535,25 +3156,9 @@ function App() {
                 className="nk-toolbar-select--model"
                 menuClassName="nk-toolbar-select-menu--model"
               />
-
-              <ToolbarSelect
-                value={activeSession.mode}
-                options={modeOptions}
-                onChange={(value) => onModeChange(value as UiMode)}
-                label="Mode"
-                className="nk-toolbar-select--mode"
-              />
             </div>
-
-            {/* Right: queue status + stop + send */}
             <div className="nk-input-toolbar-right">
-              <span className="nk-input-hint">Enter to send</span>
-              {queuedPrompts.length > 0 && (
-                <span className="nk-queue-pill">
-                  {queuedPrompts.length} queued
-                </span>
-              )}
-              {isBusy && (
+              {isBusy ? (
                 <button
                   className="nk-stop-btn"
                   title="Stop current response"
@@ -3561,62 +3166,23 @@ function App() {
                 >
                   <Square size={11} />
                 </button>
+              ) : (
+                <button
+                  className="nk-send-btn"
+                  disabled={!activeDraft.trim()}
+                  title="Send (Enter)"
+                  onClick={onSendPrompt}
+                >
+                  <ArrowUp size={14} />
+                </button>
               )}
-              <button
-                className={`nk-send-btn ${isBusy ? "nk-send-btn--queue" : ""}`}
-                disabled={!activeDraft.trim()}
-                title={
-                  isBusy && activeDraft.trim()
-                    ? "Queue prompt (Enter)"
-                    : "Send (Enter)"
-                }
-                onClick={onSendPrompt}
-              >
-                {isBusy ? <Plus size={13} /> : <ArrowUp size={14} />}
-              </button>
             </div>
           </div>
         </div>
       </div>
 
-      {/* ── Overlays ── */}
-      <AnimatePresence>
-        {sessionsOpen && (
-          <SessionsDrawer
-            sessions={sessions}
-            activeSessionId={activeSessionId}
-            onSelect={(id) => useStore.getState().setActiveSession(id)}
-            onNew={() => useStore.getState().newSession()}
-            onDeleteRequest={(id) => setDeleteTargetSessionId(id)}
-            onClose={() => setSessionsOpen(false)}
-          />
-        )}
-      </AnimatePresence>
 
-      <AnimatePresence>
-        {settingsPanelOpen && (
-          <SettingsDrawer
-            activeSession={activeSession}
-            settings={settings}
-            modelsForProvider={modelsForActiveProvider}
-            mcpServers={mcpServers}
-            mcpTools={mcpToolsForSelectedServer}
-            mcpSelectedServer={mcpSelectedServer}
-            mcpSelectedTool={mcpSelectedTool}
-            mcpInput={mcpQuickInput}
-            mcpInvokeBusy={mcpInvokeBusy}
-            mcpInvokeResult={mcpInvokeResult}
-            onProviderChange={onProviderChange}
-            onModelChange={onModelChange}
-            onMcpRefresh={handleMcpRefresh}
-            onMcpServerChange={handleMcpServerChange}
-            onMcpToolChange={handleMcpToolChange}
-            onMcpInputChange={setMcpQuickInput}
-            onMcpInvoke={handleMcpInvoke}
-            onClose={() => useStore.getState().setSettingsPanelOpen(false)}
-          />
-        )}
-      </AnimatePresence>
+      {/* ── Overlays ── */}
 
       {/* Delete confirm */}
       <AnimatePresence>

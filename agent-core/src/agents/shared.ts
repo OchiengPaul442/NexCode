@@ -9,6 +9,7 @@ export interface AgentRunInput {
   userPrompt: string;
   workspaceContext?: string;
   memoryContext?: string;
+  sessionContext?: string;
   plan?: string;
   implementationDraft?: string;
   provider?: ProviderId;
@@ -61,6 +62,9 @@ export async function runSpecialistAgent(
       ? `Workspace context:\n${input.workspaceContext}`
       : "",
     input.memoryContext ? `Memory context:\n${input.memoryContext}` : "",
+    input.sessionContext
+      ? `Conversation history:\n${input.sessionContext}`
+      : "",
   ].filter((part) => part.length > 0);
 
   const messages: ChatMessage[] = [

@@ -17,6 +17,7 @@ interface SearchResult {
   entry: LongTermMemoryEntry;
   score: number;
   overlapCount: number;
+  recencyBonus: number;
 }
 
 interface ParsedMemoryQuery {
@@ -48,20 +49,7 @@ export class LongTermMemoryStore {
         this.cacheMtimeMs = Date.now();
 
         if (this.cache.length > MAX_ENTRIES) {
-          this.cache.sort(
-            (a, b) =>
-              new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
-          );
-          this.cache = this.cache.slice(this.cache.length - MAX_ENTRIES);
-          const recovered = this.cache
-            .map((e) => JSON.stringify(e))
-            .join("\n");
-          await fs.writeFile(
-            this.filePath,
-            `${recovered}${recovered ? "\n" : ""}`,
-            "utf8",
-          );
-          this.cacheMtimeMs = Date.now();
+          this.evictOldest();
         }
       }
     });
@@ -76,47 +64,91 @@ export class LongTermMemoryStore {
     const all = await this.readAll();
     const parsedQuery = this.parseQuery(query);
 
-    const filtered = all.filter((entry) => {
+    if (all.length === 0) {
+      return [];
+    }
+
+    const now = Date.now();
+    const oneDayMs = 86_400_000;
+
+    const filtered: LongTermMemoryEntry[] = [];
+    for (const entry of all) {
       if (
         parsedQuery.type &&
         entry.type.toLowerCase() !== parsedQuery.type.toLowerCase()
       ) {
-        return false;
+        continue;
       }
 
       if (
         typeof parsedQuery.sinceTimestamp === "number" &&
         new Date(entry.timestamp).getTime() < parsedQuery.sinceTimestamp
       ) {
-        return false;
+        continue;
       }
 
       if (parsedQuery.tags.length > 0) {
         const entryTags = new Set(entry.tags.map((tag) => tag.toLowerCase()));
+        let allTagsMatch = true;
         for (const tag of parsedQuery.tags) {
           if (!entryTags.has(tag.toLowerCase())) {
-            return false;
+            allTagsMatch = false;
+            break;
           }
+        }
+        if (!allTagsMatch) {
+          continue;
         }
       }
 
-      return true;
+      filtered.push(entry);
+    }
+
+    const ranked: SearchResult[] = [];
+    for (const entry of filtered) {
+      const searchableText = `${entry.text} ${entry.tags.join(" ")}`;
+      const score = scoreKeywordOverlap(parsedQuery.text, searchableText);
+      const overlapCount = countKeywordOverlap(parsedQuery.text, searchableText);
+
+      if (score < 0.15 || overlapCount < 1) {
+        continue;
+      }
+
+      const entryAge = now - new Date(entry.timestamp).getTime();
+      const recencyBonus = entryAge < oneDayMs ? 0.1 : entryAge < 7 * oneDayMs ? 0.05 : 0;
+
+      ranked.push({ entry, score, overlapCount, recencyBonus });
+    }
+
+    ranked.sort(
+      (left, right) =>
+        right.score + right.recencyBonus - (left.score + left.recencyBonus),
+    );
+
+    return ranked.slice(0, limit).map((item) => item.entry);
+  }
+
+  private evictOldest(): void {
+    if (!this.cache || this.cache.length <= MAX_ENTRIES) {
+      return;
+    }
+
+    this.cache.sort(
+      (a, b) =>
+        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+    );
+    this.cache = this.cache.slice(this.cache.length - MAX_ENTRIES);
+
+    const recovered = this.cache
+      .map((e) => JSON.stringify(e))
+      .join("\n");
+    fs.writeFile(
+      this.filePath,
+      `${recovered}${recovered ? "\n" : ""}`,
+      "utf8",
+    ).then(() => {
+      this.cacheMtimeMs = Date.now();
     });
-
-    const ranked: SearchResult[] = filtered
-      .map((entry) => {
-        const searchableText = `${entry.text} ${entry.tags.join(" ")}`;
-        return {
-          entry,
-          score: scoreKeywordOverlap(parsedQuery.text, searchableText),
-          overlapCount: countKeywordOverlap(parsedQuery.text, searchableText),
-        };
-      })
-      .filter((item) => item.score >= 0.25 && item.overlapCount >= 2)
-      .sort((left, right) => right.score - left.score)
-      .slice(0, limit);
-
-    return ranked.map((item) => item.entry);
   }
 
   private async readAll(): Promise<LongTermMemoryEntry[]> {

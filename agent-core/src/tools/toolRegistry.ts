@@ -6,6 +6,13 @@ import { SearchTool } from "./searchTool";
 import { TerminalTool } from "./terminalTool";
 import { TestRunnerTool } from "./testRunnerTool";
 import { ToolApprovalPolicy } from "./toolApprovalPolicy";
+import {
+  StructuredToolResult,
+  ToolResultError,
+  createStructuredResult,
+  validateInput,
+} from "./toolProtocol";
+import { getToolDefinition, TOOL_DEFINITIONS } from "./toolDefinitions";
 
 export interface ToolApprovalRequiredResult extends ToolResult {
   requiresApproval: true;
@@ -47,6 +54,22 @@ export class ToolRegistry {
       return false;
     }
     return this.approvalPolicy.requiresApproval(toolName, arg);
+  }
+
+  public getToolDefinition(name: string) {
+    return getToolDefinition(name);
+  }
+
+  public getAllToolDefinitions() {
+    return [...TOOL_DEFINITIONS];
+  }
+
+  public validateToolInput(name: string, input: Record<string, unknown>): ReturnType<typeof validateInput> {
+    const def = getToolDefinition(name);
+    if (!def) {
+      return [{ field: "_", message: `Unknown tool: ${name}` }];
+    }
+    return validateInput(input, def.inputSchema);
   }
 
   public async runToolCall(input: string): Promise<ToolResult> {
@@ -182,5 +205,111 @@ export class ToolRegistry {
             "Unknown tool command. Use one of: search, web-search, terminal, git-status, git-diff, git-branch, test, read, write, append, move, delete, delete-contents, mcp",
         };
     }
+  }
+
+  public async runToolCallStructured(input: string): Promise<StructuredToolResult> {
+    const startTime = Date.now();
+    const trimmed = input.trim();
+    if (!trimmed) {
+      return createStructuredResult(
+        false,
+        "Empty command",
+        startTime,
+        undefined,
+        { code: "EMPTY_INPUT", message: "Tool command cannot be empty.", retryable: false },
+      );
+    }
+
+    const firstSpace = trimmed.indexOf(" ");
+    const toolName =
+      firstSpace === -1
+        ? trimmed.toLowerCase()
+        : trimmed.slice(0, firstSpace).toLowerCase();
+    const arg = firstSpace === -1 ? "" : trimmed.slice(firstSpace + 1).trim();
+
+    const def = getToolDefinition(toolName);
+    if (!def) {
+      return createStructuredResult(
+        false,
+        `Unknown tool: ${toolName}`,
+        startTime,
+        undefined,
+        {
+          code: "UNKNOWN_TOOL",
+          message: `Unknown tool command "${toolName}". Use one of: ${TOOL_DEFINITIONS.map((d) => d.name).join(", ")}`,
+          retryable: false,
+        },
+      );
+    }
+
+    if (
+      this.approvalPolicy &&
+      this.approvalPolicy.requiresApproval(toolName, arg)
+    ) {
+      return createStructuredResult(
+        false,
+        `Awaiting approval for ${toolName}`,
+        startTime,
+        undefined,
+        { code: "APPROVAL_REQUIRED", message: `Tool "${toolName}" requires user approval.`, retryable: false },
+      );
+    }
+
+    const basic = await this.runToolCall(input);
+    const affectedFiles = this.extractAffectedFiles(toolName, arg);
+
+    return createStructuredResult(
+      basic.ok,
+      basic.output.substring(0, 200),
+      startTime,
+      basic.output,
+      basic.ok
+        ? undefined
+        : {
+            code: this.errorCodeForTool(toolName),
+            message: basic.output,
+            retryable: false,
+          },
+      affectedFiles,
+    );
+  }
+
+  private errorCodeForTool(toolName: string): string {
+    const map: Record<string, string> = {
+      read: "READ_FAILED",
+      write: "WRITE_FAILED",
+      append: "APPEND_FAILED",
+      move: "MOVE_FAILED",
+      delete: "DELETE_FAILED",
+      "delete-contents": "CLEAR_FAILED",
+      terminal: "TERMINAL_FAILED",
+      test: "TEST_FAILED",
+      search: "SEARCH_FAILED",
+      "web-search": "WEB_SEARCH_FAILED",
+      "git-status": "GIT_STATUS_FAILED",
+      "git-diff": "GIT_DIFF_FAILED",
+      "git-branch": "GIT_BRANCH_FAILED",
+      mcp: "MCP_CALL_FAILED",
+    };
+    return map[toolName] ?? "TOOL_FAILED";
+  }
+
+  private extractAffectedFiles(toolName: string, arg: string): string[] | undefined {
+    const pathTools = ["read", "write", "append", "move", "delete", "delete-contents"];
+    if (!pathTools.includes(toolName)) return undefined;
+
+    const writeMatch = arg.match(/^(.+?)\s*::/);
+    const moveMatch = arg.match(/^(.+?)\s*::\s*(.+)$/);
+
+    if (toolName === "move" && moveMatch) {
+      return [moveMatch[1].trim(), moveMatch[2].trim()];
+    }
+    if (writeMatch) {
+      return [writeMatch[1].trim()];
+    }
+    if (arg) {
+      return [arg.trim()];
+    }
+    return undefined;
   }
 }

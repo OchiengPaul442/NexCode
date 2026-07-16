@@ -120,6 +120,16 @@ export type OrchestratorEvent =
       type: "toolApprovalRequired";
       toolName: string;
       pendingArg: string;
+    }
+  | {
+      type: "subagentSpawned";
+      taskId: string;
+      description: string;
+    }
+  | {
+      type: "subagentCompleted";
+      taskId: string;
+      result: string;
     };
 
 export interface ModelRequest {

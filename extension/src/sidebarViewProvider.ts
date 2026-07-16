@@ -108,6 +108,24 @@ interface WebviewInvokeMcpToolQuickMessage {
   input?: string;
 }
 
+interface WebviewOpenSettingsMessage {
+  type: "openSettings";
+}
+
+interface WebviewOpenShortcutsMessage {
+  type: "openShortcuts";
+}
+
+interface WebviewOpenDocsMessage {
+  type: "openDocs";
+}
+
+interface WebviewUpdateSettingMessage {
+  type: "updateSetting";
+  key: string;
+  value: unknown;
+}
+
 type InboundWebviewMessage =
   | WebviewSendPromptMessage
   | WebviewCancelPromptMessage
@@ -124,7 +142,11 @@ type InboundWebviewMessage =
   | WebviewListMcpServersMessage
   | WebviewListMcpToolsMessage
   | WebviewInvokeMcpToolQuickMessage
-  | WebviewOpenInTabMessage;
+  | WebviewOpenInTabMessage
+  | WebviewOpenSettingsMessage
+  | WebviewOpenShortcutsMessage
+  | WebviewOpenDocsMessage
+  | WebviewUpdateSettingMessage;
 
 interface AttachmentChip {
   id: string;
@@ -273,6 +295,36 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         return;
       case "openInTab":
         await vscode.commands.executeCommand("nexcodeKiboko.openInTab");
+        return;
+      case "openSettings":
+        await vscode.commands.executeCommand(
+          "workbench.action.openSettings",
+          "nexcodeKiboko",
+        );
+        return;
+      case "openShortcuts":
+        await vscode.commands.executeCommand(
+          "workbench.action.openGlobalKeybindings",
+        );
+        return;
+      case "openDocs":
+        await vscode.env.openExternal(
+          vscode.Uri.parse(
+            "https://github.com/OchiengPaul442/NexCode#readme",
+          ),
+        );
+        return;
+      case "updateSetting":
+        if (message.key && message.value !== undefined) {
+          const config =
+            vscode.workspace.getConfiguration("nexcodeKiboko");
+          await config.update(
+            message.key,
+            message.value,
+            vscode.ConfigurationTarget.Workspace,
+          );
+          this.notifyConfigChanged();
+        }
         return;
       case "addAttachment":
         this.addAttachmentFromWebview(message);

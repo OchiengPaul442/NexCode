@@ -2,6 +2,7 @@ import fs from "fs/promises";
 import path from "path";
 import { randomUUID } from "crypto";
 import { createRuntimeConfig, RuntimeConfig } from "./config";
+import { SubAgentManager } from "./agents/subagent";
 import { CoderAgent } from "./agents/coderAgent";
 import { PlannerAgent } from "./agents/plannerAgent";
 import { QaAgent } from "./agents/qaAgent";
@@ -98,6 +99,7 @@ interface InferredEditRequest {
 
 const MAX_WORKSPACE_CONTEXT_CHARS = 12_000;
 const MAX_MEMORY_CONTEXT_CHARS = 4_000;
+const MAX_SESSION_CONTEXT_CHARS = 3_000;
 const MAX_TOOL_OUTPUT_CHARS = 16_000;
 
 export class NexcodeOrchestrator {
@@ -154,6 +156,7 @@ export class NexcodeOrchestrator {
 
     this.prompts = new PromptStore(this.config.promptsDir);
     this.memory = new MemoryManager(this.config.memoryDir);
+    this.memory.initialize().catch(() => {});
     this.mcpRegistry = new McpRegistry();
     this.tools = new ToolRegistry(this.config.workspaceRoot, {
       tavilyApiKey: this.config.toolDefaults.tavilyApiKey,
@@ -338,6 +341,11 @@ export class NexcodeOrchestrator {
 
     try {
       this.ensureNotAborted(request.abortSignal);
+      const sessionContextRaw = this.memory.getSessionContext(
+        sessionId,
+        MAX_SESSION_CONTEXT_CHARS,
+      );
+
       const [memoryContextRaw, workspaceContextRaw] = await Promise.all([
         this.memory.getRelevantContext(request.prompt).catch(() => ""),
         this.buildWorkspaceContext(request).catch(
@@ -355,6 +363,11 @@ export class NexcodeOrchestrator {
         workspaceContextRaw,
         MAX_WORKSPACE_CONTEXT_CHARS,
         "Workspace context trimmed",
+      );
+      const sessionContext = clampText(
+        sessionContextRaw,
+        MAX_SESSION_CONTEXT_CHARS,
+        "Session context trimmed",
       );
 
       yield {
@@ -637,6 +650,7 @@ export class NexcodeOrchestrator {
           temperature,
           workspaceContext,
           memoryContext,
+          sessionContext,
           diagnostics,
           request.abortSignal,
         );
@@ -726,6 +740,7 @@ export class NexcodeOrchestrator {
           temperature,
           workspaceContext,
           memoryContext,
+          sessionContext,
           diagnostics,
           request.abortSignal,
         );
@@ -796,6 +811,7 @@ export class NexcodeOrchestrator {
             temperature,
             workspaceContext,
             memoryContext,
+            sessionContext,
             diagnostics,
             strategy.pipeline,
             request.abortSignal,
@@ -842,6 +858,7 @@ export class NexcodeOrchestrator {
             temperature,
             workspaceContext,
             memoryContext,
+            sessionContext,
             diagnostics,
             request.abortSignal,
             {
@@ -887,6 +904,7 @@ export class NexcodeOrchestrator {
           temperature,
           workspaceContext,
           memoryContext,
+          sessionContext,
           diagnostics,
           request.abortSignal,
           {
@@ -989,7 +1007,13 @@ export class NexcodeOrchestrator {
         response.modeUsed,
         provider,
         model,
-      ]);
+      ], {
+        mode: response.modeUsed,
+        provider: response.providerUsed,
+        model: response.modelUsed,
+        filesEdited: response.proposedEdits.map((e) => e.filePath),
+        toolUsed: executedToolCommand ? [executedToolCommand] : [],
+      });
 
       if (executedToolCommand) {
         await this.memory.rememberNote(
@@ -1128,6 +1152,74 @@ export class NexcodeOrchestrator {
     await fs.writeFile(absolutePath, edit.newText, "utf8");
   }
 
+  public async *spawnSubagent(
+    task: string,
+    mode: AgentMode,
+    provider: ProviderId,
+    model: string,
+    abortSignal?: AbortSignal,
+  ): AsyncGenerator<OrchestratorEvent> {
+    const subagent = new SubAgentManager();
+    const subtask = subagent.createTask(task);
+
+    yield { type: "subagentSpawned", taskId: subtask.id, description: task };
+    yield { type: "status", message: `Spawning subagent for: ${task}` };
+    subagent.updateTask(subtask.id, { status: "running" });
+
+    try {
+      const textChunks: string[] = [];
+      const resolvedMode =
+        mode === "auto"
+          ? this.resolveAutoStrategy(task).kind === "single"
+            ? (this.resolveAutoStrategy(task) as { kind: "single"; mode: Exclude<AgentMode, "auto"> }).mode
+            : "coder"
+          : (mode as Exclude<AgentMode, "auto">);
+
+      for await (const token of this.streamAgentTokens(
+        resolvedMode,
+        {
+          userPrompt: task,
+          workspaceContext: "",
+          memoryContext: "",
+        },
+        provider,
+        model,
+        undefined,
+        abortSignal,
+      )) {
+        if (token) {
+          textChunks.push(token);
+          yield { type: "token", token };
+        }
+      }
+
+      const resultText = textChunks.join("").trim() || "Subagent returned an empty response.";
+      subagent.updateTask(subtask.id, { status: "completed", result: resultText });
+
+      yield { type: "subagentCompleted", taskId: subtask.id, result: resultText };
+
+      yield {
+        type: "final",
+        response: {
+          text: resultText,
+          modeUsed: resolvedMode,
+          providerUsed: provider,
+          modelUsed: model,
+          proposedEdits: [],
+          diagnostics: [],
+        },
+      };
+    } catch (error) {
+      const errorStr = String(error);
+      subagent.updateTask(subtask.id, { status: "failed", error: errorStr });
+
+      yield {
+        type: "error",
+        message: `Subagent failed: ${errorStr}`,
+      };
+    }
+  }
+
   private async *runSingleModeStreaming(
     selectedMode: Exclude<AgentMode, "auto">,
     modeUsed: AgentMode,
@@ -1137,6 +1229,7 @@ export class NexcodeOrchestrator {
     temperature: number | undefined,
     workspaceContext: string,
     memoryContext: string,
+    sessionContext: string,
     diagnostics: string[],
     abortSignal?: AbortSignal,
     options?: {
@@ -1177,6 +1270,7 @@ export class NexcodeOrchestrator {
           userPrompt: prompt,
           workspaceContext,
           memoryContext,
+          sessionContext,
         },
         provider,
         model,
@@ -1260,6 +1354,7 @@ export class NexcodeOrchestrator {
     temperature: number | undefined,
     workspaceContext: string,
     memoryContext: string,
+    sessionContext: string,
     diagnostics: string[],
     pipeline: Exclude<AgentMode, "auto">[],
     abortSignal?: AbortSignal,
@@ -1318,6 +1413,7 @@ export class NexcodeOrchestrator {
             userPrompt: prompt,
             workspaceContext,
             memoryContext,
+            sessionContext,
             plan: planContent,
             implementationDraft,
           },
@@ -1432,6 +1528,7 @@ export class NexcodeOrchestrator {
       userPrompt: string;
       workspaceContext: string;
       memoryContext: string;
+      sessionContext?: string;
       plan?: string;
       implementationDraft?: string;
     },
@@ -1462,6 +1559,7 @@ export class NexcodeOrchestrator {
       userPrompt: string;
       workspaceContext?: string;
       memoryContext?: string;
+      sessionContext?: string;
       plan?: string;
       implementationDraft?: string;
     },
@@ -1477,6 +1575,11 @@ export class NexcodeOrchestrator {
       MAX_MEMORY_CONTEXT_CHARS,
       "Memory context trimmed",
     );
+    const boundedSessionContext = clampText(
+      input.sessionContext ?? "",
+      MAX_SESSION_CONTEXT_CHARS,
+      "Session context trimmed",
+    );
 
     const parts = [
       `User request:\n${input.userPrompt}`,
@@ -1491,6 +1594,9 @@ export class NexcodeOrchestrator {
         ? `Workspace context:\n${boundedWorkspaceContext}`
         : "",
       boundedMemoryContext ? `Memory context:\n${boundedMemoryContext}` : "",
+      boundedSessionContext
+        ? `Conversation history:\n${boundedSessionContext}`
+        : "",
     ].filter((part) => part.length > 0);
 
     return [
@@ -1975,6 +2081,7 @@ export class NexcodeOrchestrator {
     temperature: number | undefined,
     workspaceContext: string,
     memoryContext: string,
+    sessionContext: string,
     diagnostics: string[],
     abortSignal?: AbortSignal,
   ): Promise<OrchestratorResponse> {
@@ -2021,6 +2128,7 @@ export class NexcodeOrchestrator {
           maxTokens: getAgentMaxTokens("coder", coderInstruction),
           workspaceContext,
           memoryContext,
+          sessionContext,
           signal: abortSignal,
         }),
       diagnostics,

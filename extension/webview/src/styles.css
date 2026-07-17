@@ -92,7 +92,7 @@ html, body {
   flex-direction: column;
   width: 100%;
   background: var(--vscode-editor-background);
-  overflow: hidden;
+  overflow: visible;
   position: relative;
 }
 
@@ -957,15 +957,15 @@ html, body {
 
 .nk-mode-popup {
   position: absolute;
-  bottom: calc(100% + 6px);
+  bottom: calc(100% + 4px);
   left: 0;
-  min-width: 180px;
+  z-index: 200;
+  min-width: 160px;
   background: var(--vscode-editorWidget-background);
   border: 1px solid var(--vscode-widget-border);
   border-radius: var(--nk-radius-sm);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.3);
   padding: 4px 0;
-  z-index: 200;
 }
 
 .nk-mode-option {
@@ -999,9 +999,10 @@ html, body {
 /* ── Input area ────────────────────────────────────────────────────────────── */
 .nk-input-area {
   flex-shrink: 0;
-  padding: 0 !important;
-  margin: 0 !important;
+  padding: 0 0 6px 0;
+  margin: 0;
   background: var(--vscode-editor-background);
+  overflow: visible;
 }
 
 .nk-banner {
@@ -1091,7 +1092,7 @@ html, body {
   margin: 0 8px;
   border-radius: 10px;
   border: 1px solid var(--vscode-widget-border);
-  overflow: hidden;
+  overflow: visible;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
@@ -1244,19 +1245,15 @@ html, body {
   position: absolute;
   left: 0;
   bottom: calc(100% + 4px);
-  min-width: 180px;
-  max-width: 250px;
   z-index: 200;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  width: max-content;
-  max-height: 240px;
+  min-width: 160px;
+  max-width: 280px;
+  max-height: min(300px, 50vh);
   overflow-y: auto;
-  border-radius: var(--nk-radius-sm);
-  border: 1px solid var(--vscode-widget-border);
   background: var(--vscode-editorWidget-background);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: var(--nk-radius-sm);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.3);
   padding: 4px 0;
 }
 

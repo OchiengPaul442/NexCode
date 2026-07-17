@@ -36,6 +36,17 @@ export const SAFE_PATTERNS = [
   /^Set-Location\b/,
   /^Select-String\b/,
   /^Test-Path\b/,
+  /^New-Item\b/,
+  /^Remove-Item\b/,
+  /^Copy-Item\b/,
+  /^Move-Item\b/,
+  /^Write-Output\b/,
+  /^Get-Command\b/,
+  /^Compare-Object\b/,
+  /^Measure-Object\b/,
+  /^Get-PSDrive\b/,
+  /^Get-Date\b/,
+  /^Expand-Archive\b/,
   /^git\s+status\b/,
   /^git\s+diff\b/,
   /^git\s+log\b/,
@@ -148,20 +159,172 @@ const BLOCKED_GIT_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   },
 ];
 
+function translateLinuxToPowerShell(command: string): string {
+  if (!IS_WINDOWS) return command;
+
+  let cmd = command.trim();
+
+  // find . -type f -iname "*.ext" -> Get-ChildItem -Recurse -Filter "*.ext" -File
+  cmd = cmd.replace(
+    /^find\s+\.?\s+-type\s+f\s+-iname\s+"([^"]+)"/i,
+    'Get-ChildItem -Recurse -Filter "$1" -File'
+  );
+  cmd = cmd.replace(
+    /^find\s+\.?\s+-type\s+f\s+-iname\s+(\S+)/i,
+    'Get-ChildItem -Recurse -Filter $1 -File'
+  );
+  cmd = cmd.replace(
+    /^find\s+\.?\s+-type\s+d\s+-iname\s+"([^"]+)"/i,
+    'Get-ChildItem -Recurse -Filter "$1" -Directory'
+  );
+  cmd = cmd.replace(
+    /^find\s+\.?\s+-type\s+d\s+-iname\s+(\S+)/i,
+    'Get-ChildItem -Recurse -Filter $1 -Directory'
+  );
+  cmd = cmd.replace(
+    /^find\s+(\S+)\s+-type\s+f\s+-iname\s+"([^"]+)"/i,
+    'Get-ChildItem -Path "$1" -Recurse -Filter "$2" -File'
+  );
+  cmd = cmd.replace(
+    /^find\s+(\S+)\s+-type\s+f\s+-iname\s+(\S+)/i,
+    'Get-ChildItem -Path "$1" -Recurse -Filter $2 -File'
+  );
+  // find . -type f -> Get-ChildItem -Recurse -File
+  cmd = cmd.replace(
+    /^find\s+\.?\s+-type\s+f$/i,
+    'Get-ChildItem -Recurse -File'
+  );
+  // find . -type d -> Get-ChildItem -Recurse -Directory
+  cmd = cmd.replace(
+    /^find\s+\.?\s+-type\s+d$/i,
+    'Get-ChildItem -Recurse -Directory'
+  );
+  // find . -name "pattern" -> Get-ChildItem -Recurse -Filter "pattern"
+  cmd = cmd.replace(
+    /^find\s+\.?\s+-name\s+"([^"]+)"/i,
+    'Get-ChildItem -Recurse -Filter "$1"'
+  );
+  cmd = cmd.replace(
+    /^find\s+\.?\s+-name\s+(\S+)/i,
+    'Get-ChildItem -Recurse -Filter $1'
+  );
+
+  // ls -la -> Get-ChildItem -Force
+  cmd = cmd.replace(/^ls\s+-la$/i, 'Get-ChildItem -Force');
+  cmd = cmd.replace(/^ls\s+-l$/i, 'Get-ChildItem');
+  cmd = cmd.replace(/^ls$/i, 'Get-ChildItem');
+  // ls -la path -> Get-ChildItem path -Force
+  cmd = cmd.replace(/^ls\s+-la\s+(.+)$/i, 'Get-ChildItem "$1" -Force');
+  cmd = cmd.replace(/^ls\s+-l\s+(.+)$/i, 'Get-ChildItem "$1"');
+  cmd = cmd.replace(/^ls\s+(.+)$/i, 'Get-ChildItem "$1"');
+
+  // cat file -> Get-Content file
+  cmd = cmd.replace(/^cat\s+(.+)$/i, 'Get-Content $1');
+
+  // head -n 20 file -> Get-Content file -Head 20
+  cmd = cmd.replace(/^head\s+-n\s+(\d+)\s+(.+)$/i, 'Get-Content $2 -Head $1');
+  cmd = cmd.replace(/^head\s+(\d+)\s+(.+)$/i, 'Get-Content $2 -Head $1');
+  cmd = cmd.replace(/^head\s+(.+)$/i, 'Get-Content $1 -Head 10');
+
+  // tail -n 20 file -> Get-Content file -Tail 20
+  cmd = cmd.replace(/^tail\s+-n\s+(\d+)\s+(.+)$/i, 'Get-Content $2 -Tail $1');
+  cmd = cmd.replace(/^tail\s+(\d+)\s+(.+)$/i, 'Get-Content $2 -Tail $1');
+  cmd = cmd.replace(/^tail\s+(.+)$/i, 'Get-Content $1 -Tail 10');
+
+  // wc -l file -> (Get-Content file).Count
+  cmd = cmd.replace(/^wc\s+-l\s+(.+)$/i, '(Get-Content $1).Count');
+  cmd = cmd.replace(/^wc\s+(.+)$/i, '(Get-Content $1).Count');
+
+  // grep "pattern" file -> Select-String -Pattern "pattern" -Path file
+  cmd = cmd.replace(/^grep\s+"([^"]+)"\s+(.+)$/i, 'Select-String -Pattern "$1" -Path $2');
+  cmd = cmd.replace(/^grep\s+(\S+)\s+(.+)$/i, 'Select-String -Pattern $1 -Path $2');
+  // grep -r "pattern" dir -> Select-String -Pattern "pattern" -Path dir\* -Recurse
+  cmd = cmd.replace(/^grep\s+-r\s+"([^"]+)"\s+(.+)$/i, 'Select-String -Pattern "$1" -Path "$2\\*" -Recurse');
+  cmd = cmd.replace(/^grep\s+-r\s+(\S+)\s+(.+)$/i, 'Select-String -Pattern $1 -Path "$2\\*" -Recurse');
+  // grep -rn "pattern" file -> Select-String -Pattern "pattern" -Path file
+  cmd = cmd.replace(/^grep\s+-rn\s+"([^"]+)"\s+(.+)$/i, 'Select-String -Pattern "$1" -Path $2');
+  cmd = cmd.replace(/^grep\s+-rn\s+(\S+)\s+(.+)$/i, 'Select-String -Pattern $1 -Path $2');
+
+  // mkdir -p dir -> New-Item -ItemType Directory -Path dir -Force
+  cmd = cmd.replace(/^mkdir\s+-p\s+(.+)$/i, 'New-Item -ItemType Directory -Path "$1" -Force');
+  cmd = cmd.replace(/^mkdir\s+(.+)$/i, 'New-Item -ItemType Directory -Path "$1"');
+
+  // rm file -> Remove-Item file
+  cmd = cmd.replace(/^rm\s+(.+)$/i, 'Remove-Item $1 -Force');
+  // rm -rf dir -> Remove-Item dir -Recurse -Force
+  cmd = cmd.replace(/^rm\s+-rf\s+(.+)$/i, 'Remove-Item "$1" -Recurse -Force');
+  cmd = cmd.replace(/^rm\s+-r\s+(.+)$/i, 'Remove-Item "$1" -Recurse -Force');
+
+  // cp src dest -> Copy-Item src dest
+  cmd = cmd.replace(/^cp\s+(.+)\s+(.+)$/i, 'Copy-Item $1 $2');
+  // cp -r src dest -> Copy-Item src dest -Recurse
+  cmd = cmd.replace(/^cp\s+-r\s+(.+)\s+(.+)$/i, 'Copy-Item $1 $2 -Recurse');
+
+  // mv src dest -> Move-Item src dest
+  cmd = cmd.replace(/^mv\s+(.+)\s+(.+)$/i, 'Move-Item $1 $2');
+
+  // touch file -> New-Item -ItemType File -Path file -Force
+  cmd = cmd.replace(/^touch\s+(.+)$/i, 'New-Item -ItemType File -Path "$1" -Force');
+
+  // pwd -> Get-Location
+  cmd = cmd.replace(/^pwd$/i, 'Get-Location');
+
+  // echo "text" -> Write-Output "text"
+  cmd = cmd.replace(/^echo\s+(.+)$/i, 'Write-Output $1');
+
+  // which cmd -> Get-Command cmd
+  cmd = cmd.replace(/^which\s+(.+)$/i, 'Get-Command $1');
+  // where cmd -> Get-Command cmd
+  cmd = cmd.replace(/^where\s+(.+)$/i, 'Get-Command $1');
+
+  // diff file1 file2 -> Compare-Object (Get-Content file1) (Get-Content file2)
+  cmd = cmd.replace(/^diff\s+(.+)\s+(.+)$/i, 'Compare-Object (Get-Content $1) (Get-Content $2)');
+
+  // du -sh dir -> (Get-ChildItem dir -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB
+  cmd = cmd.replace(/^du\s+-sh\s+(.+)$/i, 'Write-Output "$((Get-ChildItem $1 -Recurse -File | Measure-Object -Property Length -Sum).Sum / 1MB) MB"');
+
+  // df -h -> Get-PSDrive
+  cmd = cmd.replace(/^df\s+-h$/i, 'Get-PSDrive');
+
+  // env -> Get-ChildItem Env:
+  cmd = cmd.replace(/^env$/i, 'Get-ChildItem Env:');
+
+  // date -> Get-Date
+  cmd = cmd.replace(/^date$/i, 'Get-Date');
+
+  // whoami -> $env:USERNAME
+  cmd = cmd.replace(/^whoami$/i, '$env:USERNAME');
+
+  // chmod 755 file -> icacls file /grant Everyone:F
+  cmd = cmd.replace(/^chmod\s+\d+\s+(.+)$/i, 'icacls "$1" /grant Everyone:F');
+
+  // tar -xzf file -> Expand-Archive file
+  cmd = cmd.replace(/^tar\s+-xzf\s+(.+)$/i, 'Expand-Archive -Path "$1" -DestinationPath .');
+  cmd = cmd.replace(/^tar\s+-xf\s+(.+)$/i, 'Expand-Archive -Path "$1" -DestinationPath .');
+
+  return cmd;
+}
+
 export function normalizeTerminalCommand(command: string): string {
-  const trimmed = command.trim();
+  let cmd = command;
+
+  if (IS_WINDOWS) {
+    cmd = translateLinuxToPowerShell(cmd);
+  }
+
+  const trimmed = cmd.trim();
   const prefixMatch = trimmed.match(
     /^(?:pnpm\s+create\s+next-app(?:@latest)?|npx\s+create-next-app(?:@latest)?|npm\s+create-next-app(?:@latest)?)\s+/i,
   );
 
   if (!prefixMatch) {
-    return command;
+    return cmd;
   }
 
   const prefix = prefixMatch[0];
   const remainder = trimmed.slice(prefix.length).trim();
   if (!remainder) {
-    return command;
+    return cmd;
   }
 
   const segments = remainder.split(/\s+/);

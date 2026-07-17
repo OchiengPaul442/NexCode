@@ -150,15 +150,8 @@ export class ModelRouter {
         : this.config.defaultModel;
     addCandidate(selectedProviderId, sameProviderDefault);
 
-    if (!options.provider) {
-      const alternateProviderId: ProviderId =
-        selectedProviderId === "ollama" ? "openai-compatible" : "ollama";
-      const alternateDefault =
-        alternateProviderId === "openai-compatible"
-          ? this.config.defaultCloudModel
-          : this.config.defaultModel;
-      addCandidate(alternateProviderId, alternateDefault);
-    }
+    // Only add alternate provider as fallback if explicitly requested
+    // This prevents unnecessary fallback to openai-compatible when ollama is selected
 
     return candidates;
   }

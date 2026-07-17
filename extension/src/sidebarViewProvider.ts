@@ -504,20 +504,6 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     } catch (error) {
       const messageText = this.formatErrorForUi(error);
       this.taskManager.failTask(task.id, messageText);
-
-      if (messageText.toLowerCase().includes("cancel")) {
-        this.postMessage({
-          type: "stopped",
-          taskId: task.id,
-          message: "Request stopped by user.",
-        });
-      } else {
-        this.postMessage({
-          type: "error",
-          taskId: task.id,
-          message: messageText,
-        });
-      }
     } finally {
       for (const attachmentId of selectedAttachmentIds) {
         this.pendingAttachments.delete(attachmentId);

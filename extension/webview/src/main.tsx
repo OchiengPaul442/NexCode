@@ -2116,7 +2116,6 @@ function ToolStatusIndicator({
 
   return (
     <div style={{
-      borderLeft: `3px solid ${borderColor}`,
       borderRadius: "4px",
       marginBottom: "6px",
       fontSize: "12px",
@@ -3072,9 +3071,21 @@ function App() {
           if (!raw) return;
           debugRef.current.push(raw);
           const cleaned = sanitizeReasoningStatus(raw);
-          const recent = reasoningRef.current.slice(-3);
-          if (cleaned && !recent.includes(cleaned)) {
-            reasoningRef.current = [...reasoningRef.current.slice(-8), cleaned];
+          if (!cleaned) return;
+
+          const lastEntry = reasoningRef.current[reasoningRef.current.length - 1] ?? "";
+          const isDuplicate =
+            cleaned === lastEntry ||
+            cleaned.startsWith(lastEntry) ||
+            lastEntry.startsWith(cleaned) ||
+            (cleaned.includes("Analyzing") && lastEntry.includes("Analyzing")) ||
+            (cleaned.includes("Collecting") && lastEntry.includes("Collecting")) ||
+            (cleaned.includes("Context") && lastEntry.includes("Context")) ||
+            (cleaned.includes("Starting") && lastEntry.includes("Starting")) ||
+            (cleaned.includes("Using") && lastEntry.includes("Using"));
+
+          if (!isDuplicate) {
+            reasoningRef.current = [cleaned];
           }
 
           const cur = pendingRef.current;
@@ -3765,67 +3776,6 @@ function App() {
         </div>
       </header>
 
-      {/* ── Task Queue Panel ── */}
-      {(taskQueue.length > 0 || taskQueuePendingCount > 0 || taskQueueActiveCount > 0) && (
-        <div className="nk-task-queue-panel">
-          <div className="nk-task-queue-header">
-            <ListTodo size={12} />
-            <span className="nk-task-queue-title">
-              Task Queue
-              {taskQueueActiveCount > 0 && (
-                <span className="nk-task-queue-badge nk-task-queue-badge--active">
-                  {taskQueueActiveCount} running
-                </span>
-              )}
-              {taskQueuePendingCount > 0 && (
-                <span className="nk-task-queue-badge nk-task-queue-badge--pending">
-                  {taskQueuePendingCount} queued
-                </span>
-              )}
-            </span>
-          </div>
-          <div className="nk-task-queue-list">
-            {taskQueue.slice(0, 5).map((task) => (
-              <div
-                key={task.id}
-                className={`nk-task-queue-item nk-task-queue-item--${task.status}`}
-              >
-                <div className="nk-task-queue-item-status">
-                  {task.status === "running" && <Radio size={10} className="nk-spin" />}
-                  {task.status === "queued" && <Square size={10} />}
-                  {task.status === "completed" && <CheckCircle2 size={10} />}
-                  {task.status === "failed" && <X size={10} />}
-                  {task.status === "cancelled" && <X size={10} />}
-                  {task.status === "planning" && <Search size={10} className="nk-spin" />}
-                  {task.status === "verifying" && <Terminal size={10} className="nk-spin" />}
-                </div>
-                <div className="nk-task-queue-item-content">
-                  <div className="nk-task-queue-item-prompt">
-                    {task.prompt.length > 60 ? task.prompt.slice(0, 60) + "..." : task.prompt}
-                  </div>
-                  {task.activityNote && (
-                    <div className="nk-task-queue-item-note">{task.activityNote}</div>
-                  )}
-                </div>
-                <div className="nk-task-queue-item-actions">
-                  {task.status === "running" && (
-                    <button
-                      className="nk-icon-btn nk-icon-btn--sm"
-                      title="Cancel task"
-                      onClick={() => {
-                        vscode.postMessage({ type: "cancelTask", taskId: task.id });
-                      }}
-                    >
-                      <X size={10} />
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* ── Chat area ── */}
       <div
         ref={chatScrollerRef}
@@ -3957,6 +3907,61 @@ function App() {
           </button>
         )}
       </div>
+
+      {/* ── Task Queue (below chat) ── */}
+      {(taskQueue.length > 0 || taskQueuePendingCount > 0 || taskQueueActiveCount > 0) && (
+        <div className="nk-task-queue-panel">
+          <div className="nk-task-queue-header">
+            <ListTodo size={11} />
+            <span className="nk-task-queue-title">
+              {taskQueueActiveCount > 0 && (
+                <span className="nk-task-queue-badge nk-task-queue-badge--active">
+                  {taskQueueActiveCount} active
+                </span>
+              )}
+              {taskQueuePendingCount > 0 && (
+                <span className="nk-task-queue-badge nk-task-queue-badge--pending">
+                  {taskQueuePendingCount} queued
+                </span>
+              )}
+            </span>
+          </div>
+          <div className="nk-task-queue-list">
+            {taskQueue.slice(0, 3).map((task) => (
+              <div
+                key={task.id}
+                className="nk-task-queue-item"
+              >
+                <div className="nk-task-queue-item-status">
+                  {task.status === "running" && <Radio size={10} className="nk-spin" />}
+                  {task.status === "queued" && <Square size={10} />}
+                  {task.status === "completed" && <CheckCircle2 size={10} />}
+                  {task.status === "failed" && <X size={10} />}
+                  {task.status === "cancelled" && <X size={10} />}
+                  {task.status === "planning" && <Search size={10} className="nk-spin" />}
+                  {task.status === "verifying" && <Terminal size={10} className="nk-spin" />}
+                </div>
+                <div className="nk-task-queue-item-content">
+                  <div className="nk-task-queue-item-prompt">
+                    {task.prompt.length > 50 ? task.prompt.slice(0, 50) + "..." : task.prompt}
+                  </div>
+                </div>
+                {task.status === "running" && (
+                  <button
+                    className="nk-task-queue-cancel"
+                    title="Cancel"
+                    onClick={() => {
+                      vscode.postMessage({ type: "cancelTask", taskId: task.id });
+                    }}
+                  >
+                    <X size={10} />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Input area ── */}
       <div className="nk-input-area">

@@ -119,6 +119,14 @@ interface ChatMessage {
   activityFiles: ActivityFile[];
   activityNote?: string;
   toolExecutions?: ToolExecution[];
+  efficiency?: {
+    tokensPerRequest: number;
+    tokensPerFileEdit: number;
+    cacheHitRate: number;
+    compressionRatio: number;
+    parallelSpeedup: number;
+    contextUtilization: number;
+  };
 }
 
 interface ToolExecution {
@@ -271,6 +279,15 @@ interface StoreState {
     reasoning: string[],
     debug: string[],
     edits: ProposedEdit[],
+    tokenUsage?: { input: number; output: number; total: number },
+    efficiency?: {
+      tokensPerRequest: number;
+      tokensPerFileEdit: number;
+      cacheHitRate: number;
+      compressionRatio: number;
+      parallelSpeedup: number;
+      contextUtilization: number;
+    },
   ) => void;
   stopAssistantMessage: (
     sessionId: string,
@@ -1195,6 +1212,8 @@ const useStore = create<StoreState>((set, get) => {
       reasoning,
       debug,
       edits,
+      tokenUsage,
+      efficiency,
     ) => {
       set((state) => ({
         sessions: state.sessions.map((session) =>
@@ -1213,6 +1232,8 @@ const useStore = create<StoreState>((set, get) => {
                         debug,
                         proposedEdits: edits,
                         endTime: Date.now(),
+                        tokenUsage,
+                        efficiency,
                       }
                     : message,
                 ),
@@ -1484,6 +1505,9 @@ function ResponseSummary({ message }: { message: ChatMessage }) {
         {message.provider && <span>{message.provider}</span>}
         {message.model && <span>· {message.model}</span>}
         {elapsed > 0 && <span>· {formatTime(elapsed)}</span>}
+        {message.tokenUsage && (
+          <span>· {formatTokenCount(message.tokenUsage.total)} tokens</span>
+        )}
       </div>
       {editCount > 0 && (
         <div className="nk-response-changes">
@@ -2662,6 +2686,15 @@ function App() {
               oldText: string;
               newText: string;
             }>;
+            tokenUsage?: { input: number; output: number; total: number };
+            efficiency?: {
+              tokensPerRequest: number;
+              tokensPerFileEdit: number;
+              cacheHitRate: number;
+              compressionRatio: number;
+              parallelSpeedup: number;
+              contextUtilization: number;
+            };
           };
           const edits = (resp.proposedEdits ?? []).map((e) => ({
             ...e,
@@ -2676,6 +2709,8 @@ function App() {
               [...reasoningRef.current],
               [...debugRef.current],
               edits,
+              resp.tokenUsage,
+              resp.efficiency,
             );
           if (
             useStore.getState().settings.autoApplyChanges &&

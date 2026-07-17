@@ -22,6 +22,7 @@ import {
   ProposedEdit,
   ToolResult,
 } from "./types";
+import { BatchEditor, BatchEdit } from "./tools/batchEditor";
 import { McpAdapter, McpToolCall, McpToolResult } from "./mcp";
 import { McpRegistry } from "./mcp/mcpRegistry";
 import { MemoryManager } from "./memory/memoryManager";
@@ -34,7 +35,9 @@ import { OllamaProvider } from "./providers/ollamaProvider";
 import { OpenAICompatibleProvider } from "./providers/openAICompatibleProvider";
 import { ToolRegistry } from "./tools/toolRegistry";
 import { ApprovalCallback, DefaultToolApprovalPolicy } from "./tools/toolApprovalPolicy";
+import { TokenCounter } from "./utils/tokenCounter";
 import { chunkText, extractFirstCodeBlock } from "./utils/text";
+import { EfficiencyTracker } from "./utils/efficiencyMetrics";
 import {
   buildGroundingNoteForMode,
   getAgentMaxTokens,
@@ -46,6 +49,7 @@ import {
   extractLikelyFileReferences,
   normalizeActivityPath,
 } from "./orchestrator/contextBuilder";
+import { ContextCompressor } from "./utils/contextCompressor";
 
 export interface NexcodeOrchestratorOptions {
   workspaceRoot?: string;
@@ -117,8 +121,11 @@ export class NexcodeOrchestrator {
   private readonly reflection: ReflectionEngine;
   private readonly promptVersions: PromptVersionManager;
   private readonly mcpRegistry: McpRegistry;
+  private readonly compressor = new ContextCompressor(8000);
   private readonly ephemeralSessionId = randomUUID();
   private readonly approvalCallback?: ApprovalCallback;
+  private readonly tokenCounter = new TokenCounter();
+  private readonly efficiencyTracker = new EfficiencyTracker();
 
   public constructor(options: NexcodeOrchestratorOptions = {}) {
     this.approvalCallback = options.approvalCallback;
@@ -360,7 +367,7 @@ export class NexcodeOrchestrator {
         "Memory context trimmed",
       );
       const workspaceContext = clampText(
-        workspaceContextRaw,
+        this.compressor.compressContext(workspaceContextRaw),
         MAX_WORKSPACE_CONTEXT_CHARS,
         "Workspace context trimmed",
       );
@@ -1006,6 +1013,31 @@ export class NexcodeOrchestrator {
 
       response.diagnostics = diagnostics;
 
+      this.tokenCounter.trackRequest(
+        JSON.stringify(
+          request.prompt +
+            (response.text ? response.text.slice(0, 200) : ""),
+        ),
+        response.text,
+      );
+      const stats = this.tokenCounter.getStats();
+      response.tokenUsage = {
+        input: stats.totalInput,
+        output: stats.totalOutput,
+        total: stats.total,
+      };
+
+      const estimatedTokens = Math.ceil((request.prompt.length + (response.text?.length ?? 0)) / 4);
+      this.efficiencyTracker.trackRequest(estimatedTokens);
+
+      if (response.proposedEdits.length > 0) {
+        for (const _edit of response.proposedEdits) {
+          this.efficiencyTracker.trackEdit();
+        }
+      }
+
+      response.efficiency = this.efficiencyTracker.getMetrics();
+
       if (!streamedAnyToken && response.text.trim().length > 0) {
         for (const token of chunkText(response.text, 32)) {
           yield {
@@ -1169,6 +1201,82 @@ export class NexcodeOrchestrator {
     await fs.writeFile(absolutePath, edit.newText, "utf8");
   }
 
+  public async executeBatchEdits(edits: BatchEdit[]): Promise<ToolResult[]> {
+    const results: ToolResult[] = [];
+    
+    const grouped = new BatchEditor();
+    for (const edit of edits) {
+      grouped.addEdit(edit);
+    }
+    
+    const byDir = grouped.groupByDirectory();
+    
+    for (const [dir, dirEdits] of byDir) {
+      for (const edit of dirEdits) {
+        const result = await this.executeEdit(edit);
+        results.push(result);
+      }
+    }
+    
+    return results;
+  }
+
+  private async executeEdit(edit: BatchEdit): Promise<ToolResult> {
+    try {
+      const absolutePath = this.tools.filesystem.resolveWorkspacePath(
+        edit.filePath,
+      );
+      
+      switch (edit.operation) {
+        case 'create': {
+          await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+          if (edit.content) {
+            await fs.writeFile(absolutePath, edit.content, "utf8");
+          }
+          return { ok: true, output: `Created ${edit.filePath}` };
+        }
+        case 'update': {
+          if (edit.patch) {
+            await fs.appendFile(absolutePath, edit.patch, "utf8");
+          } else if (edit.content) {
+            await fs.writeFile(absolutePath, edit.content, "utf8");
+          }
+          return { ok: true, output: `Updated ${edit.filePath}` };
+        }
+        case 'delete': {
+          await fs.rm(absolutePath, { force: true });
+          return { ok: true, output: `Deleted ${edit.filePath}` };
+        }
+        default:
+          return { ok: false, output: `Unknown operation: ${edit.operation}` };
+      }
+    } catch (error) {
+      return { ok: false, output: `Failed to ${edit.operation} ${edit.filePath}: ${String(error)}` };
+    }
+  }
+
+  public async executeParallelTasks(
+    tasks: Array<{ description: string; executor: () => Promise<string> }>,
+  ): Promise<string[]> {
+    const manager = new SubAgentManager();
+    const results = await manager.executeParallel(tasks, 3);
+    return results.map((r) => r.result || r.error || "");
+  }
+
+  public async readMultipleFiles(
+    paths: string[],
+  ): Promise<Map<string, string>> {
+    const results = new Map<string, string>();
+    const reads = paths.map(async (filePath) => {
+      const content = await this.tools.filesystem.readFile(filePath);
+      if (content.ok) {
+        results.set(filePath, content.output);
+      }
+    });
+    await Promise.all(reads);
+    return results;
+  }
+
   public async *spawnSubagent(
     task: string,
     mode: AgentMode,
@@ -1211,6 +1319,15 @@ export class NexcodeOrchestrator {
       }
 
       const resultText = textChunks.join("").trim() || "Subagent returned an empty response.";
+
+      this.tokenCounter.trackRequest(task, resultText);
+      const subagentStats = this.tokenCounter.getStats();
+      const tokenUsage = {
+        input: subagentStats.totalInput,
+        output: subagentStats.totalOutput,
+        total: subagentStats.total,
+      };
+
       subagent.updateTask(subtask.id, { status: "completed", result: resultText });
 
       yield { type: "subagentCompleted", taskId: subtask.id, result: resultText };
@@ -1224,6 +1341,7 @@ export class NexcodeOrchestrator {
           modelUsed: model,
           proposedEdits: [],
           diagnostics: [],
+          tokenUsage,
         },
       };
     } catch (error) {

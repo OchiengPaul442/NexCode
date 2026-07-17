@@ -1,6 +1,9 @@
 import fs from "fs/promises";
 import path from "path";
 import { RequestAttachment, OrchestratorRequest } from "../types";
+import { ContextCache } from "../utils/contextCache";
+
+const workspaceContextCache = new ContextCache(30000);
 
 const MAX_WORKSPACE_CONTEXT_CHARS = 12_000;
 const MAX_MEMORY_CONTEXT_CHARS = 4_000;
@@ -32,6 +35,10 @@ export async function buildWorkspaceContext(
   defaultWorkspaceRoot: string,
 ): Promise<string> {
   const workspaceRoot = request.workspaceRoot ?? defaultWorkspaceRoot;
+  const cacheKey = `workspace:${workspaceRoot}:${request.activeFilePath ?? ""}:${request.prompt?.slice(0, 100) ?? ""}`;
+  const cached = workspaceContextCache.get(cacheKey);
+  if (cached) return cached;
+
   const sections: string[] = [];
 
   try {
@@ -107,7 +114,9 @@ export async function buildWorkspaceContext(
     sections.push(buildAttachmentContext(request.attachments ?? []));
   }
 
-  return sections.join("\n\n");
+  const result = sections.join("\n\n");
+  workspaceContextCache.set(cacheKey, result);
+  return result;
 }
 
 function extractRelevantSnippet(

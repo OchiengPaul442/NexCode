@@ -3,17 +3,21 @@ import path from "path";
 import { randomUUID } from "crypto";
 import { ProposedEdit, ToolResult } from "../types";
 import { createPatch } from "../utils/diff";
+import { ContextCompressor } from "../utils/contextCompressor";
 
 export class FileSystemTool {
+  private readonly compressor = new ContextCompressor(8000);
+
   public constructor(private readonly workspaceRoot: string) {}
 
   public async readFile(targetPath: string): Promise<ToolResult> {
     try {
       const absolutePath = await this.resolveWorkspacePathSafe(targetPath);
-      const output = await fs.readFile(absolutePath, "utf8");
+      const content = await fs.readFile(absolutePath, "utf8");
+      const compressed = this.compressor.compressFileContent(content, targetPath);
       return {
         ok: true,
-        output,
+        output: compressed,
       };
     } catch (error) {
       return {

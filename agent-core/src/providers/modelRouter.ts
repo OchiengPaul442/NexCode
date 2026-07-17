@@ -5,6 +5,7 @@ import {
   ChatMessage,
   ModelResponse,
 } from "../types";
+import { ContextCache } from "../utils/contextCache";
 
 export interface ModelCapabilities {
   hasThinking: boolean;
@@ -67,6 +68,8 @@ export interface ModelRouterConfig {
 }
 
 export class ModelRouter {
+  private responseCache = new ContextCache(10000);
+
   public constructor(
     private readonly providers: Record<ProviderId, ModelProvider>,
     private readonly config: ModelRouterConfig,
@@ -152,18 +155,25 @@ export class ModelRouter {
     messages: ChatMessage[],
     options: ProviderGenerateOptions = {},
   ): Promise<ModelResponse> {
+    const { signal, ...cacheableOptions } = options;
+    const cacheKey = JSON.stringify({ messages, options: cacheableOptions });
+    const cached = this.responseCache.get(cacheKey);
+    if (cached) return JSON.parse(cached);
+
     const candidates = this.resolveCandidates(options);
     let lastError: unknown;
 
     for (const candidate of candidates) {
       try {
-        return await candidate.provider.generate({
+        const result = await candidate.provider.generate({
           model: candidate.model,
           messages,
           temperature: options.temperature,
           maxTokens: options.maxTokens,
           signal: options.signal,
         });
+        this.responseCache.set(cacheKey, JSON.stringify(result));
+        return result;
       } catch (error) {
         if (this.isAbortError(error)) {
           throw error;

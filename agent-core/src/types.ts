@@ -57,6 +57,15 @@ export interface OrchestratorRequest {
   abortSignal?: AbortSignal;
 }
 
+export interface EfficiencyMetrics {
+  tokensPerRequest: number;
+  tokensPerFileEdit: number;
+  cacheHitRate: number;
+  compressionRatio: number;
+  parallelSpeedup: number;
+  contextUtilization: number;
+}
+
 export interface OrchestratorResponse {
   text: string;
   modeUsed: AgentMode;
@@ -64,6 +73,12 @@ export interface OrchestratorResponse {
   modelUsed: string;
   proposedEdits: ProposedEdit[];
   diagnostics: string[];
+  efficiency?: EfficiencyMetrics;
+  tokenUsage?: {
+    input: number;
+    output: number;
+    total: number;
+  };
 }
 
 export type ActivityStatus =
@@ -137,6 +152,15 @@ export type OrchestratorEvent =
       command: string;
       status: "success" | "error" | "awaiting-approval";
       message?: string;
+    }
+  | {
+      type: "batchEditStarted";
+      editCount: number;
+    }
+  | {
+      type: "batchEditCompleted";
+      editCount: number;
+      successCount: number;
     };
 
 export interface ModelRequest {

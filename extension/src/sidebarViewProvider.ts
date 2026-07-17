@@ -1068,6 +1068,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         openAIApiKey: rawKeys.openAIApiKey,
         tavilyApiKey: rawKeys.tavilyApiKey,
         modeTemperatures: settings.modeTemperatures as any,
+        agentModels: settings.agentModels,
         approvalCallback: async (toolName, arg) => {
           // Read current settings each time (not captured in closure)
           const currentConfig = vscode.workspace.getConfiguration("nexcodeKiboko");
@@ -1258,6 +1259,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     toolApproval: "auto" | "ask" | "bypass";
     temperature: number;
     modeTemperatures: Record<string, number>;
+    agentModels: { manager?: string; primaryWorker?: string; lightweightWorker?: string; reasoningReviewer?: string };
     showReasoning: boolean;
     autoApplyChanges: boolean;
     allowWebSearch: boolean;
@@ -1293,6 +1295,12 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         "modeTemperatures",
         { planner: 0.3, coder: 0.15, reviewer: 0.05, qa: 0.05, security: 0.1 },
       ),
+      agentModels: {
+        manager: config.get<string>("agentModels.manager", ""),
+        primaryWorker: config.get<string>("agentModels.primaryWorker", ""),
+        lightweightWorker: config.get<string>("agentModels.lightweightWorker", ""),
+        reasoningReviewer: config.get<string>("agentModels.reasoningReviewer", ""),
+      },
       showReasoning: config.get<boolean>("showReasoning", true),
       autoApplyChanges: config.get<boolean>("autoApplyChanges", false),
       allowWebSearch: config.get<boolean>("allowWebSearch", true),

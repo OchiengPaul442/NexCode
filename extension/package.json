@@ -174,6 +174,26 @@
           ],
           "default": "ask",
           "description": "Tool approval mode. 'auto' approves safe tools, 'ask' requires approval for destructive tools, 'bypass' is autopilot (no prompts)."
+        },
+        "nexcodeKiboko.agentModels.manager": {
+          "type": "string",
+          "default": "",
+          "description": "Model for the planner/manager agent. Falls back to defaultModel if empty."
+        },
+        "nexcodeKiboko.agentModels.primaryWorker": {
+          "type": "string",
+          "default": "",
+          "description": "Model for the coder agent. Falls back to defaultModel if empty."
+        },
+        "nexcodeKiboko.agentModels.lightweightWorker": {
+          "type": "string",
+          "default": "",
+          "description": "Model for the QA agent. Falls back to defaultModel if empty."
+        },
+        "nexcodeKiboko.agentModels.reasoningReviewer": {
+          "type": "string",
+          "default": "",
+          "description": "Model for reviewer and security agents. Falls back to defaultModel if empty."
         }
       }
     }

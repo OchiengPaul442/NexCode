@@ -1,7 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 import { randomUUID } from "crypto";
-import { createRuntimeConfig, getTemperatureForMode, RuntimeConfig } from "./config";
+import { createRuntimeConfig, getTemperatureForMode, getModelForMode, RuntimeConfig } from "./config";
 
 import { CoderAgent } from "./agents/coderAgent";
 import { PlannerAgent } from "./agents/plannerAgent";
@@ -67,6 +67,7 @@ export interface NexcodeOrchestratorOptions {
   tavilyBaseUrl?: string;
   approvalCallback?: ApprovalCallback;
   modeTemperatures?: Partial<Record<AgentMode, number>>;
+  agentModels?: import("./config").AgentModels;
 }
 
 type AutoRoutingStrategy =
@@ -150,6 +151,7 @@ export class NexcodeOrchestrator {
         tavilyBaseUrl: options.tavilyBaseUrl ?? "https://api.tavily.com/search",
       },
       modeTemperatures: options.modeTemperatures,
+      agentModels: options.agentModels,
     });
 
     this.router = new ModelRouter(
@@ -300,18 +302,22 @@ export class NexcodeOrchestrator {
   private isSimpleQuestion(prompt: string): boolean {
     const lower = prompt.toLowerCase().trim();
 
-    const actionVerbs = /\b(read|write|create|delete|edit|search|run|execute|test|build|install|scaffold|fix|refactor|check|list|show|open|grep|find|git|npm|npx|node|python|pip|cargo|go)\b/;
+    // Slash commands are never simple questions
+    if (lower.startsWith("/")) return false;
+
+    const actionVerbs = /\b(read|write|create|delete|edit|search|run|execute|test|build|install|fix|refactor|check|grep|find|git|npm|npx|node|python|pip|cargo|go|deploy|implement|debug|configure|setup|generate)\b/;
     if (actionVerbs.test(lower)) {
       return false;
     }
 
-    if (lower.length < 20) return true;
+    if (lower.length < 30) return true;
 
     if (/^(hi|hello|hey|yo|sup|thanks|thank you|yes|no|ok|sure|please|help)\s*$/i.test(lower)) {
       return true;
     }
 
-    if (/^(what's your name|who are you|what can you do|what are you|how are you)\s*\??$/i.test(lower)) {
+    // Catch conversational/opinion questions
+    if (/\?/.test(lower) || /\b(can you|are you|do you|what is|what are|how do|how does|why|explain|tell me|describe)\b/.test(lower)) {
       return true;
     }
 
@@ -327,7 +333,7 @@ export class NexcodeOrchestrator {
   ): AsyncGenerator<OrchestratorEvent> {
     const mode = request.mode ?? "auto";
     const provider = request.provider ?? this.config.providerDefaults.provider;
-    const model = request.model ?? this.config.providerDefaults.model;
+    const model = request.model ?? getModelForMode(mode, this.config.agentModels, this.config.providerDefaults.model);
     const temperature =
       typeof request.temperature === "number"
         ? Math.min(2, Math.max(0, request.temperature))
@@ -1760,8 +1766,8 @@ export class NexcodeOrchestrator {
         normalized,
       ) || /^(thanks|thank you)(?:[\s!.,?]*)$/.test(normalized);
     const isSimpleQuestion =
-      /\?$/.test(normalized) &&
-      wordCount < 18 &&
+      (/\?/.test(normalized) || /\b(can you|are you|do you|what is|what are|how do|how does|why|explain|tell me|describe)\b/.test(normalized)) &&
+      wordCount < 25 &&
       !/\b(create|build|implement|fix|debug|test|review|security|plan)\b/.test(
         normalized,
       );

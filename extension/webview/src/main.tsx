@@ -1474,17 +1474,19 @@ const useStore = create<StoreState>((set, get) => {
       }));
     },
     setTaskQueue: (tasks, pending, active) => {
+      // Only show tasks that are actually queued (pending), not running/completed
+      const pendingTasks = tasks.filter((t) => t.status === "queued" || t.status === "planning");
       set({
-        taskQueue: tasks,
+        taskQueue: pendingTasks,
         taskQueuePendingCount: pending,
         taskQueueActiveCount: active,
       });
     },
     clearTaskQueue: () => {
-      set((state) => ({
-        taskQueue: state.taskQueue.filter((t) => t.status === "running" || t.status === "planning" || t.status === "verifying"),
+      set({
+        taskQueue: [],
         taskQueuePendingCount: 0,
-      }));
+      });
     },
     updateTaskStatus: (taskId, status, note) => {
       set((state) => ({
@@ -3495,19 +3497,8 @@ function App() {
           return;
         }
         case "taskQueued": {
-          const task = payload.task as Record<string, unknown> | undefined;
-          if (task) {
-            const newTask: QueuedTask = {
-              id: String(task.id ?? ""),
-              sessionId: String(task.sessionId ?? ""),
-              prompt: String(task.prompt ?? ""),
-              status: "queued" as const,
-              createdAt: typeof task.createdAt === "number" ? task.createdAt : Date.now(),
-            };
-            useStore.setState((state) => ({
-              taskQueue: [newTask, ...state.taskQueue],
-            }));
-          }
+          // Don't add to UI queue here - let taskList be the single source of truth
+          // taskList is emitted immediately after taskQueued by the backend
           return;
         }
         case "taskStarted": {
@@ -3579,8 +3570,8 @@ function App() {
     if (!ta) return;
     ta.style.height = "auto";
     const scrollH = ta.scrollHeight;
-    const minH = 38;
-    const maxH = 200;
+    const minH = 32;
+    const maxH = 180;
     ta.style.height = `${Math.min(Math.max(scrollH, minH), maxH)}px`;
     ta.style.overflowY = scrollH > maxH ? "auto" : "hidden";
   }, [activeDraft]);
@@ -3927,8 +3918,8 @@ function App() {
         )}
       </div>
 
-      {/* ── Task Queue (below chat) ── */}
-      {(taskQueue.length > 0 || taskQueuePendingCount > 0 || taskQueueActiveCount > 0) && (
+      {/* ── Task Queue (below chat) - only show when items are actually pending ── */}
+      {taskQueuePendingCount > 0 && (
         <div className="nk-task-queue-panel">
           <div className="nk-task-queue-header">
             <ListTodo size={11} />
@@ -4130,7 +4121,7 @@ function App() {
               </button>
             </div>
             <div className="nk-input-toolbar-right">
-              {isBusy ? (
+              {isBusy && (
                 <button
                   className="nk-stop-btn"
                   title="Stop current response"
@@ -4138,16 +4129,15 @@ function App() {
                 >
                   <Square size={11} />
                 </button>
-              ) : (
-                <button
-                  className="nk-send-btn"
-                  disabled={!activeDraft.trim()}
-                  title="Send (Enter)"
-                  onClick={onSendPrompt}
-                >
-                  <ArrowUp size={14} />
-                </button>
               )}
+              <button
+                className="nk-send-btn"
+                disabled={!activeDraft.trim() || isBusy}
+                title={isBusy ? "Queue prompt (Enter)" : "Send (Enter)"}
+                onClick={onSendPrompt}
+              >
+                <ArrowUp size={14} />
+              </button>
             </div>
           </div>
         </div>

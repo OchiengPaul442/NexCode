@@ -111,6 +111,7 @@ interface ChatMessage {
   error?: boolean;
   stopped?: boolean;
   startTime?: number;
+  endTime?: number;
   reasoning: string[];
   debug: string[];
   proposedEdits: ProposedEdit[];
@@ -1211,6 +1212,7 @@ const useStore = create<StoreState>((set, get) => {
                         reasoning,
                         debug,
                         proposedEdits: edits,
+                        endTime: Date.now(),
                       }
                     : message,
                 ),
@@ -1458,6 +1460,40 @@ function StatusDot({
   );
 }
 
+// ─── Response Summary ────────────────────────────────────────────────────────
+function formatTime(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}m ${secs}s`;
+}
+
+function ResponseSummary({ message }: { message: ChatMessage }) {
+  if (message.streaming || message.thinking) return null;
+  if (!message.text) return null;
+
+  const editCount = message.proposedEdits?.length ?? 0;
+  const elapsed =
+    message.endTime && message.startTime
+      ? Math.floor((message.endTime - message.startTime) / 1000)
+      : 0;
+
+  return (
+    <div className="nk-response-summary">
+      <div className="nk-response-meta">
+        {message.provider && <span>{message.provider}</span>}
+        {message.model && <span>· {message.model}</span>}
+        {elapsed > 0 && <span>· {formatTime(elapsed)}</span>}
+      </div>
+      {editCount > 0 && (
+        <div className="nk-response-changes">
+          {editCount} file{editCount !== 1 ? "s" : ""} changed
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Message Bubble ──────────────────────────────────────────────────────────
 function MessageBubble({
   message,
@@ -1667,6 +1703,11 @@ function MessageBubble({
               </div>
             ))}
           </div>
+        )}
+
+        {/* Response summary */}
+        {!isUser && !message.streaming && !message.thinking && message.text && (
+          <ResponseSummary message={message} />
         )}
       </div>
     </motion.div>

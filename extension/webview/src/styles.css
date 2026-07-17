@@ -2258,3 +2258,24 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ── Response summary ────────────────────────────────────────────────────── */
+.nk-response-summary {
+  padding: 6px 0;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  border-top: 1px solid var(--vscode-widget-border);
+  margin-top: 4px;
+}
+
+.nk-response-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.nk-response-changes {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+}

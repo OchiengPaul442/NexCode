@@ -6,11 +6,14 @@ const execAsync = promisify(exec);
 
 const MAX_COMMAND_LENGTH = 2_000;
 
+const IS_WINDOWS = process.platform === "win32";
+
 // SAFE_COMMANDS - always allowed without approval
 // Removed: npm run, npm install, npx, node, python, pip
 // These can execute arbitrary code (node -e, python -c, npm postinstall scripts)
 // They now require approval via the DESTRUCTIVE_TOOLS gate in toolApprovalPolicy.ts
 export const SAFE_PATTERNS = [
+  // Unix commands
   /^ls\b/,
   /^pwd\b/,
   /^echo\b/,
@@ -26,6 +29,24 @@ export const SAFE_PATTERNS = [
   /^npm\s+test\b/,
   /^cargo\s+(check|build|test|clippy|fmt)\b/,
   /^go\s+(build|test|fmt|vet)\b/,
+  // PowerShell commands (Windows)
+  /^Get-ChildItem\b/,
+  /^Get-Content\b/,
+  /^Get-Location\b/,
+  /^Set-Location\b/,
+  /^Select-String\b/,
+  /^Test-Path\b/,
+  /^git\s+status\b/,
+  /^git\s+diff\b/,
+  /^git\s+log\b/,
+  /^git\s+branch\b/,
+  /^git\s+show\b/,
+  /^npm\s+test\b/,
+  // Windows commands
+  /^dir\b/i,
+  /^cd\b/i,
+  /^type\b/i,
+  /^where\b/i,
 ];
 
 // SHELL_EXPANSION_PATTERNS - block command substitution and shell expansion
@@ -84,6 +105,27 @@ const BLOCKED_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   {
     pattern: /\bdel\s+\/s\b/i,
     reason: "Recursive file deletion is blocked.",
+  },
+  // PowerShell-specific blocked patterns
+  {
+    pattern: /\bRemove-Item\s+-Recurse\s+-Force\s+[A-Z]:\\/i,
+    reason: "Recursive file deletion on root drive is blocked.",
+  },
+  {
+    pattern: /\bFormat-Volume\b/i,
+    reason: "Volume formatting is blocked.",
+  },
+  {
+    pattern: /\bStop-Computer\b/i,
+    reason: "System shutdown is blocked.",
+  },
+  {
+    pattern: /\bRestart-Computer\b/i,
+    reason: "System restart is blocked.",
+  },
+  {
+    pattern: /\bInvoke-WebRequest\b[^\n]*\|\s*(?:Invoke-Expression|IEX)\b/i,
+    reason: "Piped download-and-execute is blocked.",
   },
 ];
 
@@ -156,11 +198,17 @@ export class TerminalTool {
     }
 
     try {
-      const { stdout, stderr } = await execAsync(normalizedCommand, {
+      const execOptions: import("child_process").ExecOptions = {
         cwd: this.workspaceRoot,
         timeout: timeoutMs,
         maxBuffer: 2 * 1024 * 1024,
-      });
+      };
+
+      if (IS_WINDOWS) {
+        execOptions.shell = "powershell.exe";
+      }
+
+      const { stdout, stderr } = await execAsync(normalizedCommand, execOptions);
 
       return {
         ok: true,
@@ -193,11 +241,17 @@ export class TerminalTool {
       };
     }
 
-    const child = spawn(normalizedCommand, {
+    const spawnOptions: import("child_process").SpawnOptions = {
       cwd: this.workspaceRoot,
       env: process.env,
       shell: true,
-    });
+    };
+
+    if (IS_WINDOWS) {
+      spawnOptions.shell = "powershell.exe";
+    }
+
+    const child = spawn(normalizedCommand, spawnOptions);
 
     const queue: string[] = [];
     let resolveNext: (() => void) | null = null;

@@ -7,3 +7,5 @@ export {
   detectModelCapabilities,
   type ModelCapabilities,
 } from "./providers/modelRouter";
+export { TaskQueue, classifyPromptIntent } from "./taskQueue";
+export { TaskQueueManager } from "./taskManager";

@@ -146,6 +146,157 @@ html, body {
   background: var(--vscode-list-activeSelectionBackground);
 }
 
+.nk-icon-btn--sm {
+  width: 16px;
+  height: 16px;
+}
+
+/* ── Task Queue Panel ──────────────────────────────────────────────────────── */
+.nk-task-queue-panel {
+  border-bottom: 1px solid var(--vscode-widget-border);
+  background: var(--vscode-editor-background);
+  flex-shrink: 0;
+}
+
+.nk-task-queue-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.nk-task-queue-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.nk-task-queue-badge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 8px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.nk-task-queue-badge--active {
+  background: rgba(34, 197, 94, 0.2);
+  color: #22c55e;
+}
+
+.nk-task-queue-badge--pending {
+  background: rgba(251, 146, 60, 0.2);
+  color: #fb923c;
+}
+
+.nk-task-queue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 6px 6px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.nk-task-queue-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: var(--nk-radius-sm);
+  background: var(--vscode-input-background);
+  font-size: 11px;
+}
+
+.nk-task-queue-item--running {
+  border-left: 2px solid #22c55e;
+}
+
+.nk-task-queue-item--queued {
+  border-left: 2px solid #fb923c;
+}
+
+.nk-task-queue-item--completed {
+  border-left: 2px solid #6b7280;
+}
+
+.nk-task-queue-item--failed {
+  border-left: 2px solid #f87171;
+}
+
+.nk-task-queue-item--cancelled {
+  border-left: 2px solid #6b7280;
+  opacity: 0.6;
+}
+
+.nk-task-queue-item-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--vscode-descriptionForeground);
+}
+
+.nk-task-queue-item--running .nk-task-queue-item-status {
+  color: #22c55e;
+}
+
+.nk-task-queue-item--queued .nk-task-queue-item-status {
+  color: #fb923c;
+}
+
+.nk-task-queue-item--completed .nk-task-queue-item-status {
+  color: #6b7280;
+}
+
+.nk-task-queue-item--failed .nk-task-queue-item-status {
+  color: #f87171;
+}
+
+.nk-task-queue-item-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.nk-task-queue-item-prompt {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--vscode-foreground);
+}
+
+.nk-task-queue-item-note {
+  font-size: 10px;
+  color: var(--vscode-descriptionForeground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nk-task-queue-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.nk-spin {
+  animation: nk-spin 1s linear infinite;
+}
+
+@keyframes nk-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 /* ── Chat scroller ─────────────────────────────────────────────────────────── */
 .nk-chat-scroller {
   flex: 1;

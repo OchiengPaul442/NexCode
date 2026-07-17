@@ -198,8 +198,20 @@ export class ModelRouter {
 
     const attempted = candidates.map(c => `${c.providerId}/${c.model}`).join(", ");
     const errorMsg = lastError instanceof Error ? lastError.message : String(lastError ?? "Unknown error");
+
+    let troubleshooting = "";
+    if (errorMsg.includes("ECONNREFUSED") || errorMsg.includes("upstream") || errorMsg.includes("fetch")) {
+      troubleshooting = "\n\nTroubleshooting:\n- Check if your provider is running and accessible\n- Verify the base URL in settings\n- Check your network connection";
+    } else if (errorMsg.includes("401") || errorMsg.includes("403") || errorMsg.includes("unauthorized") || errorMsg.includes("api key")) {
+      troubleshooting = "\n\nTroubleshooting:\n- Verify your API key is correct\n- Check if your API key has sufficient permissions";
+    } else if (errorMsg.includes("429") || errorMsg.includes("rate limit")) {
+      troubleshooting = "\n\nTroubleshooting:\n- You've hit rate limits. Wait a moment and try again\n- Consider using a different model or provider";
+    } else if (errorMsg.includes("timeout")) {
+      troubleshooting = "\n\nTroubleshooting:\n- The request timed out. Try a simpler prompt\n- Check your network connection";
+    }
+
     throw new Error(
-      `All provider/model attempts failed (${attempted}): ${errorMsg}`,
+      `All provider/model attempts failed (${attempted}): ${errorMsg}${troubleshooting}`,
     );
   }
 
@@ -263,8 +275,20 @@ export class ModelRouter {
 
     const attempted = candidates.map(c => `${c.providerId}/${c.model}`).join(", ");
     const errorMsg = lastError instanceof Error ? lastError.message : String(lastError ?? "Unknown error");
+
+    let troubleshooting = "";
+    if (errorMsg.includes("ECONNREFUSED") || errorMsg.includes("upstream") || errorMsg.includes("fetch")) {
+      troubleshooting = "\n\nTroubleshooting:\n- Check if your provider is running and accessible\n- Verify the base URL in settings\n- Check your network connection";
+    } else if (errorMsg.includes("401") || errorMsg.includes("403") || errorMsg.includes("unauthorized") || errorMsg.includes("api key")) {
+      troubleshooting = "\n\nTroubleshooting:\n- Verify your API key is correct\n- Check if your API key has sufficient permissions";
+    } else if (errorMsg.includes("429") || errorMsg.includes("rate limit")) {
+      troubleshooting = "\n\nTroubleshooting:\n- You've hit rate limits. Wait a moment and try again\n- Consider using a different model or provider";
+    } else if (errorMsg.includes("timeout")) {
+      troubleshooting = "\n\nTroubleshooting:\n- The request timed out. Try a simpler prompt\n- Check your network connection";
+    }
+
     throw new Error(
-      `All provider/model attempts failed (${attempted}): ${errorMsg}`,
+      `All provider/model attempts failed (${attempted}): ${errorMsg}${troubleshooting}`,
     );
   }
 

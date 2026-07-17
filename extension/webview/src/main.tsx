@@ -185,6 +185,22 @@ interface SubAgentTask {
   result?: string;
 }
 
+interface QueuedTask {
+  id: string;
+  sessionId: string;
+  prompt: string;
+  status: "queued" | "planning" | "running" | "waiting-for-user" | "verifying" | "completed" | "failed" | "cancelled";
+  mode?: string;
+  provider?: string;
+  model?: string;
+  createdAt: number;
+  startedAt?: number;
+  completedAt?: number;
+  result?: string;
+  error?: string;
+  activityNote?: string;
+}
+
 interface McpQuickResult {
   ok: boolean;
   server: string;
@@ -237,6 +253,9 @@ interface StoreState {
   isBusy: boolean;
   settingsPanelOpen: boolean;
   backgroundAgents: SubAgentTask[];
+  taskQueue: QueuedTask[];
+  taskQueuePendingCount: number;
+  taskQueueActiveCount: number;
   defaults: {
     provider: ProviderId;
     model: string;
@@ -247,6 +266,8 @@ interface StoreState {
   modelSuggestions: Record<ProviderId, string[]>;
   hydrateConfig: (config: BackendConfig) => void;
   setBusy: (value: boolean) => void;
+  setTaskQueue: (tasks: QueuedTask[], pending: number, active: number) => void;
+  updateTaskStatus: (taskId: string, status: QueuedTask["status"], note?: string) => void;
   setAttachments: (attachments: AttachmentChip[]) => void;
   setSettingsPanelOpen: (open: boolean) => void;
   setSettings: (update: Partial<SidebarSettings>) => void;
@@ -928,6 +949,9 @@ const useStore = create<StoreState>((set, get) => {
     isBusy: false,
     settingsPanelOpen: false,
     backgroundAgents: [],
+    taskQueue: [],
+    taskQueuePendingCount: 0,
+    taskQueueActiveCount: 0,
     defaults: initialDefaults,
     settings: {
       ...defaultSidebarSettings,
@@ -1446,6 +1470,20 @@ const useStore = create<StoreState>((set, get) => {
     removeBackgroundAgent: (id) => {
       set((state) => ({
         backgroundAgents: state.backgroundAgents.filter((a) => a.id !== id),
+      }));
+    },
+    setTaskQueue: (tasks, pending, active) => {
+      set({
+        taskQueue: tasks,
+        taskQueuePendingCount: pending,
+        taskQueueActiveCount: active,
+      });
+    },
+    updateTaskStatus: (taskId, status, note) => {
+      set((state) => ({
+        taskQueue: state.taskQueue.map((t) =>
+          t.id === taskId ? { ...t, status, activityNote: note ?? t.activityNote } : t,
+        ),
       }));
     },
     parallelCount: 0,
@@ -3404,6 +3442,65 @@ function App() {
           }
           return;
         }
+        case "taskList": {
+          const tasks = Array.isArray(payload.tasks) ? payload.tasks.map((t: Record<string, unknown>) => ({
+            id: String(t.id ?? ""),
+            sessionId: String(t.sessionId ?? ""),
+            prompt: String(t.prompt ?? ""),
+            status: String(t.status ?? "queued") as QueuedTask["status"],
+            mode: typeof t.mode === "string" ? t.mode : undefined,
+            provider: typeof t.provider === "string" ? t.provider : undefined,
+            model: typeof t.model === "string" ? t.model : undefined,
+            createdAt: typeof t.createdAt === "number" ? t.createdAt : Date.now(),
+            startedAt: typeof t.startedAt === "number" ? t.startedAt : undefined,
+            completedAt: typeof t.completedAt === "number" ? t.completedAt : undefined,
+            result: typeof t.result === "string" ? t.result : undefined,
+            error: typeof t.error === "string" ? t.error : undefined,
+            activityNote: typeof t.activityNote === "string" ? t.activityNote : undefined,
+          })) : [];
+          const pending = typeof payload.pendingCount === "number" ? payload.pendingCount : 0;
+          const active = typeof payload.activeCount === "number" ? payload.activeCount : 0;
+          useStore.getState().setTaskQueue(tasks, pending, active);
+          return;
+        }
+        case "taskQueued": {
+          const task = payload.task as Record<string, unknown> | undefined;
+          if (task) {
+            const newTask: QueuedTask = {
+              id: String(task.id ?? ""),
+              sessionId: String(task.sessionId ?? ""),
+              prompt: String(task.prompt ?? ""),
+              status: "queued" as const,
+              createdAt: typeof task.createdAt === "number" ? task.createdAt : Date.now(),
+            };
+            set((state) => ({
+              taskQueue: [newTask, ...state.taskQueue],
+            }));
+          }
+          return;
+        }
+        case "taskStarted": {
+          const task = payload.task as Record<string, unknown> | undefined;
+          if (task && typeof task.id === "string") {
+            useStore.getState().updateTaskStatus(task.id, "running");
+          }
+          return;
+        }
+        case "taskSteered": {
+          const taskId = String(payload.taskId ?? "");
+          const message = String(payload.message ?? "");
+          if (taskId) {
+            showNotice("info", `Steered task: ${message}`);
+          }
+          return;
+        }
+        case "taskCancelled": {
+          const taskId = String(payload.taskId ?? "");
+          if (taskId) {
+            useStore.getState().updateTaskStatus(taskId, "cancelled");
+          }
+          return;
+        }
         default:
           return;
       }
@@ -3664,6 +3761,67 @@ function App() {
           </button>
         </div>
       </header>
+
+      {/* ── Task Queue Panel ── */}
+      {(taskQueue.length > 0 || taskQueuePendingCount > 0 || taskQueueActiveCount > 0) && (
+        <div className="nk-task-queue-panel">
+          <div className="nk-task-queue-header">
+            <ListTodo size={12} />
+            <span className="nk-task-queue-title">
+              Task Queue
+              {taskQueueActiveCount > 0 && (
+                <span className="nk-task-queue-badge nk-task-queue-badge--active">
+                  {taskQueueActiveCount} running
+                </span>
+              )}
+              {taskQueuePendingCount > 0 && (
+                <span className="nk-task-queue-badge nk-task-queue-badge--pending">
+                  {taskQueuePendingCount} queued
+                </span>
+              )}
+            </span>
+          </div>
+          <div className="nk-task-queue-list">
+            {taskQueue.slice(0, 5).map((task) => (
+              <div
+                key={task.id}
+                className={`nk-task-queue-item nk-task-queue-item--${task.status}`}
+              >
+                <div className="nk-task-queue-item-status">
+                  {task.status === "running" && <Radio size={10} className="nk-spin" />}
+                  {task.status === "queued" && <Square size={10} />}
+                  {task.status === "completed" && <CheckCircle2 size={10} />}
+                  {task.status === "failed" && <X size={10} />}
+                  {task.status === "cancelled" && <X size={10} />}
+                  {task.status === "planning" && <Search size={10} className="nk-spin" />}
+                  {task.status === "verifying" && <Terminal size={10} className="nk-spin" />}
+                </div>
+                <div className="nk-task-queue-item-content">
+                  <div className="nk-task-queue-item-prompt">
+                    {task.prompt.length > 60 ? task.prompt.slice(0, 60) + "..." : task.prompt}
+                  </div>
+                  {task.activityNote && (
+                    <div className="nk-task-queue-item-note">{task.activityNote}</div>
+                  )}
+                </div>
+                <div className="nk-task-queue-item-actions">
+                  {task.status === "running" && (
+                    <button
+                      className="nk-icon-btn nk-icon-btn--sm"
+                      title="Cancel task"
+                      onClick={() => {
+                        vscode.postMessage({ type: "cancelTask", taskId: task.id });
+                      }}
+                    >
+                      <X size={10} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Chat area ── */}
       <div

@@ -253,3 +253,54 @@ export interface InteractionFeedback {
   rejectedEdits: number;
   metadata?: Record<string, unknown>;
 }
+
+export type TaskStatus =
+  | "queued"
+  | "planning"
+  | "running"
+  | "waiting-for-user"
+  | "verifying"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export interface Task {
+  id: string;
+  sessionId: string;
+  prompt: string;
+  status: TaskStatus;
+  mode: AgentMode;
+  provider: ProviderId;
+  model: string;
+  createdAt: number;
+  startedAt?: number;
+  completedAt?: number;
+  abortController?: AbortController;
+  steeringMessages: string[];
+  result?: string;
+  error?: string;
+  activityNote?: string;
+}
+
+export interface TaskQueueItem {
+  taskId: string;
+  prompt: string;
+  sessionId: string;
+  provider: ProviderId;
+  model: string;
+  mode: AgentMode;
+  temperature: number;
+  allowWebSearch: boolean;
+  attachmentIds: string[];
+  createdAt: number;
+}
+
+export type TaskEvent =
+  | { type: "taskQueued"; task: Task }
+  | { type: "taskStarted"; task: Task }
+  | { type: "taskSteered"; taskId: string; message: string }
+  | { type: "taskStatusChanged"; taskId: string; status: TaskStatus; note?: string }
+  | { type: "taskCompleted"; taskId: string; result: string }
+  | { type: "taskFailed"; taskId: string; error: string }
+  | { type: "taskCancelled"; taskId: string }
+  | { type: "queueChanged"; pendingCount: number; activeCount: number };

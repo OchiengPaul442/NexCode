@@ -9,6 +9,9 @@ import {
   ProposedEdit,
   ProviderId,
   RequestAttachment,
+  TaskQueueManager,
+  Task,
+  TaskEvent,
 } from "@nexcode/agent-core";
 
 interface WebviewSendPromptMessage {
@@ -126,6 +129,21 @@ interface WebviewUpdateSettingMessage {
   value: unknown;
 }
 
+interface WebviewSteerTaskMessage {
+  type: "steerTask";
+  taskId: string;
+  message: string;
+}
+
+interface WebviewCancelTaskMessage {
+  type: "cancelTask";
+  taskId: string;
+}
+
+interface WebviewListTasksMessage {
+  type: "listTasks";
+}
+
 type InboundWebviewMessage =
   | WebviewSendPromptMessage
   | WebviewCancelPromptMessage
@@ -146,7 +164,10 @@ type InboundWebviewMessage =
   | WebviewOpenSettingsMessage
   | WebviewOpenShortcutsMessage
   | WebviewOpenDocsMessage
-  | WebviewUpdateSettingMessage;
+  | WebviewUpdateSettingMessage
+  | WebviewSteerTaskMessage
+  | WebviewCancelTaskMessage
+  | WebviewListTasksMessage;
 
 interface AttachmentChip {
   id: string;
@@ -169,10 +190,13 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
   private currentWorkspaceRoot?: string;
   private readonly pendingEdits = new Map<string, ProposedEdit>();
   private readonly pendingAttachments = new Map<string, RequestAttachment>();
-  private isBusy = false;
+  private readonly taskManager: TaskQueueManager;
   private currentAbortController?: AbortController;
 
-  public constructor(private readonly context: vscode.ExtensionContext) {}
+  public constructor(private readonly context: vscode.ExtensionContext) {
+    this.taskManager = new TaskQueueManager({ maxConcurrent: 3 });
+    this.taskManager.onEvent((event) => this.handleTaskEvent(event));
+  }
 
   public resolveWebviewView(view: vscode.WebviewView): void {
     this.view = view;
@@ -209,6 +233,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
   public clearConversation(): void {
     this.pendingEdits.clear();
     this.pendingAttachments.clear();
+    this.taskManager.clear();
     this.postMessage({ type: "cleared" });
   }
 
@@ -333,62 +358,115 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         this.pendingAttachments.delete(message.attachmentId);
         this.postAttachments();
         return;
+      case "steerTask":
+        this.handleSteerTask(message.taskId, message.message);
+        return;
+      case "cancelTask":
+        this.handleCancelTask(message.taskId);
+        return;
+      case "listTasks":
+        this.postTaskList();
+        return;
     }
   }
 
   private async handlePrompt(message: WebviewSendPromptMessage): Promise<void> {
-    if (this.isBusy) {
-      this.postMessage({
-        type: "error",
-        message: "A request is already running. Please wait for it to finish.",
-      });
-      return;
-    }
-
     const prompt = message.prompt?.trim();
     if (!prompt) {
       return;
     }
 
-    this.isBusy = true;
-    this.currentAbortController = new AbortController();
-    const selectedAttachmentIds = message.attachmentIds ?? [];
+    const activeTasks = this.taskManager.getActiveTasks();
+    const activeTask = activeTasks.length > 0 ? activeTasks[0] : undefined;
+
+    const result = this.taskManager.classifyAndRoute(
+      activeTask?.id,
+      prompt,
+      message.sessionId ?? "default",
+      {
+        mode: message.mode ?? this.getRuntimeSettings().mode,
+        provider: message.provider ?? this.getRuntimeSettings().provider,
+        model: message.model ?? this.getRuntimeSettings().model,
+        temperature:
+          typeof message.temperature === "number"
+            ? message.temperature
+            : this.getRuntimeSettings().temperature,
+        allowWebSearch:
+          typeof message.allowWebSearch === "boolean"
+            ? message.allowWebSearch
+            : this.getRuntimeSettings().allowWebSearch,
+        attachmentIds: message.attachmentIds ?? [],
+      },
+    );
+
+    if (result.action === "steer") {
+      this.postMessage({
+        type: "taskSteered",
+        taskId: result.task.id,
+        message: "Message injected into running task",
+      });
+      this.postTaskList();
+      return;
+    }
+
+    this.postMessage({
+      type: "taskQueued",
+      task: {
+        id: result.task.id,
+        sessionId: result.task.sessionId,
+        prompt: result.task.prompt,
+        status: result.task.status,
+        createdAt: result.task.createdAt,
+      },
+    });
+
+    this.postTaskList();
+    this.processNextTask();
+  }
+
+  private async processNextTask(): Promise<void> {
+    const nextTask = this.taskManager.getNextQueuedTask();
+    if (!nextTask) {
+      return;
+    }
+
+    const { task, request } = nextTask;
+    const selectedAttachmentIds = request.attachments?.map((a) => a.id) ?? [];
+
+    this.postMessage({
+      type: "taskStarted",
+      task: {
+        id: task.id,
+        sessionId: task.sessionId,
+        prompt: task.prompt,
+        status: task.status,
+        startedAt: task.startedAt,
+      },
+    });
 
     try {
       const workspaceRoot = this.getWorkspaceRoot();
       const orchestrator = this.getOrchestrator(workspaceRoot);
       const activeEditor = vscode.window.activeTextEditor;
 
-      const request: OrchestratorRequest = {
-        prompt,
-        provider: message.provider ?? this.getRuntimeSettings().provider,
-        model: message.model ?? this.getRuntimeSettings().model,
-        mode: message.mode ?? this.getRuntimeSettings().mode,
-        temperature:
-          typeof message.temperature === "number"
-            ? message.temperature
-            : this.getRuntimeSettings().temperature,
-        allowTools: this.getRuntimeSettings().allowTools,
-        allowWebSearch:
-          typeof message.allowWebSearch === "boolean"
-            ? message.allowWebSearch
-            : this.getRuntimeSettings().allowWebSearch,
+      const fullRequest: OrchestratorRequest = {
+        ...request,
         workspaceRoot,
         activeFilePath: activeEditor?.document.uri.fsPath,
         selectedText: activeEditor?.document.getText(activeEditor.selection),
         attachments: this.resolveAttachmentsForPrompt(selectedAttachmentIds),
-        abortSignal: this.currentAbortController.signal,
       };
 
       this.postMessage({
         type: "start",
-        sessionId: message.sessionId,
-        provider: request.provider,
-        model: request.model,
-        mode: request.mode,
+        sessionId: task.sessionId,
+        taskId: task.id,
+        provider: fullRequest.provider,
+        model: fullRequest.model,
+        mode: fullRequest.mode,
       });
 
-      for await (const event of orchestrator.stream(request)) {
+      for await (const event of orchestrator.stream(fullRequest)) {
         if (event.type === "toolApprovalRequired") {
           const choice = await vscode.window.showWarningMessage(
             `Approval required for ${event.toolName} command:\n\n${event.pendingArg}\n\nContinue?`,
@@ -418,20 +496,25 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
           for (const edit of event.response.proposedEdits) {
             this.pendingEdits.set(edit.id, edit);
           }
+          this.taskManager.completeTask(task.id, event.response.text);
         }
 
-        this.postMessage(event);
+        this.postMessage({ ...event, taskId: task.id });
       }
     } catch (error) {
       const messageText = this.formatErrorForUi(error);
+      this.taskManager.failTask(task.id, messageText);
+
       if (messageText.toLowerCase().includes("cancel")) {
         this.postMessage({
           type: "stopped",
+          taskId: task.id,
           message: "Request stopped by user.",
         });
       } else {
         this.postMessage({
           type: "error",
+          taskId: task.id,
           message: messageText,
         });
       }
@@ -440,10 +523,71 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         this.pendingAttachments.delete(attachmentId);
       }
       this.postAttachments();
-      this.isBusy = false;
-      this.currentAbortController = undefined;
-      this.postMessage({ type: "end" });
+      this.postMessage({ type: "end", taskId: task.id });
+      this.postTaskList();
+      this.processNextTask();
     }
+  }
+
+  private handleSteerTask(taskId: string, message: string): void {
+    const success = this.taskManager.steerTask(taskId, message);
+    if (success) {
+      this.postMessage({
+        type: "taskSteered",
+        taskId,
+        message: "Steering message injected",
+      });
+    } else {
+      this.postMessage({
+        type: "error",
+        message: `Task ${taskId} is not running and cannot be steered.`,
+      });
+    }
+    this.postTaskList();
+  }
+
+  private handleCancelTask(taskId: string): void {
+    const success = this.taskManager.cancelTask(taskId);
+    if (success) {
+      this.postMessage({
+        type: "taskCancelled",
+        taskId,
+      });
+    } else {
+      this.postMessage({
+        type: "error",
+        message: `Task ${taskId} could not be cancelled.`,
+      });
+    }
+    this.postTaskList();
+  }
+
+  private handleTaskEvent(event: TaskEvent): void {
+    this.postMessage({ type: "taskEvent", event });
+  }
+
+  private postTaskList(): void {
+    const allTasks = this.taskManager.getAllTasks();
+    this.postMessage({
+      type: "taskList",
+      tasks: allTasks.map((t) => ({
+        id: t.id,
+        sessionId: t.sessionId,
+        prompt: t.prompt,
+        status: t.status,
+        mode: t.mode,
+        provider: t.provider,
+        model: t.model,
+        createdAt: t.createdAt,
+        startedAt: t.startedAt,
+        completedAt: t.completedAt,
+        result: t.result,
+        error: t.error,
+        activityNote: t.activityNote,
+      })),
+      pendingCount: this.taskManager.getPendingCount(),
+      activeCount: this.taskManager.getActiveCount(),
+    });
   }
 
   private async handleEnhancePrompt(
@@ -576,11 +720,16 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
   }
 
   private cancelPrompt(): void {
-    if (!this.isBusy || !this.currentAbortController) {
-      return;
+    const activeTasks = this.taskManager.getActiveTasks();
+    if (activeTasks.length > 0) {
+      for (const task of activeTasks) {
+        this.taskManager.cancelTask(task.id);
+      }
     }
 
-    this.currentAbortController.abort("cancelled-by-user");
+    if (this.currentAbortController) {
+      this.currentAbortController.abort("cancelled-by-user");
+    }
   }
 
   private async pickAttachments(): Promise<void> {

@@ -44,7 +44,6 @@ import {
   Radio,
   Shield,
   Paperclip,
-  SlidersHorizontal,
 } from "lucide-react";
 import { StreamingMessage } from "./components/StreamingMessage";
 
@@ -3227,16 +3226,6 @@ function App() {
                 className="nk-toolbar-select--model"
                 menuClassName="nk-toolbar-select-menu--model"
               />
-              <button
-                className="nk-toolbar-btn"
-                type="button"
-                title="Composer settings"
-                aria-label="Composer settings"
-                aria-expanded={settingsDropdownOpen}
-                onClick={() => setSettingsDropdownOpen((open) => !open)}
-              >
-                <SlidersHorizontal size={15} />
-              </button>
               <button
                 className="nk-toolbar-btn"
                 type="button"

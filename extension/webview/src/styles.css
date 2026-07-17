@@ -1173,7 +1173,7 @@ body {
 
 .nk-toolbar-select-trigger {
   height: 22px;
-  padding: 0 20px 0 6px;
+  padding: 0 16px 0 6px;
   border-radius: 0 6px 6px 0;
   border: none;
   background: transparent;
@@ -1184,7 +1184,7 @@ body {
   align-items: center;
   gap: 4px;
   min-width: 0;
-  max-width: 140px;
+  max-width: 100px;
   position: relative;
   overflow: hidden;
   text-overflow: ellipsis;

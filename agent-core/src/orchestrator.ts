@@ -331,6 +331,7 @@ export class NexcodeOrchestrator {
   public async *stream(
     request: OrchestratorRequest,
   ): AsyncGenerator<OrchestratorEvent> {
+    this.tokenCounter.startNewTurn();
     const mode = request.mode ?? "auto";
     const provider = request.provider ?? this.config.providerDefaults.provider;
     const model = request.model ?? getModelForMode(mode, this.config.agentModels, this.config.providerDefaults.model);
@@ -358,31 +359,6 @@ export class NexcodeOrchestrator {
     yield {
       type: "status",
       message: "Collecting workspace and memory context",
-    };
-
-    yield {
-      type: "activity",
-      todos: [
-        {
-          id: "context",
-          title: "Collect workspace and memory context",
-          status: "in-progress",
-          detail: "Gathering conversation memory and workspace signals",
-        },
-        {
-          id: "execution",
-          title: "Execute request",
-          status: "not-started",
-          detail: "Waiting for context",
-        },
-        {
-          id: "finalize",
-          title: "Finalize response",
-          status: "not-started",
-          detail: "Pending",
-        },
-      ],
-      note: "Starting request",
     };
 
     try {
@@ -472,30 +448,6 @@ export class NexcodeOrchestrator {
         message: "Context ready",
       };
 
-      yield {
-        type: "activity",
-        todos: [
-          {
-            id: "context",
-            title: "Collect workspace and memory context",
-            status: "completed",
-            detail: "Context assembled",
-          },
-          {
-            id: "execution",
-            title: "Execute request",
-            status: "in-progress",
-            detail: "Routing request",
-          },
-          {
-            id: "finalize",
-            title: "Finalize response",
-            status: "not-started",
-            detail: "Pending",
-          },
-        ],
-        note: "Context ready",
-      };
 
       if (this.isSimpleQuestion(request.prompt)) {
         const messages: ChatMessage[] = [
@@ -522,30 +474,6 @@ export class NexcodeOrchestrator {
           content: response.text,
         });
 
-        yield {
-          type: "activity",
-          todos: [
-            {
-              id: "context",
-              title: "Collect workspace and memory context",
-              status: "completed",
-              detail: "Completed",
-            },
-            {
-              id: "execution",
-              title: "Execute request",
-              status: "completed",
-              detail: "Completed",
-            },
-            {
-              id: "finalize",
-              title: "Finalize response",
-              status: "completed",
-              detail: "Saved to memory and ready in chat",
-            },
-          ],
-          note: "Response ready",
-        };
 
         yield { type: "final", response: finalResponse };
         return;
@@ -582,31 +510,6 @@ export class NexcodeOrchestrator {
             : `Running tool command: ${toolCommand}`,
         };
 
-        yield {
-          type: "activity",
-          todos: [
-            {
-              id: "tool-parse",
-              title: "Parse tool command",
-              status: "completed",
-              detail: toolCommand,
-            },
-            {
-              id: "tool-run",
-              title: "Execute tool",
-              status: "in-progress",
-              detail: "Waiting for tool output",
-            },
-            {
-              id: "tool-summarize",
-              title: "Prepare tool result",
-              status: "not-started",
-              detail: "Pending",
-            },
-          ],
-          files: toolFiles,
-          note: "Tool command detected",
-        };
 
         const iterator = this.streamToolRequest(
           request.prompt,
@@ -632,31 +535,6 @@ export class NexcodeOrchestrator {
           yield step.value;
         }
 
-        yield {
-          type: "activity",
-          todos: [
-            {
-              id: "tool-parse",
-              title: "Parse tool command",
-              status: "completed",
-              detail: toolCommand,
-            },
-            {
-              id: "tool-run",
-              title: "Execute tool",
-              status: "completed",
-              detail: "Tool run complete",
-            },
-            {
-              id: "tool-summarize",
-              title: "Prepare tool result",
-              status: "completed",
-              detail: "Result formatted",
-            },
-          ],
-          files: toolFiles.map((file) => ({ ...file, status: "modified" })),
-          note: "Tool execution complete",
-        };
       } else if (inferredToolCommand) {
         const inferredPrompt = `/tool ${inferredToolCommand}`;
         executedToolCommand = inferredToolCommand;
@@ -672,31 +550,6 @@ export class NexcodeOrchestrator {
           message: inferredStatus,
         };
 
-        yield {
-          type: "activity",
-          todos: [
-            {
-              id: "tool-infer",
-              title: "Infer tool command",
-              status: "completed",
-              detail: inferredToolCommand,
-            },
-            {
-              id: "tool-run",
-              title: "Execute inferred tool",
-              status: "in-progress",
-              detail: "Waiting for tool output",
-            },
-            {
-              id: "tool-summarize",
-              title: "Prepare tool result",
-              status: "not-started",
-              detail: "Pending",
-            },
-          ],
-          files: inferredFiles,
-          note: "Inferred tool command",
-        };
 
         const iterator = this.streamToolRequest(
           inferredPrompt,
@@ -722,31 +575,6 @@ export class NexcodeOrchestrator {
           yield step.value;
         }
 
-        yield {
-          type: "activity",
-          todos: [
-            {
-              id: "tool-infer",
-              title: "Infer tool command",
-              status: "completed",
-              detail: inferredToolCommand,
-            },
-            {
-              id: "tool-run",
-              title: "Execute inferred tool",
-              status: "completed",
-              detail: "Tool run complete",
-            },
-            {
-              id: "tool-summarize",
-              title: "Prepare tool result",
-              status: "completed",
-              detail: "Result formatted",
-            },
-          ],
-          files: inferredFiles.map((file) => ({ ...file, status: "modified" })),
-          note: "Tool execution complete",
-        };
       } else if (request.prompt.trimStart().startsWith("/edit ")) {
         const parsedEdit = this.parseEditCommand(request.prompt);
         const editFiles = parsedEdit
@@ -765,33 +593,6 @@ export class NexcodeOrchestrator {
           message: "Preparing edit proposal",
         };
 
-        yield {
-          type: "activity",
-          todos: [
-            {
-              id: "edit-parse",
-              title: "Parse edit command",
-              status: parsedEdit ? "completed" : "in-progress",
-              detail: parsedEdit
-                ? `Target: ${parsedEdit.filePath}`
-                : "Parsing command",
-            },
-            {
-              id: "edit-draft",
-              title: "Draft file update",
-              status: "in-progress",
-              detail: "Generating candidate file content",
-            },
-            {
-              id: "edit-patch",
-              title: "Build patch preview",
-              status: "not-started",
-              detail: "Pending",
-            },
-          ],
-          files: editFiles,
-          note: "Preparing edit proposal",
-        };
 
         response = await this.handleEditRequest(
           request.prompt,
@@ -811,36 +612,6 @@ export class NexcodeOrchestrator {
             ? this.buildActivityFilesFromProposedEdits(response.proposedEdits)
             : editFiles.map((file) => ({ ...file, status: "modified" }));
 
-        yield {
-          type: "activity",
-          todos: [
-            {
-              id: "edit-parse",
-              title: "Parse edit command",
-              status: parsedEdit ? "completed" : "in-progress",
-              detail: parsedEdit
-                ? `Target: ${parsedEdit.filePath}`
-                : "Command format needs review",
-            },
-            {
-              id: "edit-draft",
-              title: "Draft file update",
-              status: "completed",
-              detail: "Model response complete",
-            },
-            {
-              id: "edit-patch",
-              title: "Build patch preview",
-              status: "completed",
-              detail:
-                response.proposedEdits.length > 0
-                  ? `${response.proposedEdits.length} proposed edit(s)`
-                  : "No edits proposed",
-            },
-          ],
-          files: latestActivityFiles,
-          note: "Edit proposal ready",
-        };
       } else if (inferredEditRequest) {
         const inferredEditPrompt = `/edit ${inferredEditRequest.filePath} :: ${inferredEditRequest.instruction}`;
         const editFiles = [
@@ -857,31 +628,6 @@ export class NexcodeOrchestrator {
           message: `Preparing edit proposal for ${inferredEditRequest.filePath}`,
         };
 
-        yield {
-          type: "activity",
-          todos: [
-            {
-              id: "edit-infer",
-              title: "Infer edit target",
-              status: "completed",
-              detail: inferredEditRequest.filePath,
-            },
-            {
-              id: "edit-draft",
-              title: "Draft file update",
-              status: "in-progress",
-              detail: "Generating candidate file content",
-            },
-            {
-              id: "edit-patch",
-              title: "Build patch preview",
-              status: "not-started",
-              detail: "Pending",
-            },
-          ],
-          files: editFiles,
-          note: "Inferred file edit request",
-        };
 
         response = await this.handleEditRequest(
           inferredEditPrompt,
@@ -901,34 +647,6 @@ export class NexcodeOrchestrator {
             ? this.buildActivityFilesFromProposedEdits(response.proposedEdits)
             : editFiles.map((file) => ({ ...file, status: "modified" }));
 
-        yield {
-          type: "activity",
-          todos: [
-            {
-              id: "edit-infer",
-              title: "Infer edit target",
-              status: "completed",
-              detail: inferredEditRequest.filePath,
-            },
-            {
-              id: "edit-draft",
-              title: "Draft file update",
-              status: "completed",
-              detail: "Model response complete",
-            },
-            {
-              id: "edit-patch",
-              title: "Build patch preview",
-              status: "completed",
-              detail:
-                response.proposedEdits.length > 0
-                  ? `${response.proposedEdits.length} proposed edit(s)`
-                  : "No edits proposed",
-            },
-          ],
-          files: latestActivityFiles,
-          note: "Edit proposal ready",
-        };
       } else if (mode === "auto") {
         const strategy = this.resolveAutoStrategy(request.prompt);
         if (strategy.kind === "pipeline") {
@@ -949,11 +667,6 @@ export class NexcodeOrchestrator {
               .join(" → ")})`,
           };
 
-          yield {
-            type: "activity",
-            todos: pipelineTodos,
-            note: "Auto routing selected pipeline",
-          };
 
           const iterator = this.runAutoModeStreaming(
             request.prompt,
@@ -1090,10 +803,17 @@ export class NexcodeOrchestrator {
         response.text,
       );
       const stats = this.tokenCounter.getStats();
+      const turnStats = this.tokenCounter.getTurnStats();
       response.tokenUsage = {
         input: stats.totalInput,
         output: stats.totalOutput,
         total: stats.total,
+      };
+      response.turnTokenUsage = {
+        input: turnStats.input,
+        output: turnStats.output,
+        total: turnStats.total,
+        requests: turnStats.requests,
       };
 
       const estimatedTokens = Math.ceil((request.prompt.length + (response.text?.length ?? 0)) / 4);
@@ -1189,31 +909,6 @@ export class NexcodeOrchestrator {
         latestActivityFiles = responseFiles;
       }
 
-      yield {
-        type: "activity",
-        todos: [
-          {
-            id: "context",
-            title: "Collect workspace and memory context",
-            status: "completed",
-            detail: "Completed",
-          },
-          {
-            id: "execution",
-            title: "Execute request",
-            status: "completed",
-            detail: "Completed",
-          },
-          {
-            id: "finalize",
-            title: "Finalize response",
-            status: "completed",
-            detail: "Saved to memory and ready in chat",
-          },
-        ],
-        files: latestActivityFiles,
-        note: "Response ready",
-      };
 
       yield {
         type: "final",
@@ -1221,18 +916,6 @@ export class NexcodeOrchestrator {
       };
     } catch (error) {
       if (this.isAbortError(error)) {
-        yield {
-          type: "activity",
-          todos: [
-            {
-              id: "execution",
-              title: "Execute request",
-              status: "failed",
-              detail: "Stopped by user",
-            },
-          ],
-          note: "Request stopped",
-        };
 
         yield {
           type: "stopped",
@@ -1243,18 +926,6 @@ export class NexcodeOrchestrator {
 
       const errorMessage = this.formatUserFacingError(error);
 
-      yield {
-        type: "activity",
-        todos: [
-          {
-            id: "execution",
-            title: "Execute request",
-            status: "failed",
-            detail: errorMessage,
-          },
-        ],
-        note: "Request failed",
-      };
 
       yield {
         type: "error",
@@ -1298,19 +969,6 @@ export class NexcodeOrchestrator {
       message: options?.statusLabel ?? this.describePipelineStage(selectedMode),
     };
 
-    yield {
-      type: "activity",
-      todos: [
-        {
-          id: `${selectedMode}-single`,
-          title: todoTitle,
-          status: "in-progress",
-          detail: `${stageLabel} is generating output`,
-        },
-      ],
-      files: activityFiles,
-      note: `${stageLabel} stage started`,
-    };
 
     const textChunks: string[] = [];
 
@@ -1371,22 +1029,6 @@ export class NexcodeOrchestrator {
       ? normalizeAgentOutputForMode(selectedMode, joinedText.trim(), prompt)
       : `${stageLabel} agent returned an empty response.`;
 
-    yield {
-      type: "activity",
-      todos: [
-        {
-          id: `${selectedMode}-single`,
-          title: todoTitle,
-          status: "completed",
-          detail: `${stageLabel} response ready`,
-        },
-      ],
-      files: activityFiles.map((file) => ({
-        ...file,
-        status: file.status === "failed" ? "failed" : "modified",
-      })),
-      note: `${stageLabel} stage complete`,
-    };
 
     return {
       text: finalText,
@@ -1420,11 +1062,6 @@ export class NexcodeOrchestrator {
       detail: index === 0 ? "Active" : "Queued",
     }));
 
-    yield {
-      type: "activity",
-      todos: stageTodos.map((todo) => ({ ...todo })),
-      note: "Pipeline execution started",
-    };
 
     for (let stageIndex = 0; stageIndex < pipeline.length; stageIndex += 1) {
       const stage = pipeline[stageIndex];
@@ -1442,11 +1079,6 @@ export class NexcodeOrchestrator {
         message: this.describePipelineStage(stage),
       };
 
-      yield {
-        type: "activity",
-        todos: stageTodos.map((todo) => ({ ...todo })),
-        note: `${stageLabel} stage running`,
-      };
 
       const sectionPrefix = `${composedChunks.length > 0 ? "\n\n" : ""}## ${stageLabel}\n\n`;
       composedChunks.push(sectionPrefix);
@@ -1561,11 +1193,6 @@ export class NexcodeOrchestrator {
         message: `${stageLabel} stage complete`,
       };
 
-      yield {
-        type: "activity",
-        todos: stageTodos.map((todo) => ({ ...todo })),
-        note: `${stageLabel} stage complete`,
-      };
     }
 
     return {

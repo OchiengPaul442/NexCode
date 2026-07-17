@@ -107,16 +107,6 @@
           "default": "https://opencode.ai/zen/go/v1",
           "description": "Base URL for OpenAI-compatible API. OpenCode Go: https://opencode.ai/zen/go/v1. HuggingFace: https://router.huggingface.co/v1. OpenAI: https://api.openai.com/v1"
         },
-        "nexcodeKiboko.openAIApiKey": {
-          "type": "string",
-          "default": "",
-          "description": "API key for the OpenAI-compatible provider. OpenCode Go key: https://opencode.ai/auth. HuggingFace token: https://huggingface.co/settings/tokens"
-        },
-        "nexcodeKiboko.tavilyApiKey": {
-          "type": "string",
-          "default": "",
-          "description": "API key for Tavily online web search used by /tool web-search."
-        },
         "nexcodeKiboko.allowToolCommands": {
           "type": "boolean",
           "default": true,
@@ -196,6 +186,9 @@
           "description": "Model for reviewer and security agents. Falls back to defaultModel if empty."
         }
       }
+    },
+    "workspaceTrust": {
+      "trusted": true
     }
   },
   "scripts": {

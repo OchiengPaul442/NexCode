@@ -1,8 +1,21 @@
 import * as vscode from "vscode";
 import { KibokoSidebarViewProvider } from "./sidebarViewProvider";
+import { SecretService } from "./secretService";
+import { WorkspaceTrustService } from "./workspaceTrustService";
 
-export function activate(context: vscode.ExtensionContext): void {
-  const provider = new KibokoSidebarViewProvider(context);
+export async function activate(
+  context: vscode.ExtensionContext,
+): Promise<void> {
+  const secretService = new SecretService(context.secrets);
+  await secretService.migrateFromSettings();
+
+  const workspaceTrustService = new WorkspaceTrustService(context);
+
+  const provider = new KibokoSidebarViewProvider(
+    context,
+    secretService,
+    workspaceTrustService,
+  );
 
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(
@@ -44,7 +57,7 @@ export function activate(context: vscode.ExtensionContext): void {
         picked.trim(),
         vscode.ConfigurationTarget.Workspace,
       );
-      provider.notifyConfigChanged();
+      await provider.notifyConfigChanged();
     }),
   );
 
@@ -109,9 +122,9 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   context.subscriptions.push(
-    vscode.workspace.onDidChangeConfiguration((event) => {
+    vscode.workspace.onDidChangeConfiguration((event: vscode.ConfigurationChangeEvent) => {
       if (event.affectsConfiguration("nexcodeKiboko")) {
-        provider.notifyConfigChanged();
+        void provider.notifyConfigChanged();
       }
     }),
   );

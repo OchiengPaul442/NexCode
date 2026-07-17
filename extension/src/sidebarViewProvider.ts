@@ -6,13 +6,14 @@ import {
   createNexcodeOrchestrator,
   NexcodeOrchestrator,
   OrchestratorRequest,
-  ProposedEdit,
   ProviderId,
   RequestAttachment,
-  TaskQueueManager,
   Task,
-  TaskEvent,
 } from "@nexcode/agent-core";
+import { SecretService } from "./secretService";
+import { WorkspaceTrustService } from "./workspaceTrustService";
+import { TaskController } from "./taskController";
+import { EditReviewService } from "./editReviewService";
 
 interface WebviewSendPromptMessage {
   type: "sendPrompt";
@@ -169,14 +170,6 @@ type InboundWebviewMessage =
   | WebviewCancelTaskMessage
   | WebviewListTasksMessage;
 
-interface AttachmentChip {
-  id: string;
-  fileName: string;
-  kind: RequestAttachment["kind"];
-  mimeType: string;
-  byteSize?: number;
-}
-
 const MAX_ATTACHMENT_BYTES = 3_000_000;
 const MAX_ATTACHMENT_TEXT_CHARS = 750_000;
 const MAX_ATTACHMENT_NAME_LENGTH = 160;
@@ -188,14 +181,17 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
   private readonly webviews = new Set<vscode.Webview>();
   private orchestrator?: NexcodeOrchestrator;
   private currentWorkspaceRoot?: string;
-  private readonly pendingEdits = new Map<string, ProposedEdit>();
-  private readonly pendingAttachments = new Map<string, RequestAttachment>();
-  private readonly taskManager: TaskQueueManager;
+  private readonly taskController: TaskController;
+  private readonly editReviewService: EditReviewService;
   private currentAbortController?: AbortController;
 
-  public constructor(private readonly context: vscode.ExtensionContext) {
-    this.taskManager = new TaskQueueManager({ maxConcurrent: 3 });
-    this.taskManager.onEvent((event) => this.handleTaskEvent(event));
+  public constructor(
+    private readonly context: vscode.ExtensionContext,
+    private readonly secretService: SecretService,
+    private readonly workspaceTrustService: WorkspaceTrustService,
+  ) {
+    this.taskController = new TaskController((msg) => this.postMessage(msg));
+    this.editReviewService = new EditReviewService((msg) => this.postMessage(msg));
   }
 
   public resolveWebviewView(view: vscode.WebviewView): void {
@@ -224,17 +220,15 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     this.pushInitialWebviewState();
   }
 
-  public notifyConfigChanged(): void {
+  public async notifyConfigChanged(): Promise<void> {
     this.orchestrator = undefined;
     this.currentWorkspaceRoot = undefined;
-    this.postMessage({ type: "config", value: this.getRuntimeSettings() });
+    const settings = await this.getRuntimeSettings();
+    this.postMessage({ type: "config", value: settings });
   }
 
   public clearConversation(): void {
-    this.pendingEdits.clear();
-    this.pendingAttachments.clear();
-    this.taskManager.clear();
-    this.postMessage({ type: "cleared" });
+    this.taskController.clear();
   }
 
   public prefillPrompt(prompt: string): void {
@@ -341,22 +335,30 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         return;
       case "updateSetting":
         if (message.key && message.value !== undefined) {
-          const config =
-            vscode.workspace.getConfiguration("nexcodeKiboko");
-          await config.update(
-            message.key,
-            message.value,
-            vscode.ConfigurationTarget.Workspace,
-          );
-          this.notifyConfigChanged();
+          const secretKeys = ["openAIApiKey", "tavilyApiKey"];
+          if (secretKeys.includes(message.key)) {
+            await this.secretService.setSecret(
+              message.key as "openAIApiKey" | "tavilyApiKey",
+              String(message.value),
+            );
+          } else {
+            const config =
+              vscode.workspace.getConfiguration("nexcodeKiboko");
+            await config.update(
+              message.key,
+              message.value,
+              vscode.ConfigurationTarget.Workspace,
+            );
+          }
+          await this.notifyConfigChanged();
         }
         return;
       case "addAttachment":
         await this.addAttachmentFromWebview(message);
         return;
       case "removeAttachment":
-        this.pendingAttachments.delete(message.attachmentId);
-        this.postAttachments();
+        this.taskController.removeAttachment(message.attachmentId);
+        this.taskController.postAttachments();
         return;
       case "steerTask":
         this.handleSteerTask(message.taskId, message.message);
@@ -365,7 +367,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         this.handleCancelTask(message.taskId);
         return;
       case "listTasks":
-        this.postTaskList();
+        this.taskController.postTaskList();
         return;
     }
   }
@@ -376,25 +378,27 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
-    const activeTasks = this.taskManager.getActiveTasks();
+    const taskManager = this.taskController.getTaskManager();
+    const activeTasks = taskManager.getActiveTasks();
     const activeTask = activeTasks.length > 0 ? activeTasks[0] : undefined;
+    const settings = await this.getRuntimeSettings();
 
-    const result = this.taskManager.classifyAndRoute(
+    const result = taskManager.classifyAndRoute(
       activeTask?.id,
       prompt,
       message.sessionId ?? "default",
       {
-        mode: message.mode ?? this.getRuntimeSettings().mode,
-        provider: message.provider ?? this.getRuntimeSettings().provider,
-        model: message.model ?? this.getRuntimeSettings().model,
+        mode: message.mode ?? settings.mode,
+        provider: message.provider ?? settings.provider,
+        model: message.model ?? settings.model,
         temperature:
           typeof message.temperature === "number"
             ? message.temperature
-            : this.getRuntimeSettings().temperature,
+            : settings.temperature,
         allowWebSearch:
           typeof message.allowWebSearch === "boolean"
             ? message.allowWebSearch
-            : this.getRuntimeSettings().allowWebSearch,
+            : settings.allowWebSearch,
         attachmentIds: message.attachmentIds ?? [],
       },
     );
@@ -405,7 +409,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         taskId: result.task.id,
         message: "Message injected into running task",
       });
-      this.postTaskList();
+      this.taskController.postTaskList();
       return;
     }
 
@@ -420,18 +424,19 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       },
     });
 
-    this.postTaskList();
+    this.taskController.postTaskList();
     this.processNextTask();
   }
 
   private async processNextTask(): Promise<void> {
-    const nextTask = this.taskManager.getNextQueuedTask();
+    const taskManager = this.taskController.getTaskManager();
+    const nextTask = taskManager.getNextQueuedTask();
     if (!nextTask) {
       return;
     }
 
     const { task, request } = nextTask;
-    const selectedAttachmentIds = request.attachments?.map((a) => a.id) ?? [];
+    const selectedAttachmentIds = request.attachments?.map((a: RequestAttachment) => a.id) ?? [];
 
     this.postMessage({
       type: "taskStarted",
@@ -446,7 +451,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
 
     try {
       const workspaceRoot = this.getWorkspaceRoot();
-      const orchestrator = this.getOrchestrator(workspaceRoot);
+      const orchestrator = await this.getOrchestrator(workspaceRoot);
       const activeEditor = vscode.window.activeTextEditor;
 
       const fullRequest: OrchestratorRequest = {
@@ -454,7 +459,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         workspaceRoot,
         activeFilePath: activeEditor?.document.uri.fsPath,
         selectedText: activeEditor?.document.getText(activeEditor.selection),
-        attachments: this.resolveAttachmentsForPrompt(selectedAttachmentIds),
+        attachments: this.taskController.resolveAttachmentsForPrompt(selectedAttachmentIds),
       };
 
       this.postMessage({
@@ -468,6 +473,21 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
 
       for await (const event of orchestrator.stream(fullRequest)) {
         if (event.type === "toolApprovalRequired") {
+          // Check workspace trust first
+          if (!this.workspaceTrustService.canRunTool(event.toolName)) {
+            const reason = this.workspaceTrustService.getToolRestrictionReason(event.toolName);
+            await vscode.window.showWarningMessage(
+              reason ?? `Tool "${event.toolName}" is restricted in untrusted workspaces.`,
+            );
+            this.postMessage({
+              type: "toolApprovalResult",
+              approved: false,
+              toolName: event.toolName,
+              pendingArg: event.pendingArg,
+            });
+            continue;
+          }
+
           // Check current permission mode
           const currentConfig = vscode.workspace.getConfiguration("nexcodeKiboko");
           const currentApproval = currentConfig.get<"auto" | "ask" | "bypass">("toolApproval", "ask");
@@ -485,7 +505,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
 
           if (currentApproval === "auto") {
             // Auto mode: check if this is a safe tool
-            const safeTools = ["read", "search", "git-status", "git-diff", "git-branch", "test"];
+            const safeTools = ["read", "search", "git-status", "git-diff", "git-branch"];
             if (safeTools.includes(event.toolName)) {
               this.postMessage({
                 type: "toolApprovalResult",
@@ -534,86 +554,31 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
 
         if (event.type === "final") {
           for (const edit of event.response.proposedEdits) {
-            this.pendingEdits.set(edit.id, edit);
+            this.taskController.addEdit(edit);
           }
-          this.taskManager.completeTask(task.id, event.response.text);
+          taskManager.completeTask(task.id, event.response.text);
         }
 
         this.postMessage({ ...event, taskId: task.id });
       }
     } catch (error) {
       const messageText = this.formatErrorForUi(error);
-      this.taskManager.failTask(task.id, messageText);
+      taskManager.failTask(task.id, messageText);
     } finally {
-      for (const attachmentId of selectedAttachmentIds) {
-        this.pendingAttachments.delete(attachmentId);
-      }
-      this.postAttachments();
+      this.taskController.clearResolvedAttachments(selectedAttachmentIds);
+      this.taskController.postAttachments();
       this.postMessage({ type: "end", taskId: task.id });
-      this.postTaskList();
+      this.taskController.postTaskList();
       this.processNextTask();
     }
   }
 
   private handleSteerTask(taskId: string, message: string): void {
-    const success = this.taskManager.steerTask(taskId, message);
-    if (success) {
-      this.postMessage({
-        type: "taskSteered",
-        taskId,
-        message: "Steering message injected",
-      });
-    } else {
-      this.postMessage({
-        type: "error",
-        message: `Task ${taskId} is not running and cannot be steered.`,
-      });
-    }
-    this.postTaskList();
+    this.taskController.handleSteerTask(taskId, message);
   }
 
   private handleCancelTask(taskId: string): void {
-    const success = this.taskManager.cancelTask(taskId);
-    if (success) {
-      this.postMessage({
-        type: "taskCancelled",
-        taskId,
-      });
-    } else {
-      this.postMessage({
-        type: "error",
-        message: `Task ${taskId} could not be cancelled.`,
-      });
-    }
-    this.postTaskList();
-  }
-
-  private handleTaskEvent(event: TaskEvent): void {
-    this.postMessage({ type: "taskEvent", event });
-  }
-
-  private postTaskList(): void {
-    const allTasks = this.taskManager.getAllTasks();
-    this.postMessage({
-      type: "taskList",
-      tasks: allTasks.map((t) => ({
-        id: t.id,
-        sessionId: t.sessionId,
-        prompt: t.prompt,
-        status: t.status,
-        mode: t.mode,
-        provider: t.provider,
-        model: t.model,
-        createdAt: t.createdAt,
-        startedAt: t.startedAt,
-        completedAt: t.completedAt,
-        result: t.result,
-        error: t.error,
-        activityNote: t.activityNote,
-      })),
-      pendingCount: this.taskManager.getPendingCount(),
-      activeCount: this.taskManager.getActiveCount(),
-    });
+    this.taskController.handleCancelTask(taskId);
   }
 
   private async handleEnhancePrompt(
@@ -631,7 +596,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     }
 
     const workspaceRoot = this.getWorkspaceRoot();
-    const orchestrator = this.getOrchestrator(workspaceRoot);
+    const orchestrator = await this.getOrchestrator(workspaceRoot);
     const activeEditor = vscode.window.activeTextEditor;
 
     this.postMessage({
@@ -671,7 +636,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
   }
 
   private async postMcpRegistryState(): Promise<void> {
-    const orchestrator = this.getOrchestrator(this.getWorkspaceRoot());
+    const orchestrator = await this.getOrchestrator(this.getWorkspaceRoot());
     this.postMessage({
       type: "mcpServers",
       servers: orchestrator.listMcpServers(),
@@ -689,7 +654,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
-    const orchestrator = this.getOrchestrator(this.getWorkspaceRoot());
+    const orchestrator = await this.getOrchestrator(this.getWorkspaceRoot());
     const tools = await orchestrator.listMcpTools(normalizedServer);
 
     this.postMessage({
@@ -718,7 +683,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     }
 
     try {
-      const orchestrator = this.getOrchestrator(this.getWorkspaceRoot());
+      const orchestrator = await this.getOrchestrator(this.getWorkspaceRoot());
       const result = await orchestrator.invokeMcpTool({
         server,
         tool,
@@ -746,10 +711,11 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
   }
 
   private cancelPrompt(): void {
-    const activeTasks = this.taskManager.getActiveTasks();
+    const taskManager = this.taskController.getTaskManager();
+    const activeTasks = taskManager.getActiveTasks();
     if (activeTasks.length > 0) {
       for (const task of activeTasks) {
-        this.taskManager.cancelTask(task.id);
+        taskManager.cancelTask(task.id);
       }
     }
 
@@ -773,7 +739,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     for (const uri of selected) {
       try {
         const attachment = await this.readAttachment(uri);
-        this.pendingAttachments.set(attachment.id, attachment);
+        this.taskController.addAttachment(attachment);
       } catch (error) {
         this.postMessage({
           type: "error",
@@ -782,7 +748,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       }
     }
 
-    this.postAttachments();
+    this.taskController.postAttachments();
   }
 
   private async addAttachmentFromWebview(
@@ -875,8 +841,8 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       base64Data,
     };
 
-    this.pendingAttachments.set(id, attachment);
-    this.postAttachments();
+    this.taskController.addAttachment(attachment);
+    this.taskController.postAttachments();
   }
 
   private isValidAttachmentKind(
@@ -932,7 +898,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
   }
 
   private async applyProposedEdit(editId: string): Promise<void> {
-    const edit = this.pendingEdits.get(editId);
+    const edit = this.taskController.getEdit(editId);
     if (!edit) {
       this.postMessage({
         type: "error",
@@ -942,44 +908,14 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     }
 
     const workspaceRoot = this.getWorkspaceRoot();
-    const targetUri = vscode.Uri.file(path.join(workspaceRoot, edit.filePath));
-
-    const workspaceEdit = new vscode.WorkspaceEdit();
-
-    if (await this.fileExists(targetUri)) {
-      const document = await vscode.workspace.openTextDocument(targetUri);
-      const fullRange = this.fullDocumentRange(document);
-      workspaceEdit.replace(targetUri, fullRange, edit.newText);
-    } else {
-      workspaceEdit.createFile(targetUri, { ignoreIfExists: true });
-      workspaceEdit.insert(targetUri, new vscode.Position(0, 0), edit.newText);
+    const applied = await this.editReviewService.applyEdit(edit, workspaceRoot);
+    if (applied) {
+      this.taskController.removeEdit(editId);
     }
-
-    const applied = await vscode.workspace.applyEdit(workspaceEdit);
-    if (!applied) {
-      this.postMessage({
-        type: "error",
-        message: "VS Code rejected the workspace edit.",
-      });
-      return;
-    }
-
-    this.pendingEdits.delete(editId);
-    this.postMessage({
-      type: "editApplied",
-      editId,
-      filePath: edit.filePath,
-    });
-
-    const opened = await vscode.workspace.openTextDocument(targetUri);
-    await vscode.window.showTextDocument(opened, {
-      preview: false,
-      preserveFocus: false,
-    });
   }
 
   private async previewProposedEdit(editId: string): Promise<void> {
-    const edit = this.pendingEdits.get(editId);
+    const edit = this.taskController.getEdit(editId);
     if (!edit) {
       this.postMessage({
         type: "error",
@@ -989,56 +925,11 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     }
 
     const workspaceRoot = this.getWorkspaceRoot();
-    const targetUri = vscode.Uri.file(path.join(workspaceRoot, edit.filePath));
-    const previewsDir = vscode.Uri.file(
-      path.join(workspaceRoot, ".nexcode", "edit-previews"),
-    );
-    await vscode.workspace.fs.createDirectory(previewsDir);
-
-    const extension = path.extname(edit.filePath) || ".txt";
-    const safeBaseName = path
-      .basename(edit.filePath)
-      .replace(/[^a-zA-Z0-9._-]/g, "_");
-
-    const beforeUri = vscode.Uri.file(
-      path.join(
-        previewsDir.fsPath,
-        `${edit.id}-${safeBaseName}.before${extension}`,
-      ),
-    );
-    const afterUri = vscode.Uri.file(
-      path.join(
-        previewsDir.fsPath,
-        `${edit.id}-${safeBaseName}.after${extension}`,
-      ),
-    );
-
-    const targetExists = await this.fileExists(targetUri);
-    if (!targetExists) {
-      await vscode.workspace.fs.writeFile(beforeUri, Buffer.from("", "utf8"));
-    }
-
-    await vscode.workspace.fs.writeFile(
-      afterUri,
-      Buffer.from(edit.newText, "utf8"),
-    );
-
-    await vscode.commands.executeCommand(
-      "vscode.diff",
-      targetExists ? targetUri : beforeUri,
-      afterUri,
-      `NEXCODE Review: ${edit.filePath}`,
-    );
-
-    this.postMessage({
-      type: "editPreviewOpened",
-      editId,
-      filePath: edit.filePath,
-    });
+    await this.editReviewService.previewEdit(edit, workspaceRoot);
   }
 
   private rejectProposedEdit(editId: string): void {
-    if (!this.pendingEdits.has(editId)) {
+    if (!this.taskController.getEdit(editId)) {
       this.postMessage({
         type: "error",
         message: "Proposed edit not found.",
@@ -1046,17 +937,16 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
-    this.pendingEdits.delete(editId);
-    this.postMessage({
-      type: "editRejected",
-      editId,
-    });
+    this.taskController.removeEdit(editId);
+    this.editReviewService.rejectEdit(editId);
   }
 
-  private getOrchestrator(workspaceRoot: string): NexcodeOrchestrator {
+  private async getOrchestrator(
+    workspaceRoot: string,
+  ): Promise<NexcodeOrchestrator> {
     if (!this.orchestrator || this.currentWorkspaceRoot !== workspaceRoot) {
-      const settings = this.getRuntimeSettings();
-      const rawKeys = this.getRawApiKeys();
+      const settings = await this.getRuntimeSettings();
+      const rawKeys = await this.getRawApiKeys();
       this.orchestrator = createNexcodeOrchestrator({
         workspaceRoot,
         promptsDir: path.join(workspaceRoot, "prompts"),
@@ -1069,7 +959,16 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         tavilyApiKey: rawKeys.tavilyApiKey,
         modeTemperatures: settings.modeTemperatures as any,
         agentModels: settings.agentModels,
-        approvalCallback: async (toolName, arg) => {
+        approvalCallback: async (toolName: string, arg: string) => {
+          // Check workspace trust first
+          if (!this.workspaceTrustService.canRunTool(toolName)) {
+            const reason = this.workspaceTrustService.getToolRestrictionReason(toolName);
+            await vscode.window.showWarningMessage(
+              reason ?? `Tool "${toolName}" is restricted in untrusted workspaces.`,
+            );
+            return false;
+          }
+
           // Read current settings each time (not captured in closure)
           const currentConfig = vscode.workspace.getConfiguration("nexcodeKiboko");
           const currentApproval = currentConfig.get<"auto" | "ask" | "bypass">("toolApproval", "ask");
@@ -1079,7 +978,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
           }
 
           if (currentApproval === "auto") {
-            const safeTools = ["read", "search", "git-status", "git-diff", "git-branch", "test"];
+            const safeTools = ["read", "search", "git-status", "git-diff", "git-branch"];
             if (safeTools.includes(toolName)) {
               return true;
             }
@@ -1111,14 +1010,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       return [];
     }
 
-    const attachments: RequestAttachment[] = [];
-    for (const attachmentId of selectedAttachmentIds) {
-      const attachment = this.pendingAttachments.get(attachmentId);
-      if (attachment) {
-        attachments.push(attachment);
-      }
-    }
-    return attachments;
+    return this.taskController.resolveAttachmentsForPrompt(selectedAttachmentIds);
   }
 
   private async readAttachment(uri: vscode.Uri): Promise<RequestAttachment> {
@@ -1155,23 +1047,6 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       base64Data,
       byteSize,
     };
-  }
-
-  private postAttachments(): void {
-    const attachments: AttachmentChip[] = [
-      ...this.pendingAttachments.values(),
-    ].map((attachment) => ({
-      id: attachment.id,
-      fileName: attachment.fileName,
-      kind: attachment.kind,
-      mimeType: attachment.mimeType,
-      byteSize: attachment.byteSize,
-    }));
-
-    this.postMessage({
-      type: "attachmentsSelected",
-      attachments,
-    });
   }
 
   private guessMimeType(fileName: string): string {
@@ -1246,7 +1121,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     return this.context.globalStorageUri.fsPath;
   }
 
-  private getRuntimeSettings(): {
+  private async getRuntimeSettings(): Promise<{
     provider: ProviderId;
     model: string;
     mode: AgentMode;
@@ -1263,8 +1138,9 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     showReasoning: boolean;
     autoApplyChanges: boolean;
     allowWebSearch: boolean;
-  } {
+  }> {
     const config = vscode.workspace.getConfiguration("nexcodeKiboko");
+    const secrets = await this.secretService.getAllSecrets();
 
     return {
       provider: config.get<ProviderId>("defaultProvider", "ollama"),
@@ -1277,10 +1153,8 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         "openAIBaseUrl",
         "https://opencode.ai/zen/go/v1",
       ).replace(/\/+$/, ""),
-      openAIApiKeyConfigured: !!config
-        .get<string>("openAIApiKey", "")
-        .trim(),
-      tavilyApiKeyConfigured: !!config.get<string>("tavilyApiKey", "").trim(),
+      openAIApiKeyConfigured: !!secrets.openAIApiKey.trim(),
+      tavilyApiKeyConfigured: !!secrets.tavilyApiKey.trim(),
       allowTools: config.get<boolean>("allowToolCommands", true),
       requireTerminalApproval: config.get<boolean>(
         "requireTerminalApproval",
@@ -1307,18 +1181,17 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     };
   }
 
-  private getRawApiKeys(): { openAIApiKey: string; tavilyApiKey: string } {
-    const config = vscode.workspace.getConfiguration("nexcodeKiboko");
-    return {
-      openAIApiKey: config.get<string>("openAIApiKey", ""),
-      tavilyApiKey: config.get<string>("tavilyApiKey", ""),
-    };
+  private async getRawApiKeys(): Promise<{
+    openAIApiKey: string;
+    tavilyApiKey: string;
+  }> {
+    return this.secretService.getAllSecrets();
   }
 
   private async refreshProviderStatus(
     providerOverride?: ProviderId,
   ): Promise<void> {
-    const settings = this.getRuntimeSettings();
+    const settings = await this.getRuntimeSettings();
     const provider = providerOverride ?? settings.provider;
     const startedAt = Date.now();
 
@@ -1343,7 +1216,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
           Accept: "application/json",
         };
 
-        const rawKeys = this.getRawApiKeys();
+        const rawKeys = await this.getRawApiKeys();
         if (rawKeys.openAIApiKey.trim()) {
           headers.Authorization = `Bearer ${rawKeys.openAIApiKey.trim()}`;
         }
@@ -1386,7 +1259,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
   private async provideModelSuggestions(
     providerOverride?: ProviderId,
   ): Promise<void> {
-    const settings = this.getRuntimeSettings();
+    const settings = await this.getRuntimeSettings();
     const provider = providerOverride ?? settings.provider;
 
     try {
@@ -1420,7 +1293,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
           Accept: "application/json",
         };
 
-        const rawKeys = this.getRawApiKeys();
+        const rawKeys = await this.getRawApiKeys();
         if (rawKeys.openAIApiKey.trim()) {
           headers.Authorization = `Bearer ${rawKeys.openAIApiKey.trim()}`;
         }
@@ -1532,9 +1405,10 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     this.pushInitialWebviewState();
   }
 
-  private pushInitialWebviewState(): void {
-    this.postMessage({ type: "config", value: this.getRuntimeSettings() });
-    this.postAttachments();
+  private async pushInitialWebviewState(): Promise<void> {
+    const settings = await this.getRuntimeSettings();
+    this.postMessage({ type: "config", value: settings });
+    this.taskController.postAttachments();
     void this.postMcpRegistryState();
     void this.refreshProviderStatus();
     void this.provideModelSuggestions();

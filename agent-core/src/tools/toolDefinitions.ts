@@ -104,7 +104,25 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     description: "Execute the test runner with an optional filter.",
     risk: "terminal",
     timeoutMs: 300_000,
-    inputSchema: stringSchema(),
+    inputSchema: {
+      type: "object",
+      properties: {
+        runner: {
+          type: "string",
+          enum: ["npm", "vitest", "jest", "pytest", "go", "maven", "gradle", "cargo"],
+          description: "The test runner to use",
+        },
+        filter: {
+          type: "string",
+          description: "Optional test name or pattern to filter tests",
+        },
+        script: {
+          type: "string",
+          description: "Custom test script command (overrides runner detection)",
+        },
+      },
+      required: ["runner"],
+    },
   },
   {
     name: "read",

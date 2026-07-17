@@ -7,6 +7,7 @@ node_modules/
 **/.pytest_cache/
 **/__pycache__/
 extension/package-lock.json
+.vscode/
 .vscode-test/
 .nexcode/
 *.log

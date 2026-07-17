@@ -99,6 +99,12 @@ export interface OrchestratorResponse {
     output: number;
     total: number;
   };
+  turnTokenUsage?: {
+    input: number;
+    output: number;
+    total: number;
+    requests: number;
+  };
 }
 
 export type ActivityStatus =

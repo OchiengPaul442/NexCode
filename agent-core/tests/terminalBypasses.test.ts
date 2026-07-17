@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { normalizeTerminalCommand, TerminalTool } from "../src/tools/terminalTool";
 
+const IS_WINDOWS = process.platform === "win32";
+
 describe("normalizeTerminalCommand", () => {
   it("normalizes create-next-app project name to lowercase", () => {
     const result = normalizeTerminalCommand("npx create-next-app MyProject");
@@ -9,7 +11,12 @@ describe("normalizeTerminalCommand", () => {
 
   it("does not modify non-matching commands", () => {
     const result = normalizeTerminalCommand("ls -la");
-    expect(result).toBe("ls -la");
+    // On Windows, ls is translated to Get-ChildItem
+    if (IS_WINDOWS) {
+      expect(result).toContain("Get-ChildItem");
+    } else {
+      expect(result).toBe("ls -la");
+    }
   });
 
   it("does not modify already-lowercase project name", () => {

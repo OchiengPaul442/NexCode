@@ -84,3 +84,11 @@
 - Added web search (`/tool web-search`) with Tavily and fallback engines.
 - Added reasoning trace and terminal confirmation controls.
 - Improved packaging scripts and maintenance docs.
+
+## 0.2.1
+
+**Date:** 2026-07-17
+**Previous version:** 0.2.0
+
+### Documentation
+- docs: add AGENT.md, CLAUDE.md, and auto-version script (fc03251)

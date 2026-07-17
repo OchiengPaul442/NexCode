@@ -45,6 +45,34 @@ export class OpenAICompatibleProvider implements ModelProvider {
     private readonly apiKey?: string,
   ) {}
 
+  private isOpenCodeGo(): boolean {
+    return this.baseUrl.includes("opencode.ai");
+  }
+
+  private validateModel(model: string): void {
+    if (!this.isOpenCodeGo()) {
+      return;
+    }
+    const validModels = [
+      "deepseek-v4-flash",
+      "deepseek-v4-pro",
+      "mimo-v2.5",
+      "mimo-v2.5-pro",
+      "glm-5.2",
+      "glm-5.1",
+      "kimi-k2.7-code",
+      "kimi-k2.6",
+      "qwen3-coder",
+    ];
+    const lower = model.toLowerCase();
+    const isValid = validModels.some((m) => lower.includes(m));
+    if (!isValid) {
+      throw new Error(
+        `Model "${model}" is not available on OpenCode Go. Use one of: ${validModels.join(", ")}`,
+      );
+    }
+  }
+
   private shouldRetryStatus(status: number): boolean {
     return [408, 409, 425, 429, 500, 502, 503, 504].includes(status);
   }
@@ -185,6 +213,8 @@ export class OpenAICompatibleProvider implements ModelProvider {
     );
 
     try {
+      this.validateModel(request.model);
+
       const body: any = {
         model: request.model,
         messages: request.messages,
@@ -216,8 +246,19 @@ export class OpenAICompatibleProvider implements ModelProvider {
 
       if (!response.ok) {
         const responseBody = await response.text();
+        let errorMsg = `Provider returned status ${response.status}`;
+        try {
+          const errorJson = JSON.parse(responseBody);
+          if (errorJson.error?.message) {
+            errorMsg = errorJson.error.message;
+          }
+        } catch {
+          if (responseBody && responseBody.length < 300) {
+            errorMsg = responseBody;
+          }
+        }
         throw new Error(
-          `OpenAI-compatible request failed (${response.status}): ${responseBody}`,
+          `${errorMsg}. Check your provider settings (model, API key, base URL).`,
         );
       }
 
@@ -258,6 +299,8 @@ export class OpenAICompatibleProvider implements ModelProvider {
     );
 
     try {
+      this.validateModel(request.model);
+
       const response = await this.fetchWithRetries(
         `${this.baseUrl}/chat/completions`,
         () => ({
@@ -276,8 +319,19 @@ export class OpenAICompatibleProvider implements ModelProvider {
 
       if (!response.ok || !response.body) {
         const body = await response.text();
+        let errorMsg = `Provider returned status ${response.status}`;
+        try {
+          const errorJson = JSON.parse(body);
+          if (errorJson.error?.message) {
+            errorMsg = errorJson.error.message;
+          }
+        } catch {
+          if (body && body.length < 300) {
+            errorMsg = body;
+          }
+        }
         throw new Error(
-          `OpenAI-compatible stream failed (${response.status}): ${body}`,
+          `${errorMsg}. Check your provider settings (model, API key, base URL).`,
         );
       }
 

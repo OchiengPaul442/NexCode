@@ -48,8 +48,9 @@
   box-sizing: border-box;
 }
 
-body {
-  margin: 0;
+html, body {
+  margin: 0 !important;
+  padding: 0 !important;
   background: var(--vscode-editor-background);
   color: var(--vscode-foreground);
   font-family: var(--vscode-font-family, "Segoe UI", system-ui, sans-serif);
@@ -58,6 +59,11 @@ body {
   overflow: hidden;
   height: 100vh;
   width: 100%;
+}
+
+.vscode-webview {
+  padding: 0 !important;
+  margin: 0 !important;
 }
 
 /* Scrollbar */
@@ -79,9 +85,11 @@ body {
 
 /* ── Shell layout ──────────────────────────────────────────────────────────── */
 .nk-shell {
+  padding: 0;
+  margin: 0;
+  height: 100vh;
   display: flex;
   flex-direction: column;
-  height: 100vh;
   width: 100%;
   background: var(--vscode-editor-background);
   overflow: hidden;
@@ -94,7 +102,8 @@ body {
   align-items: center;
   justify-content: space-between;
   height: 32px;
-  padding: 0;
+  padding: 0 8px;
+  margin: 0 !important;
   background: var(--vscode-editor-background);
   flex-shrink: 0;
 }
@@ -143,7 +152,7 @@ body {
   overflow-x: hidden;
   min-height: 0;
   position: relative;
-  padding: 0;
+  padding: 0 !important;
 }
 .nk-chat-scroller.nk-drag-active {
   background: rgba(0, 122, 204, 0.08);
@@ -173,7 +182,7 @@ body {
 
 /* Messages list */
 .nk-messages-list {
-  padding: 6px 0 8px;
+  padding: 6px 8px 8px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -990,8 +999,9 @@ body {
 /* ── Input area ────────────────────────────────────────────────────────────── */
 .nk-input-area {
   flex-shrink: 0;
-  padding: 20px 24px 26px;
-  overflow: visible;
+  padding: 0 !important;
+  margin: 0 !important;
+  background: var(--vscode-editor-background);
 }
 
 .nk-banner {
@@ -1077,16 +1087,17 @@ body {
   flex-direction: column;
   min-height: clamp(132px, 24vh, 190px);
   background: var(--vscode-input-background);
+  padding: 0;
+  margin: 0 8px;
+  border-radius: 10px;
   border: 1px solid var(--vscode-widget-border);
-  border-radius: var(--nk-radius-sm);
-  overflow: visible;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.16);
+  overflow: hidden;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .nk-input-card:focus-within {
   border-color: var(--vscode-focusBorder);
-  box-shadow: 0 0 0 1px var(--vscode-focusBorder), 0 12px 32px rgba(0, 0, 0, 0.16);
+  box-shadow: 0 0 0 1px var(--vscode-focusBorder);
 }
 
 /* Textarea */
@@ -1095,7 +1106,7 @@ body {
   width: 100%;
   min-height: 0;
   max-height: 150px;
-  padding: 18px 18px 6px;
+  padding: 8px 8px 4px;
   background: transparent;
   border: none;
   color: var(--vscode-input-foreground);
@@ -1114,7 +1125,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 4px 2px;
+  padding: 2px 4px 4px;
   gap: 2px;
 }
 
@@ -1200,10 +1211,10 @@ body {
 }
 
 .nk-toolbar-select--model .nk-toolbar-select-trigger {
-  min-width: 148px;
-  max-width: min(300px, 42vw);
-  font-size: 13px;
-  padding: 0 10px 0 6px;
+  min-width: 100px;
+  max-width: min(100px, 20vw);
+  font-size: 11px;
+  padding: 0 14px 0 6px;
   justify-content: space-between;
 }
 
@@ -2207,7 +2218,7 @@ body {
   }
 
   .nk-input-area {
-    padding: 12px;
+    padding: 0 !important;
   }
 
   .nk-input-card {
@@ -2215,13 +2226,13 @@ body {
   }
 
   .nk-textarea {
-    padding: 14px 14px 6px;
+    padding: 8px 8px 4px;
   }
 
   .nk-input-toolbar {
     flex-wrap: nowrap;
     align-items: center;
-    padding: 6px 10px 10px;
+    padding: 2px 4px 4px;
   }
 
   .nk-input-toolbar-left {
@@ -2234,9 +2245,9 @@ body {
   }
 
   .nk-toolbar-select--model .nk-toolbar-select-trigger {
-    width: min(180px, calc(100vw - 174px));
+    width: min(100px, calc(100vw - 174px));
     min-width: 0;
-    font-size: 13px;
+    font-size: 11px;
   }
 
   .nk-toolbar-btn,
@@ -2349,18 +2360,59 @@ body {
 /* ── Message attachments ─────────────────────────────────────────────────── */
 .nk-msg-attachments {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 4px;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 
 .nk-msg-attachment {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: rgba(121, 121, 121, 0.08);
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.nk-msg-attachment-icon {
+  color: var(--vscode-descriptionForeground);
+  flex-shrink: 0;
+}
+
+.nk-msg-attachment-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.nk-msg-attachment-name {
+  color: var(--vscode-foreground);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nk-msg-attachment-preview {
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nk-toolbar-select-option-meta {
+  display: flex;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.nk-toolbar-select-option-meta span {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 6px;
-  background: rgba(121, 121, 121, 0.1);
-  border-radius: 3px;
-  font-size: 11px;
-  color: var(--vscode-descriptionForeground);
+  gap: 2px;
 }

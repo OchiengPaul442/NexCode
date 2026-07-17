@@ -140,7 +140,7 @@ export class NexcodeOrchestrator {
         provider: options.defaultProvider ?? "ollama",
         model: options.defaultModel ?? "qwen2.5-coder:14b",
         ollamaBaseUrl: options.ollamaBaseUrl ?? "http://localhost:11434",
-        openAIBaseUrl: options.openAIBaseUrl ?? "https://api.openai.com/v1",
+        openAIBaseUrl: (options.openAIBaseUrl ?? "https://api.openai.com/v1").replace(/\/+$/, ""),
         openAIApiKey: options.openAIApiKey ?? process.env.OPENAI_API_KEY,
       },
       toolDefaults: {
@@ -1613,6 +1613,7 @@ export class NexcodeOrchestrator {
         toolDefs,
         config,
         abortSignal,
+        this.approvalCallback,
       )) {
         if (event.type === "token") {
           finalText += event.token;
@@ -3154,8 +3155,16 @@ export class NexcodeOrchestrator {
     }
 
     const normalized = raw.toLowerCase();
+
     if (normalized.includes("timeout")) {
       return "The model request timed out. Try a smaller prompt or switch to a faster model.";
+    }
+
+    if (
+      normalized.includes("invalid_request_error") ||
+      normalized.includes("400")
+    ) {
+      return "The model could not process this request. Try a different model or simplify your prompt.";
     }
 
     if (
@@ -3163,11 +3172,11 @@ export class NexcodeOrchestrator {
       normalized.includes("unauthorized") ||
       normalized.includes("invalid api key")
     ) {
-      return "Authentication failed for the selected provider. Verify API key and endpoint settings.";
+      return "Authentication failed. Check your API key in settings.";
     }
 
     if (normalized.includes("429") || normalized.includes("rate limit")) {
-      return "Rate limit reached. Please retry in a moment or use another model.";
+      return "Rate limit reached. Please wait a moment and try again.";
     }
 
     if (
@@ -3189,7 +3198,7 @@ export class NexcodeOrchestrator {
       return "Request was cancelled.";
     }
 
-    return raw.length > 260 ? `${raw.slice(0, 260)}...` : raw;
+    return raw.length > 300 ? `${raw.slice(0, 300)}...` : raw;
   }
 }
 

@@ -7,6 +7,7 @@ import {
 import { ModelRouter } from "../providers/modelRouter";
 import { ToolRegistry } from "../tools/toolRegistry";
 import { ToolDefinition } from "../tools/toolProtocol";
+import { ApprovalCallback } from "../tools/toolApprovalPolicy";
 
 export interface AgentLoopConfig {
   maxTurns: number;
@@ -84,6 +85,7 @@ export async function* runAgentLoop(
   toolDefinitions: ToolDefinition[],
   config: AgentLoopConfig,
   signal?: AbortSignal,
+  approvalCallback?: ApprovalCallback,
 ): AsyncGenerator<OrchestratorEvent, ChatMessage[]> {
   const toolSchemas: ToolCallRequestTool[] = toolDefinitions.map((def) => ({
     name: def.name,
@@ -136,9 +138,38 @@ export async function* runAgentLoop(
       };
 
       const argString = formatToolArgs(toolCall.function.name, args);
-      const result = await tools.runToolCall(
+      let result = await tools.runToolCall(
         `${toolCall.function.name} ${argString}`,
       );
+
+      if (result.requiresApproval) {
+        const toolName = result.toolName ?? toolCall.function.name;
+        const pendingArg = result.pendingArg ?? argString;
+
+        if (approvalCallback) {
+          const approved = await approvalCallback(toolName, pendingArg);
+          if (approved) {
+            result = await tools.runToolCall(
+              `${toolCall.function.name} ${argString}`,
+            );
+          } else {
+            result = {
+              ok: false,
+              output: "Command cancelled by user.",
+            };
+          }
+        } else {
+          yield {
+            type: "toolApprovalRequired",
+            toolName,
+            pendingArg,
+          };
+          result = {
+            ok: false,
+            output: "AWAITING_APPROVAL",
+          };
+        }
+      }
 
       messages.push({
         role: "tool",

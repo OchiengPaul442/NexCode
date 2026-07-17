@@ -21,6 +21,7 @@ import {
   ChevronRight,
   FileText,
   Image,
+  FileSpreadsheet,
   File,
   Eraser,
   ArrowUp,
@@ -194,6 +195,7 @@ interface ToolbarSelectOption {
   value: string;
   label: string;
   description?: string;
+  meta?: { inputs: string[]; reasoning: boolean; context: string };
 }
 
 interface SidebarSettings {
@@ -600,6 +602,19 @@ function activityStatusClass(status: ActivityStatus): string {
 
 
 
+const modelCapabilities: Record<string, { inputs: string[]; reasoning: boolean; context: string }> = {
+  'qwen2.5-coder:14b': { inputs: ['text'], reasoning: false, context: '32K' },
+  'qwen2.5-coder:7b': { inputs: ['text'], reasoning: false, context: '32K' },
+  'deepseek-v4-flash': { inputs: ['text'], reasoning: true, context: '128K' },
+  'deepseek-v4-pro': { inputs: ['text'], reasoning: true, context: '128K' },
+  'mimo-v2.5': { inputs: ['text'], reasoning: true, context: '128K' },
+  'mimo-v2.5-pro': { inputs: ['text'], reasoning: true, context: '128K' },
+  'glm-5.2': { inputs: ['text'], reasoning: true, context: '200K' },
+  'glm-5.1': { inputs: ['text'], reasoning: true, context: '200K' },
+  'kimi-k2.7-code': { inputs: ['text'], reasoning: false, context: '128K' },
+  'kimi-k2.6': { inputs: ['text'], reasoning: false, context: '128K' },
+};
+
 function hasThinkingCapability(model?: string): boolean {
   if (!model) return false;
   return /claude|deepseek-r1|qwen3|o1|o3|glm-5|kimi-k2/i.test(model);
@@ -736,6 +751,13 @@ function ToolbarSelect({
                 <span className="nk-toolbar-select-option-description">
                   {option.description}
                 </span>
+              )}
+              {option.meta && (
+                <div className="nk-toolbar-select-option-meta">
+                  <span>{option.meta.inputs.join(', ')}</span>
+                  {option.meta.reasoning && <span>Reasoning</span>}
+                  <span>{option.meta.context}</span>
+                </div>
               )}
             </button>
           ))}
@@ -1649,14 +1671,31 @@ function MessageBubble({
                           id: string;
                           fileName: string;
                           kind: string;
+                          textContent?: string;
                         }) => (
                           <div key={att.id} className="nk-msg-attachment">
-                            {att.kind === "image" ? (
-                              <Image size={12} />
-                            ) : (
-                              <FileText size={12} />
-                            )}
-                            <span>{att.fileName}</span>
+                            <div className="nk-msg-attachment-icon">
+                              {att.kind === "image" ? (
+                                <Image size={14} />
+                              ) : att.fileName?.endsWith(".pdf") ? (
+                                <FileText size={14} />
+                              ) : att.fileName?.endsWith(".csv") ||
+                                att.fileName?.endsWith(".xlsx") ? (
+                                <FileSpreadsheet size={14} />
+                              ) : (
+                                <FileText size={14} />
+                              )}
+                            </div>
+                            <div className="nk-msg-attachment-info">
+                              <span className="nk-msg-attachment-name">
+                                {att.fileName}
+                              </span>
+                              {att.textContent && (
+                                <span className="nk-msg-attachment-preview">
+                                  {att.textContent.slice(0, 80)}...
+                                </span>
+                              )}
+                            </div>
                           </div>
                         ),
                       )}
@@ -2007,6 +2046,7 @@ function App() {
       .map((option) => ({
         value: option,
         label: option,
+        meta: modelCapabilities[option] ?? undefined,
       }));
   }, [activeSession, modelSuggestions]);
 
@@ -2878,13 +2918,20 @@ function App() {
         case "error": {
           setMcpInvokeBusy(false);
           setEnhanceBusy(false);
-          const message = String(payload.message ?? "Request failed.");
+          const rawMessage = String(payload.message ?? "Request failed.");
+          const message = rawMessage
+            .replace(/Agent loop failed: Error: /g, "")
+            .replace(/All provider\/model attempts failed: Error: /g, "")
+            .replace(/All stream attempts failed: Error: /g, "")
+            .replace(/\{[^}]*\}/g, "")
+            .replace(/\s+/g, " ")
+            .trim();
           const cur = pendingRef.current;
           if (cur)
             useStore
               .getState()
-              .failAssistantMessage(cur.sessionId, cur.messageId, message);
-          else showNotice("error", message);
+              .failAssistantMessage(cur.sessionId, cur.messageId, message || "Request failed.");
+          else showNotice("error", message || "Request failed.");
           return;
         }
         case "end":

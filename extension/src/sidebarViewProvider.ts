@@ -734,6 +734,12 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       return "Request timed out. Try a smaller task or a faster model.";
     }
     if (
+      normalized.includes("invalid_request_error") ||
+      normalized.includes("400")
+    ) {
+      return "The model could not process this request. Try a different model or simplify your prompt.";
+    }
+    if (
       normalized.includes("fetch failed") ||
       normalized.includes("econnrefused") ||
       normalized.includes("enotfound")
@@ -741,10 +747,13 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       return "Could not reach the configured model provider endpoint.";
     }
     if (normalized.includes("401") || normalized.includes("unauthorized")) {
-      return "Provider authentication failed. Check your API key or endpoint settings.";
+      return "Authentication failed. Check your API key in settings.";
+    }
+    if (normalized.includes("429") || normalized.includes("rate limit")) {
+      return "Rate limit reached. Please wait a moment and try again.";
     }
 
-    return raw.length > 260 ? `${raw.slice(0, 260)}...` : raw;
+    return raw.length > 300 ? `${raw.slice(0, 300)}...` : raw;
   }
 
   private async applyProposedEdit(editId: string): Promise<void> {
@@ -1066,8 +1075,8 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       ),
       openAIBaseUrl: config.get<string>(
         "openAIBaseUrl",
-        "https://api.openai.com/v1",
-      ),
+        "https://opencode.ai/zen/go/v1",
+      ).replace(/\/+$/, ""),
       openAIApiKeyConfigured: !!config
         .get<string>("openAIApiKey", "")
         .trim(),
@@ -1275,7 +1284,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
   <link href="${styleUri}" rel="stylesheet" />
   <title>Nexcode Kiboko</title>
 </head>
-<body>
+<body style="margin:0;padding:0;">
   <div id="root"></div>
 
   <script nonce="${nonce}" src="${scriptUri}"></script>

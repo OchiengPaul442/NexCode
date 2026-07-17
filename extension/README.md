@@ -54,6 +54,21 @@ All extension settings are under `nexcodeKiboko.*`:
 - Node.js 18+
 - Ollama (for local or cloud Ollama model usage)
 
+## Installation
+
+1. Install from the VS Code Marketplace or by running `code --install-extension nexcode.nexcode-kiboko`.
+2. Open the NexCode sidebar from the activity bar.
+3. Select a provider and model in the sidebar header.
+4. Start chatting.
+
+## Development
+
+```bash
+npm install
+npm run build
+npm run package:vsix
+```
+
 ## Known Notes
 
 - Edit proposals are never auto-applied; explicit approval is always required.

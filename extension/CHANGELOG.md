@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.47
+
+- Added CI workflow badge and status indicators to README.
+- Added test count badge (62 tests across 8 files).
+- Added version and license badges.
+- Restructured README with streamlined features, configuration, and quick start sections.
+- Added configuration examples for Ollama, OpenCode Go, and HuggingFace providers.
+
 ## 0.1.22
 
 - Rebuilt sidebar UX to a Copilot-style layout with session list, model/provider/mode top bar, and cleaner chat composition flow.

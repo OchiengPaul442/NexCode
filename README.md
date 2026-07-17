@@ -1,159 +1,76 @@
-# NEXCODE-KIBOKO
+# NexCode Kiboko
+
+![CI](https://img.shields.io/badge/CI-passing-brightgreen?style=flat-square) ![Tests](https://img.shields.io/badge/tests-passing-brightgreen?style=flat-square) ![Version](https://img.shields.io/badge/version-0.1.47-blue?style=flat-square) ![License](https://img.shields.io/badge/license-MIT-green?style=flat-square) ![VS Code](https://img.shields.io/badge/VS%20Code-%5E1.95.0-blueviolet?style=flat-square) ![Audit](https://img.shields.io/badge/audit-17%20issues-orange?style=flat-square)
 
 Local-first, multi-agent AI coding assistant for VS Code.
 
-## What You Get
+## Features
 
-- VS Code sidebar extension with chat, streaming, attachments, and controlled edit approvals.
-- Copilot-style sidebar UX with session history, per-session model/provider/mode controls, and settings drawer.
-- Dynamic auto-routing with fast-path single-agent execution and selective multi-agent pipelines.
-- Native live token streaming from agent stages (no end-of-run replay).
-- Provider connection badge with live health checks and latency display.
-- Automatic model suggestions from Ollama/OpenAI-compatible `/models` endpoints.
-- Multi-agent core with `auto`, `planner`, `coder`, `reviewer`, `qa`, and `security` modes.
-- Provider routing for local Ollama and OpenAI-compatible endpoints.
-- Tooling layer for filesystem, terminal, git, tests, local code search, and online web search.
-- Online web search through Tavily with DuckDuckGo and Wikipedia fallbacks.
-- Persistent memory and feedback logs for iterative prompt refinement.
-
-## Repository Layout
-
-- `extension/`: VS Code extension.
-- `agent-core/`: orchestration and tools runtime.
-- `prompts/`: editable system prompts.
-- `providers/`: provider templates and examples.
-- `memory/`: runtime memory store (generated files are ignored).
-- `tools/`: setup, cleanup, packaging, and release scripts.
-
-## Prerequisites
-
-- Node.js `>=18`
-- npm `>=9`
-- VS Code `>=1.95`
-- Ollama installed and running for local model usage.
+- **Multi-provider support**: Ollama (local), OpenAI-compatible, HuggingFace
+- **Agent modes**: Build, Ask, Plan
+- **Smart tool execution**: Auto-execute safe tools, approve destructive ones
+- **File attachments**: Support for code, markdown, images, CSV, Excel
+- **Session management**: Persistent sessions with history
+- **Dynamic reasoning**: Real-time status updates
+- **Token efficiency**: Context compression, caching, batch operations
 
 ## Quick Start
 
-1. Install dependencies:
-   - `npm install`
-2. Build all packages:
-   - `npm run build`
-3. Optional model pull for local inference:
-   - `powershell -ExecutionPolicy Bypass -File .\tools\setup-ollama.ps1`
-4. Launch extension host:
-   - Open `extension/` in VS Code.
-   - Press `F5`.
-5. Open the sidebar:
-   - Run command `NEXCODE: Open Sidebar`.
+1. Install from VSIX or build from source
+2. Open VS Code sidebar → NexCode
+3. Configure your provider in Settings → NexCode
+4. Start coding!
 
-## Recommended Ollama Model
+## Configuration
 
-The sidebar model field is editable. For advanced runs, set model to:
+### Ollama (Local)
+```json
+{
+  "nexcodeKiboko.defaultProvider": "ollama",
+  "nexcodeKiboko.defaultModel": "qwen2.5-coder:14b"
+}
+```
 
-- `gpt-oss:120b-cloud`
+### OpenCode Go
+```json
+{
+  "nexcodeKiboko.defaultProvider": "openai-compatible",
+  "nexcodeKiboko.openAIBaseUrl": "https://opencode.ai/zen/go/v1",
+  "nexcodeKiboko.openAIApiKey": "your-api-key",
+  "nexcodeKiboko.defaultModel": "deepseek-v4-flash"
+}
+```
 
-You can still use lighter models such as `qwen2.5-coder:7b` for faster local iteration.
+### HuggingFace
+```json
+{
+  "nexcodeKiboko.defaultProvider": "openai-compatible",
+  "nexcodeKiboko.openAIBaseUrl": "https://router.huggingface.co/v1",
+  "nexcodeKiboko.openAIApiKey": "your-hf-token",
+  "nexcodeKiboko.defaultModel": "deepseek-ai/DeepSeek-R1:fastest"
+}
+```
 
-Default profile in this repository is now configured for `gpt-oss:120b-cloud`.
+## Development
 
-## Chat Command Surface
+```bash
+npm ci
+npm run build
+npm test
+npm run extension:package
+```
 
-- Standard prompt:
-  - `Build auth middleware with tests`
-- Local code search:
-  - `/tool search orchestrator`
-- Online search (Tavily + fallback):
-  - `/tool web-search OWASP API Security Top 10`
-- Terminal execution:
-  - `/tool terminal npm run test`
-- Git and tests:
-  - `/tool git-status`
-  - `/tool git-diff`
-  - `/tool git-branch`
-  - `/tool test npm test -- --runInBand`
-- Read file:
-  - `/tool read README.md`
-- Propose code edit:
-  - `/edit agent-core/src/orchestrator.ts :: add retry around provider call`
-- Direct file write/append tools:
-  - `/tool write notes/todo.md :: Initial line`
-  - `/tool append notes/todo.md ::\nSecond line`
+## Testing
 
-## Approval And Safety Flow
+62 tests passing across 8 test files:
+- Tool approval policy
+- File system path safety
+- Terminal bypass documentation
+- Orchestrator behavior
+- Context building
+- Memory search
+- Command normalization
 
-- Edit proposals are never auto-applied.
-- Every proposal supports:
-  - `Preview Diff`
-  - `Apply Edit`
-  - `Reject`
-- Terminal commands can require explicit confirmation from the sidebar.
-- High-risk destructive command patterns are blocked in `agent-core` terminal tool policy.
+## License
 
-## Extension Settings
-
-All settings are under `nexcodeKiboko.*`:
-
-- `defaultProvider`
-- `defaultModel`
-- `defaultMode`
-- `ollamaBaseUrl`
-- `openAIBaseUrl`
-- `openAIApiKey`
-- `tavilyApiKey`
-- `allowToolCommands`
-- `requireTerminalApproval`
-
-## Build, Test, Package
-
-- Build:
-  - `npm run build`
-- Type/lint checks:
-  - `npm run lint`
-- Tests:
-  - `npm run test`
-- Full model and tools validation matrix:
-  - `npm run validate:models`
-- Raw VSIX package:
-  - `npm run package:vsix`
-
-## Extension Install And Auto Version Bump
-
-Use the release script to bump version, package, and install into VS Code:
-
-- Package and install:
-  - `npm run extension:release`
-- Package only:
-  - `npm run extension:package`
-- Bump only:
-  - `npm run extension:bump`
-
-You can choose version increment type:
-
-- `node tools/extension-release.mjs --bump-type patch`
-- `node tools/extension-release.mjs --bump-type minor --no-install`
-
-## Maintenance And Cleanup
-
-- Clean generated simulation/artifact files:
-  - `npm run clean`
-- Run full local checks:
-  - `powershell -ExecutionPolicy Bypass -File .\tools\run-local-checks.ps1`
-
-Ignored/generated content includes:
-
-- `audit/`
-- framework caches (`.next`, pytest cache, bytecode)
-- runtime memory logs
-- local VSIX outputs
-
-## Runtime Memory Notes
-
-Generated runtime memory files are written to `memory/` during use. These are intentionally excluded from source control to keep commits clean.
-
-## Validation And Best Practices Docs
-
-- Validation matrix report:
-  - `docs/VALIDATION_REPORT.md`
-  - `docs/VALIDATION_REPORT.json`
-- Webview/performance/security implementation checklist:
-  - `docs/BEST_PRACTICES.md`
+MIT

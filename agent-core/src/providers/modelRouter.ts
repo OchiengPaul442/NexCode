@@ -75,6 +75,18 @@ export class ModelRouter {
     private readonly config: ModelRouterConfig,
   ) {}
 
+  public async checkProviders(): Promise<Record<ProviderId, { ok: boolean; error?: string; models?: string[] }>> {
+    const results: Record<string, { ok: boolean; error?: string; models?: string[] }> = {};
+    for (const [id, provider] of Object.entries(this.providers)) {
+      if ("checkConnection" in provider && typeof provider.checkConnection === "function") {
+        results[id] = await (provider as any).checkConnection();
+      } else {
+        results[id] = { ok: true };
+      }
+    }
+    return results as Record<ProviderId, { ok: boolean; error?: string; models?: string[] }>;
+  }
+
   public resolve(options: ProviderGenerateOptions): {
     provider: ModelProvider;
     model: string;
@@ -184,8 +196,10 @@ export class ModelRouter {
       }
     }
 
+    const attempted = candidates.map(c => `${c.providerId}/${c.model}`).join(", ");
+    const errorMsg = lastError instanceof Error ? lastError.message : String(lastError ?? "Unknown error");
     throw new Error(
-      `All provider/model attempts failed: ${String(lastError ?? "Unknown error")}`,
+      `All provider/model attempts failed (${attempted}): ${errorMsg}`,
     );
   }
 
@@ -247,8 +261,10 @@ export class ModelRouter {
       }
     }
 
+    const attempted = candidates.map(c => `${c.providerId}/${c.model}`).join(", ");
+    const errorMsg = lastError instanceof Error ? lastError.message : String(lastError ?? "Unknown error");
     throw new Error(
-      `All stream attempts failed: ${String(lastError ?? "Unknown error")}`,
+      `All provider/model attempts failed (${attempted}): ${errorMsg}`,
     );
   }
 

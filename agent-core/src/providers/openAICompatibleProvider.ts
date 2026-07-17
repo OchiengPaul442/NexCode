@@ -45,6 +45,30 @@ export class OpenAICompatibleProvider implements ModelProvider {
     private readonly apiKey?: string,
   ) {}
 
+  public async checkConnection(): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (this.apiKey) {
+        headers["Authorization"] = `Bearer ${this.apiKey}`;
+      }
+      const response = await fetch(`${this.baseUrl}/models`, {
+        method: "GET",
+        headers,
+        signal: AbortSignal.timeout(10000),
+      });
+      if (response.status === 401 || response.status === 403) {
+        return { ok: false, error: `API key is invalid or missing for ${this.baseUrl}` };
+      }
+      if (!response.ok) {
+        return { ok: false, error: `Provider returned status ${response.status}` };
+      }
+      return { ok: true };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      return { ok: false, error: `Connection failed: ${msg}` };
+    }
+  }
+
   private isOpenCodeGo(): boolean {
     return this.baseUrl.includes("opencode.ai");
   }

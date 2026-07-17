@@ -27,6 +27,26 @@ export class OllamaProvider implements ModelProvider {
 
   public constructor(private readonly baseUrl: string) {}
 
+  public async checkConnection(): Promise<{ ok: boolean; error?: string; models?: string[] }> {
+    try {
+      const response = await fetch(`${this.baseUrl}/api/tags`, {
+        method: "GET",
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!response.ok) {
+        return { ok: false, error: `Ollama returned status ${response.status}` };
+      }
+      const data = await response.json() as { models?: Array<{ name: string }> };
+      return { ok: true, models: data.models?.map(m => m.name) ?? [] };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      if (msg.includes("ECONNREFUSED") || msg.includes("fetch failed")) {
+        return { ok: false, error: `Cannot connect to Ollama at ${this.baseUrl}. Is Ollama running? Start it with: ollama serve` };
+      }
+      return { ok: false, error: `Ollama connection failed: ${msg}` };
+    }
+  }
+
   private createAbortController(
     signal: AbortSignal | undefined,
     timeoutMs: number,
@@ -105,7 +125,18 @@ export class OllamaProvider implements ModelProvider {
 
       if (!response.ok) {
         const body = await response.text();
-        throw new Error(`Ollama request failed (${response.status}): ${body}`);
+        let errorMsg = `Ollama returned status ${response.status}`;
+        try {
+          const errorJson = JSON.parse(body);
+          if (errorJson.error) {
+            errorMsg = `Ollama: ${errorJson.error}`;
+          }
+        } catch {
+          if (body && body.length < 300) {
+            errorMsg = `Ollama: ${body}`;
+          }
+        }
+        throw new Error(errorMsg);
       }
 
       const json = (await response.json()) as OllamaChatResponse;
@@ -165,7 +196,17 @@ export class OllamaProvider implements ModelProvider {
       });
 
       if (!response.ok || !response.body) {
-        throw new Error(`Ollama stream failed (${response.status}).`);
+        let errorMsg = `Ollama returned status ${response.status}`;
+        try {
+          const body = await response.text();
+          const errorJson = JSON.parse(body);
+          if (errorJson.error) {
+            errorMsg = `Ollama: ${errorJson.error}`;
+          }
+        } catch {
+          // Use status-based message
+        }
+        throw new Error(errorMsg);
       }
 
       const reader = response.body.getReader();

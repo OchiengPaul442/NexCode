@@ -122,6 +122,7 @@ export class NexcodeOrchestrator {
   private readonly feedbackLogger: FeedbackLogger;
   private readonly reflection: ReflectionEngine;
   private readonly promptVersions: PromptVersionManager;
+  private providerCheckPromise: Promise<Record<string, { ok: boolean; error?: string; models?: string[] }>>;
   private readonly mcpRegistry: McpRegistry;
   private readonly compressor = new ContextCompressor(8000);
   private readonly sessionCompressor = new SessionCompressor();
@@ -164,6 +165,7 @@ export class NexcodeOrchestrator {
       },
     );
 
+    this.providerCheckPromise = this.router.checkProviders().catch(() => ({}));
     this.prompts = new PromptStore(this.config.promptsDir);
     this.memory = new MemoryManager(this.config.memoryDir);
     this.memory.initialize().catch(() => {});
@@ -312,6 +314,10 @@ export class NexcodeOrchestrator {
     }
 
     return false;
+  }
+
+  public async getProviderStatus(): Promise<Record<string, { ok: boolean; error?: string; models?: string[] }>> {
+    return this.providerCheckPromise;
   }
 
   public async *stream(
@@ -3241,7 +3247,19 @@ export class NexcodeOrchestrator {
       normalized.includes("all stream attempts failed") ||
       normalized.includes("all provider/model attempts failed")
     ) {
-      return "All configured provider attempts failed. Check model availability and provider settings.";
+      if (normalized.includes("ollama") && normalized.includes("econnrefused")) {
+        return "Ollama is not running. Start it with: `ollama serve`. Or switch to OpenCode Go in settings (nexcodeKiboko.defaultProvider = openai-compatible).";
+      }
+      if (normalized.includes("ollama") && normalized.includes("model")) {
+        return "Ollama model not found. Pull it with: `ollama pull <model-name>`. Check available models with: `ollama list`.";
+      }
+      if (normalized.includes("opencode") || normalized.includes("openai-compatible")) {
+        return "OpenCode Go API failed. Check your API key in settings (nexcodeKiboko.openAIApiKey) and ensure the model is valid (e.g., deepseek-v4-flash, mimo-v2.5).";
+      }
+      if (normalized.includes("upstream request failed")) {
+        return "Provider upstream request failed. For Ollama: ensure it's running. For OpenCode Go: check your API key and model name in settings.";
+      }
+      return "All configured provider attempts failed. For Ollama: ensure it's running (`ollama serve`). For OpenCode Go: set a valid API key in settings.";
     }
 
     if (
@@ -3249,6 +3267,9 @@ export class NexcodeOrchestrator {
       normalized.includes("econnrefused") ||
       normalized.includes("enotfound")
     ) {
+      if (normalized.includes("ollama") || normalized.includes("11434")) {
+        return "Cannot reach Ollama. Start it with: `ollama serve`. Then pull your model: `ollama pull <model-name>`.";
+      }
       return "Could not reach the model provider endpoint. Check network access and base URL settings.";
     }
 

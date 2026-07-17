@@ -1964,13 +1964,72 @@ function ToolStatusIndicator({
   status: "success" | "error" | "awaiting-approval";
   message?: string;
 }) {
-  const statusIcon = status === "success" ? "✓" : status === "error" ? "✗" : "⏳";
-  const statusClass = status === "success" ? "nk-tool-status--success" : status === "error" ? "nk-tool-status--error" : "nk-tool-status--pending";
+  const isRunning = status === "awaiting-approval";
+  const isError = status === "error";
+  const isSuccess = status === "success";
+
+  const toolIcon = (() => {
+    switch (toolName.toLowerCase()) {
+      case "terminal": return <Terminal size={12} />;
+      case "read": return <FileText size={12} />;
+      case "write": case "append": return <Pencil size={12} />;
+      case "delete": case "delete-contents": return <Trash2 size={12} />;
+      case "move": return <RotateCcw size={12} />;
+      case "search": case "web-search": return <Search size={12} />;
+      case "batch_edit": return <ListTodo size={12} />;
+      case "git-status": case "git-diff": case "git-branch": return <GitBranch size={12} />;
+      case "test": return <Shield size={12} />;
+      default: return <Code2 size={12} />;
+    }
+  })();
+
+  const toolLabel = toolName === "terminal" ? "Shell" : toolName;
 
   return (
-    <div className={`nk-tool-status ${statusClass}`}>
-      <span className="nk-tool-status-icon">{statusIcon}</span>
-      <span className="nk-tool-status-command">{message || `${toolName} ${command}`}</span>
+    <div className="nk-tool-card" style={{
+      borderLeft: `3px solid ${isSuccess ? "var(--vscode-terminal-ansiGreen, #4ec9b0)" : isError ? "var(--vscode-terminal-ansiRed, #f48771)" : "var(--vscode-terminal-ansiYellow, #dcdcaa)"}`,
+      background: "var(--vscodesideBar-background, #1e1e1e)",
+      borderRadius: "4px",
+      padding: "6px 10px",
+      marginBottom: "4px",
+      fontSize: "12px",
+      fontFamily: "var(--vscode-editor-font-family, monospace)",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: isRunning ? "4px" : "0" }}>
+        <span style={{ color: "var(--vscode-descriptionForeground, #8b8b9a)", display: "flex" }}>{toolIcon}</span>
+        <span style={{ fontWeight: 600, color: "var(--vscode-descriptionForeground, #8b8b9a)", fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+          {toolLabel}
+        </span>
+        {isRunning && (
+          <span className="nk-tool-spinner" style={{ marginLeft: "auto" }}>
+            <span style={{ display: "inline-block", width: "10px", height: "10px", border: "2px solid var(--vscode-descriptionForeground, #8b8b9a)", borderTopColor: "transparent", borderRadius: "50%", animation: "nk-spin 0.8s linear infinite" }} />
+          </span>
+        )}
+        {isSuccess && <span style={{ color: "var(--vscode-terminal-ansiGreen, #4ec9b0)", marginLeft: "auto", fontSize: "11px" }}>done</span>}
+        {isError && <span style={{ color: "var(--vscode-terminal-ansiRed, #f48771)", marginLeft: "auto", fontSize: "11px" }}>failed</span>}
+      </div>
+      {command && (
+        <div style={{ color: "var(--vscode-terminal-foreground, #cccccc)", fontSize: "11px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <code style={{ background: "var(--vscode-textCodeBlock-background, #1a1a2e)", padding: "2px 6px", borderRadius: "3px" }}>
+            {command.length > 120 ? command.slice(0, 120) + "..." : command}
+          </code>
+        </div>
+      )}
+      {message && !isRunning && (
+        <div style={{
+          marginTop: "4px",
+          padding: "6px 8px",
+          background: isError ? "rgba(244,135,113,0.08)" : "rgba(78,201,176,0.06)",
+          borderRadius: "3px",
+          fontSize: "11px",
+          color: isError ? "var(--vscode-terminal-ansiRed, #f48771)" : "var(--vscode-terminal-foreground, #cccccc)",
+          maxHeight: "80px",
+          overflow: "auto",
+          whiteSpace: "pre-wrap",
+        }}>
+          {message.length > 500 ? message.slice(0, 500) + "..." : message}
+        </div>
+      )}
     </div>
   );
 }

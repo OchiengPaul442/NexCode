@@ -2319,6 +2319,24 @@ html, body {
   white-space: nowrap;
 }
 
+.nk-tool-card {
+  transition: border-color 0.2s ease;
+}
+
+.nk-tool-card:hover {
+  border-left-color: var(--vscode-focusBorder, #007acc) !important;
+}
+
+@keyframes nk-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.nk-tool-executions {
+  margin-top: 6px;
+  padding-left: 2px;
+}
+
 /* ── Parallel execution indicator ─────────────────────────────────────────── */
 .nk-parallel-indicator {
   display: flex;

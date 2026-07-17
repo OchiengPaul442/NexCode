@@ -1,3 +1,5 @@
+import fs from "fs/promises";
+import path from "path";
 import { ToolResult } from "../types";
 import { FileSystemTool } from "./fileSystemTool";
 import { GitTool } from "./gitTool";
@@ -86,6 +88,23 @@ export class ToolRegistry {
     return validateInput(input, def.inputSchema);
   }
 
+  public validateToolArg(toolName: string, arg: string): string | null {
+    const definition = getToolDefinition(toolName);
+    if (!definition) return null;
+
+    try {
+      const args = JSON.parse(arg);
+      const errors = validateInput(args, definition.inputSchema);
+      if (errors.length > 0) {
+        return errors.map((e) => `${e.field}: ${e.message}`).join(", ");
+      }
+    } catch {
+      // If arg is not JSON, skip schema validation
+    }
+
+    return null;
+  }
+
   public async runToolCall(input: string): Promise<ToolResult> {
     const trimmed = input.trim();
     if (!trimmed) {
@@ -101,6 +120,14 @@ export class ToolRegistry {
         ? trimmed.toLowerCase()
         : trimmed.slice(0, firstSpace).toLowerCase();
     const arg = firstSpace === -1 ? "" : trimmed.slice(firstSpace + 1).trim();
+
+    const validationError = this.validateToolArg(toolName, arg);
+    if (validationError) {
+      return {
+        ok: false,
+        output: `Invalid input: ${validationError}`,
+      };
+    }
 
     if (
       this.approvalPolicy &&
@@ -180,6 +207,25 @@ export class ToolRegistry {
         return this.filesystem.deletePath(arg);
       case "delete-contents":
         return this.filesystem.clearDirectory(arg);
+      case "batch_edit": {
+        try {
+          const batchArgs = JSON.parse(arg);
+          const results: ToolResult[] = [];
+
+          for (const edit of batchArgs.edits) {
+            const result = await this.executeBatchEditItem(edit);
+            results.push(result);
+          }
+
+          const successCount = results.filter(r => r.ok).length;
+          return {
+            ok: successCount === results.length,
+            output: `Batch edit: ${successCount}/${results.length} succeeded`,
+          };
+        } catch (error) {
+          return { ok: false, output: `Batch edit failed: ${error}` };
+        }
+      }
       case "mcp": {
         if (!this.mcpRegistry) {
           return {
@@ -216,7 +262,7 @@ export class ToolRegistry {
         return {
           ok: false,
           output:
-            "Unknown tool command. Use one of: search, web-search, terminal, git-status, git-diff, git-branch, test, read, write, append, move, delete, delete-contents, mcp",
+            "Unknown tool command. Use one of: search, web-search, terminal, git-status, git-diff, git-branch, test, read, write, append, move, delete, delete-contents, mcp, batch_edit",
         };
     }
   }
@@ -325,5 +371,31 @@ export class ToolRegistry {
       return [arg.trim()];
     }
     return undefined;
+  }
+
+  private async executeBatchEditItem(edit: { filePath: string; content: string; operation: string }): Promise<ToolResult> {
+    try {
+      const absolutePath = this.filesystem.resolveWorkspacePath(edit.filePath);
+
+      switch (edit.operation) {
+        case "create": {
+          await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+          await fs.writeFile(absolutePath, edit.content, "utf8");
+          return { ok: true, output: `Created ${edit.filePath}` };
+        }
+        case "update": {
+          await fs.writeFile(absolutePath, edit.content, "utf8");
+          return { ok: true, output: `Updated ${edit.filePath}` };
+        }
+        case "delete": {
+          await fs.rm(absolutePath, { force: true });
+          return { ok: true, output: `Deleted ${edit.filePath}` };
+        }
+        default:
+          return { ok: false, output: `Unknown operation: ${edit.operation}` };
+      }
+    } catch (error) {
+      return { ok: false, output: `Failed to ${edit.operation} ${edit.filePath}: ${String(error)}` };
+    }
   }
 }

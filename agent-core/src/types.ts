@@ -1,4 +1,4 @@
-export type ChatRole = "system" | "user" | "assistant";
+export type ChatRole = "system" | "user" | "assistant" | "tool";
 
 export type ProviderId = "ollama" | "openai-compatible";
 
@@ -10,11 +10,30 @@ export type AgentMode =
   | "qa"
   | "security";
 
+export interface ToolCallRequestTool {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+}
+
+export interface ToolCallRequestFunction {
+  name: string;
+  arguments: string;
+}
+
+export interface ToolCallRequest {
+  id: string;
+  type: "function";
+  function: ToolCallRequestFunction;
+}
+
 export interface ChatMessage {
   role: ChatRole;
   content: string;
   images?: string[];
   attachmentFileNames?: string[];
+  toolCalls?: ToolCallRequest[];
+  toolCallId?: string;
 }
 
 export type AttachmentKind = "text" | "image" | "binary";
@@ -164,16 +183,33 @@ export type OrchestratorEvent =
       successCount: number;
     };
 
+export interface ToolCallRequest {
+  id: string;
+  type: "function";
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
+
 export interface ModelRequest {
   model: string;
   messages: ChatMessage[];
   temperature?: number;
   maxTokens?: number;
   signal?: AbortSignal;
+  tools?: ToolCallRequestTool[];
 }
 
 export interface ModelResponse {
   text: string;
+  toolCalls?: ToolCallRequest[];
+  raw?: unknown;
+}
+
+export interface ModelResponse {
+  text: string;
+  toolCalls?: ToolCallRequest[];
   raw?: unknown;
 }
 
@@ -184,6 +220,7 @@ export interface ProviderGenerateOptions {
   complexity?: "small" | "large";
   maxTokens?: number;
   signal?: AbortSignal;
+  tools?: ToolCallRequestTool[];
 }
 
 export interface ModelProvider {

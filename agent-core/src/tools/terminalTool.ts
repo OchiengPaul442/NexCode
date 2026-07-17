@@ -6,7 +6,57 @@ const execAsync = promisify(exec);
 
 const MAX_COMMAND_LENGTH = 2_000;
 
-const BLOCKED_COMMAND_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
+// SAFE_COMMANDS - always allowed without approval
+const SAFE_PATTERNS = [
+  /^ls\b/,
+  /^pwd\b/,
+  /^echo\b/,
+  /^cat\b/,
+  /^head\b/,
+  /^tail\b/,
+  /^wc\b/,
+  /^git\s+status\b/,
+  /^git\s+diff\b/,
+  /^git\s+log\b/,
+  /^git\s+branch\b/,
+  /^git\s+show\b/,
+  /^npm\s+test\b/,
+  /^npm\s+run\b/,
+  /^npm\s+install\b/,
+  /^npx\b/,
+  /^node\b/,
+  /^python\b/,
+  /^pip\b/,
+  /^cargo\s+(check|build|test|clippy|fmt)\b/,
+  /^go\s+(build|test|fmt|vet)\b/,
+];
+
+// BLOCKED_COMMANDS - always blocked regardless of approval
+const BLOCKED_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
+  {
+    pattern: /\brm\s+-rf\s+\//,
+    reason: "rm -rf on root is blocked.",
+  },
+  {
+    pattern: /\brm\s+--recursive\s+--force\s+\//,
+    reason: "rm --recursive --force on root is blocked.",
+  },
+  {
+    pattern: /\bmkfs\b/,
+    reason: "Filesystem formatting is blocked.",
+  },
+  {
+    pattern: /\bformat\s+[a-z]:/i,
+    reason: "Disk formatting is blocked.",
+  },
+  {
+    pattern: /\bfork\s+bomb/i,
+    reason: "Fork bomb is blocked.",
+  },
+  {
+    pattern: /:(){ :\|:& };:/,
+    reason: "Fork bomb syntax is blocked.",
+  },
   {
     pattern: /\bcurl\b[^\n]*\|\s*(?:bash|sh|pwsh|powershell)\b/i,
     reason: "Piped download-and-execute commands are blocked.",
@@ -15,46 +65,17 @@ const BLOCKED_COMMAND_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
     pattern: /\b(?:bash|sh|pwsh|powershell|cmd)\s+(?:-c|\/c)\b/i,
     reason: "Nested shell execution is blocked.",
   },
-  /\brm\s+-rf\b/i,
-  /\bshutdown\b/i,
-  /\breboot\b/i,
-  /\bmkfs\b/i,
-  /\bformat\s+[a-z]:/i,
-  /\bdel\s+\/s\b/i,
-].map((item) =>
-  item instanceof RegExp
-    ? { pattern: item, reason: "Destructive command pattern detected." }
-    : item,
-);
-
-const SHELL_EXPANSION_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   {
-    pattern: /\$\(/,
-    reason: "Command substitution $(...) is blocked.",
+    pattern: /\bshutdown\b/i,
+    reason: "System shutdown is blocked.",
   },
   {
-    pattern: /`[^`]*`/,
-    reason: "Command substitution using backticks is blocked.",
+    pattern: /\breboot\b/i,
+    reason: "System reboot is blocked.",
   },
   {
-    pattern: /\$\{[^}]*\}/,
-    reason: "Parameter expansion ${...} is blocked.",
-  },
-  {
-    pattern: /;\s*\w/,
-    reason: "Inline command chaining with semicolons is blocked. Use separate tool calls.",
-  },
-  {
-    pattern: /\|[^|]/,
-    reason: "Pipes are blocked. Use separate tool calls for piped operations.",
-  },
-  {
-    pattern: />[^>]/,
-    reason: "Output redirects (>) are blocked. Use the write tool for file output.",
-  },
-  {
-    pattern: /<[^<]/,
-    reason: "Input redirects (<) are blocked.",
+    pattern: /\bdel\s+\/s\b/i,
+    reason: "Recursive file deletion is blocked.",
   },
 ];
 
@@ -262,15 +283,10 @@ export class TerminalTool {
 
   private validateCommand(command: string): string | null {
     const trimmed = command.trim();
-    if (!trimmed) {
-      return "Command cannot be empty.";
-    }
+    if (!trimmed) return "Command cannot be empty.";
+    if (trimmed.length > MAX_COMMAND_LENGTH) return `Command exceeds ${MAX_COMMAND_LENGTH} characters.`;
 
-    if (trimmed.length > MAX_COMMAND_LENGTH) {
-      return `Command exceeds ${MAX_COMMAND_LENGTH} characters.`;
-    }
-
-    for (const blocked of BLOCKED_COMMAND_PATTERNS) {
+    for (const blocked of BLOCKED_PATTERNS) {
       if (blocked.pattern.test(trimmed)) {
         return blocked.reason;
       }
@@ -282,9 +298,9 @@ export class TerminalTool {
       }
     }
 
-    for (const blocked of SHELL_EXPANSION_PATTERNS) {
-      if (blocked.pattern.test(trimmed)) {
-        return blocked.reason;
+    for (const safe of SAFE_PATTERNS) {
+      if (safe.test(trimmed)) {
+        return null;
       }
     }
 

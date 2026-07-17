@@ -1,8 +1,21 @@
-import { ModelProvider, ModelRequest, ModelResponse } from "../types";
+import {
+  ModelProvider,
+  ModelRequest,
+  ModelResponse,
+  ToolCallRequest,
+} from "../types";
 
 interface OpenAIMessage {
   role: string;
   content: string;
+  tool_calls?: Array<{
+    id: string;
+    type: "function";
+    function: {
+      name: string;
+      arguments: string;
+    };
+  }>;
 }
 
 interface OpenAIChoice {
@@ -172,30 +185,61 @@ export class OpenAICompatibleProvider implements ModelProvider {
     );
 
     try {
+      const body: any = {
+        model: request.model,
+        messages: request.messages,
+        temperature: request.temperature ?? 0.2,
+        max_tokens: request.maxTokens,
+        stream: false,
+      };
+
+      if (request.tools && request.tools.length > 0) {
+        body.tools = request.tools.map((tool) => ({
+          type: "function",
+          function: {
+            name: tool.name,
+            description: tool.description,
+            parameters: tool.inputSchema,
+          },
+        }));
+      }
+
       const response = await this.fetchWithRetries(
         `${this.baseUrl}/chat/completions`,
         () => ({
           method: "POST",
           headers: this.createHeaders(),
-          body: JSON.stringify({
-            model: request.model,
-            messages: request.messages,
-            temperature: request.temperature ?? 0.2,
-            max_tokens: request.maxTokens,
-            stream: false,
-          }),
+          body: JSON.stringify(body),
         }),
         abort.controller.signal,
       );
 
       if (!response.ok) {
-        const body = await response.text();
+        const responseBody = await response.text();
         throw new Error(
-          `OpenAI-compatible request failed (${response.status}): ${body}`,
+          `OpenAI-compatible request failed (${response.status}): ${responseBody}`,
         );
       }
 
       const json = (await response.json()) as OpenAIChatResponse;
+
+      if (json.choices?.[0]?.message?.tool_calls) {
+        const toolCalls: ToolCallRequest[] =
+          json.choices[0].message.tool_calls.map((tc) => ({
+            id: tc.id,
+            type: "function" as const,
+            function: {
+              name: tc.function.name,
+              arguments: tc.function.arguments,
+            },
+          }));
+        return {
+          text: json.choices[0].message.content || "",
+          toolCalls,
+          raw: json,
+        };
+      }
+
       const text = json.choices?.[0]?.message?.content ?? "";
 
       return {

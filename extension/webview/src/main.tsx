@@ -3034,6 +3034,49 @@ function App() {
           useStore.getState().resetParallel();
           return;
         }
+        case "batchEditStarted": {
+          const cur = pendingRef.current;
+          const editCount = typeof payload.editCount === "number" ? payload.editCount : 0;
+          if (cur) {
+            const statusText = `Batch edit started: ${editCount} file(s)`;
+            debugRef.current.push(statusText);
+            reasoningRef.current = [
+              ...reasoningRef.current.slice(-8),
+              statusText,
+            ];
+            useStore
+              .getState()
+              .updateAssistantTrace(
+                cur.sessionId,
+                cur.messageId,
+                [...reasoningRef.current],
+                [...debugRef.current],
+              );
+          }
+          return;
+        }
+        case "batchEditCompleted": {
+          const cur = pendingRef.current;
+          const editCount = typeof payload.editCount === "number" ? payload.editCount : 0;
+          const successCount = typeof payload.successCount === "number" ? payload.successCount : 0;
+          if (cur) {
+            const statusText = `Batch edit completed: ${successCount}/${editCount} succeeded`;
+            debugRef.current.push(statusText);
+            reasoningRef.current = [
+              ...reasoningRef.current.slice(-8),
+              statusText,
+            ];
+            useStore
+              .getState()
+              .updateAssistantTrace(
+                cur.sessionId,
+                cur.messageId,
+                [...reasoningRef.current],
+                [...debugRef.current],
+              );
+          }
+          return;
+        }
         default:
           return;
       }

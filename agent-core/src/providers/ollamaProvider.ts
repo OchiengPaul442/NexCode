@@ -3,12 +3,21 @@ import {
   ModelProvider,
   ModelRequest,
   ModelResponse,
+  ToolCallRequest,
 } from "../types";
+
+interface OllamaToolCall {
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
 
 interface OllamaChatResponse {
   message?: {
     role?: string;
     content?: string;
+    tool_calls?: OllamaToolCall[];
   };
   response?: string;
 }
@@ -64,7 +73,7 @@ export class OllamaProvider implements ModelProvider {
       this.resolveTimeoutMs("generate"),
     );
     try {
-      const payload = {
+      const payload: any = {
         model: request.model,
         messages: request.messages,
         stream: false,
@@ -73,6 +82,17 @@ export class OllamaProvider implements ModelProvider {
           num_predict: request.maxTokens,
         },
       };
+
+      if (request.tools && request.tools.length > 0) {
+        payload.tools = request.tools.map((tool) => ({
+          type: "function",
+          function: {
+            name: tool.name,
+            description: tool.description,
+            parameters: tool.inputSchema,
+          },
+        }));
+      }
 
       const response = await fetch(`${this.baseUrl}/api/chat`, {
         method: "POST",
@@ -89,6 +109,25 @@ export class OllamaProvider implements ModelProvider {
       }
 
       const json = (await response.json()) as OllamaChatResponse;
+
+      if (json.message?.tool_calls) {
+        const toolCalls: ToolCallRequest[] = json.message.tool_calls.map(
+          (tc, i) => ({
+            id: `call_${i}`,
+            type: "function" as const,
+            function: {
+              name: tc.function.name,
+              arguments: tc.function.arguments,
+            },
+          }),
+        );
+        return {
+          text: json.message.content || "",
+          toolCalls,
+          raw: json,
+        };
+      }
+
       const text = json.message?.content ?? json.response ?? "";
 
       return {

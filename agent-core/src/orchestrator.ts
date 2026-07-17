@@ -2,7 +2,7 @@ import fs from "fs/promises";
 import path from "path";
 import { randomUUID } from "crypto";
 import { createRuntimeConfig, RuntimeConfig } from "./config";
-import { SubAgentManager } from "./agents/subagent";
+
 import { CoderAgent } from "./agents/coderAgent";
 import { PlannerAgent } from "./agents/plannerAgent";
 import { QaAgent } from "./agents/qaAgent";
@@ -22,7 +22,6 @@ import {
   ProposedEdit,
   ToolResult,
 } from "./types";
-import { BatchEditor, BatchEdit } from "./tools/batchEditor";
 import { McpAdapter, McpToolCall, McpToolResult } from "./mcp";
 import { McpRegistry } from "./mcp/mcpRegistry";
 import { MemoryManager } from "./memory/memoryManager";
@@ -51,6 +50,8 @@ import {
 } from "./orchestrator/contextBuilder";
 import { ContextCompressor } from "./utils/contextCompressor";
 import { SessionCompressor } from "./utils/sessionCompressor";
+import { runAgentLoop, AgentLoopConfig } from "./agents/agentLoop";
+import { getAllToolDefinitions } from "./tools/toolDefinitions";
 
 export interface NexcodeOrchestratorOptions {
   workspaceRoot?: string;
@@ -910,9 +911,120 @@ export class NexcodeOrchestrator {
           );
           latestActivityFiles = inferredFiles;
 
+          if (strategy.mode === "coder") {
+            const iterator = this.runAgentLoopStreaming(
+              "auto",
+              request.prompt,
+              provider,
+              model,
+              temperature,
+              workspaceContext,
+              memoryContext,
+              sessionContext,
+              diagnostics,
+              request.abortSignal,
+            );
+
+            while (true) {
+              const step = await iterator.next();
+              if (step.done) {
+                response = step.value;
+                break;
+              }
+
+              if (step.value.type === "token") {
+                streamedAnyToken = true;
+              }
+
+              if (step.value.type === "activity") {
+                latestActivityFiles = step.value.files ?? latestActivityFiles;
+              }
+
+              yield step.value;
+            }
+          } else {
+            const iterator = this.runSingleModeStreaming(
+              strategy.mode,
+              "auto",
+              request.prompt,
+              provider,
+              model,
+              temperature,
+              workspaceContext,
+              memoryContext,
+              sessionContext,
+              diagnostics,
+              request.abortSignal,
+              {
+                statusLabel: strategy.statusLabel,
+                todoTitle: strategy.todoTitle,
+                files: inferredFiles,
+              },
+            );
+
+            while (true) {
+              const step = await iterator.next();
+              if (step.done) {
+                response = step.value;
+                break;
+              }
+
+              if (step.value.type === "token") {
+                streamedAnyToken = true;
+              }
+
+              if (step.value.type === "activity") {
+                latestActivityFiles = step.value.files ?? latestActivityFiles;
+              }
+
+              yield step.value;
+            }
+          }
+        }
+      } else {
+        const selectedMode = mode as Exclude<AgentMode, "auto">;
+        const inferredFiles = this.inferActivityFilesFromPrompt(
+          request.prompt,
+          request.workspaceRoot,
+          request.activeFilePath,
+        );
+        latestActivityFiles = inferredFiles;
+
+        if (selectedMode === "coder") {
+          const iterator = this.runAgentLoopStreaming(
+            selectedMode,
+            request.prompt,
+            provider,
+            model,
+            temperature,
+            workspaceContext,
+            memoryContext,
+            sessionContext,
+            diagnostics,
+            request.abortSignal,
+          );
+
+          while (true) {
+            const step = await iterator.next();
+            if (step.done) {
+              response = step.value;
+              break;
+            }
+
+            if (step.value.type === "token") {
+              streamedAnyToken = true;
+            }
+
+            if (step.value.type === "activity") {
+              latestActivityFiles = step.value.files ?? latestActivityFiles;
+            }
+
+            yield step.value;
+          }
+        } else {
           const iterator = this.runSingleModeStreaming(
-            strategy.mode,
-            "auto",
+            selectedMode,
+            mode,
             request.prompt,
             provider,
             model,
@@ -923,8 +1035,8 @@ export class NexcodeOrchestrator {
             diagnostics,
             request.abortSignal,
             {
-              statusLabel: strategy.statusLabel,
-              todoTitle: strategy.todoTitle,
+              statusLabel: this.describePipelineStage(selectedMode),
+              todoTitle: `Run ${this.formatPipelineStage(selectedMode)} stage`,
               files: inferredFiles,
             },
           );
@@ -947,51 +1059,6 @@ export class NexcodeOrchestrator {
             yield step.value;
           }
         }
-      } else {
-        const selectedMode = mode as Exclude<AgentMode, "auto">;
-        const inferredFiles = this.inferActivityFilesFromPrompt(
-          request.prompt,
-          request.workspaceRoot,
-          request.activeFilePath,
-        );
-        latestActivityFiles = inferredFiles;
-
-        const iterator = this.runSingleModeStreaming(
-          selectedMode,
-          mode,
-          request.prompt,
-          provider,
-          model,
-          temperature,
-          workspaceContext,
-          memoryContext,
-          sessionContext,
-          diagnostics,
-          request.abortSignal,
-          {
-            statusLabel: this.describePipelineStage(selectedMode),
-            todoTitle: `Run ${this.formatPipelineStage(selectedMode)} stage`,
-            files: inferredFiles,
-          },
-        );
-
-        while (true) {
-          const step = await iterator.next();
-          if (step.done) {
-            response = step.value;
-            break;
-          }
-
-          if (step.value.type === "token") {
-            streamedAnyToken = true;
-          }
-
-          if (step.value.type === "activity") {
-            latestActivityFiles = step.value.files ?? latestActivityFiles;
-          }
-
-          yield step.value;
-        }
       }
 
       this.ensureNotAborted(request.abortSignal);
@@ -1000,70 +1067,7 @@ export class NexcodeOrchestrator {
         throw new Error("No response produced by orchestrator pipeline.");
       }
 
-      if (
-        request.allowTools !== false &&
-        (mode === "auto" || mode === "coder")
-      ) {
-        const suggestedToolCommand = this.extractSuggestedToolCommand(
-          response.text,
-        );
 
-        if (suggestedToolCommand) {
-          const toolName = suggestedToolCommand.split(/\s+/)[0].toLowerCase();
-          const riskLevel = this.tools.requiresApproval(toolName, suggestedToolCommand)
-            ? "destructive"
-            : this.tools.getToolRiskLevel?.(toolName, suggestedToolCommand) ?? "safe";
-
-          const isAutoSafe = !this.tools.requiresApproval(toolName, suggestedToolCommand);
-
-          diagnostics.push(
-            `Auto-executing suggested tool command: ${suggestedToolCommand} (risk: ${riskLevel})`,
-          );
-
-          yield {
-            type: "toolExecuted",
-            toolName,
-            command: suggestedToolCommand,
-            status: isAutoSafe ? "success" : "awaiting-approval",
-            message: isAutoSafe
-              ? `Auto-executing: ${suggestedToolCommand}`
-              : `Approval required for: ${suggestedToolCommand}`,
-          };
-
-          yield {
-            type: "status",
-            message: `Running suggested tool command: ${suggestedToolCommand}`,
-          };
-
-          executedToolCommand = suggestedToolCommand;
-          latestActivityFiles =
-            this.inferActivityFilesFromToolCommand(suggestedToolCommand);
-
-          const iterator = this.streamToolRequest(
-            `/tool ${suggestedToolCommand}`,
-            response.modeUsed,
-            response.providerUsed,
-            response.modelUsed,
-            diagnostics,
-            request.allowWebSearch !== false,
-            request.abortSignal,
-          );
-
-          while (true) {
-            const step = await iterator.next();
-            if (step.done) {
-              response = step.value;
-              break;
-            }
-
-            if (step.value.type === "token") {
-              streamedAnyToken = true;
-            }
-
-            yield step.value;
-          }
-        }
-      }
 
       response.diagnostics = diagnostics;
 
@@ -1254,160 +1258,6 @@ export class NexcodeOrchestrator {
     );
     await fs.mkdir(path.dirname(absolutePath), { recursive: true });
     await fs.writeFile(absolutePath, edit.newText, "utf8");
-  }
-
-  public async executeBatchEdits(edits: BatchEdit[]): Promise<ToolResult[]> {
-    const results: ToolResult[] = [];
-    
-    const grouped = new BatchEditor();
-    for (const edit of edits) {
-      grouped.addEdit(edit);
-    }
-    
-    const byDir = grouped.groupByDirectory();
-    
-    for (const [dir, dirEdits] of byDir) {
-      for (const edit of dirEdits) {
-        const result = await this.executeEdit(edit);
-        results.push(result);
-      }
-    }
-    
-    return results;
-  }
-
-  private async executeEdit(edit: BatchEdit): Promise<ToolResult> {
-    try {
-      const absolutePath = this.tools.filesystem.resolveWorkspacePath(
-        edit.filePath,
-      );
-      
-      switch (edit.operation) {
-        case 'create': {
-          await fs.mkdir(path.dirname(absolutePath), { recursive: true });
-          if (edit.content) {
-            await fs.writeFile(absolutePath, edit.content, "utf8");
-          }
-          return { ok: true, output: `Created ${edit.filePath}` };
-        }
-        case 'update': {
-          if (edit.patch) {
-            await fs.appendFile(absolutePath, edit.patch, "utf8");
-          } else if (edit.content) {
-            await fs.writeFile(absolutePath, edit.content, "utf8");
-          }
-          return { ok: true, output: `Updated ${edit.filePath}` };
-        }
-        case 'delete': {
-          await fs.rm(absolutePath, { force: true });
-          return { ok: true, output: `Deleted ${edit.filePath}` };
-        }
-        default:
-          return { ok: false, output: `Unknown operation: ${edit.operation}` };
-      }
-    } catch (error) {
-      return { ok: false, output: `Failed to ${edit.operation} ${edit.filePath}: ${String(error)}` };
-    }
-  }
-
-  public async executeParallelTasks(
-    tasks: Array<{ description: string; executor: () => Promise<string> }>,
-  ): Promise<string[]> {
-    const manager = new SubAgentManager();
-    const results = await manager.executeParallel(tasks, 3);
-    return results.map((r) => r.result || r.error || "");
-  }
-
-  public async readMultipleFiles(
-    paths: string[],
-  ): Promise<Map<string, string>> {
-    const results = new Map<string, string>();
-    const reads = paths.map(async (filePath) => {
-      const content = await this.tools.filesystem.readFile(filePath);
-      if (content.ok) {
-        results.set(filePath, content.output);
-      }
-    });
-    await Promise.all(reads);
-    return results;
-  }
-
-  public async *spawnSubagent(
-    task: string,
-    mode: AgentMode,
-    provider: ProviderId,
-    model: string,
-    abortSignal?: AbortSignal,
-  ): AsyncGenerator<OrchestratorEvent> {
-    const subagent = new SubAgentManager();
-    const subtask = subagent.createTask(task);
-
-    yield { type: "subagentSpawned", taskId: subtask.id, description: task };
-    yield { type: "status", message: `Spawning subagent for: ${task}` };
-    subagent.updateTask(subtask.id, { status: "running" });
-
-    try {
-      const textChunks: string[] = [];
-      const resolvedMode =
-        mode === "auto"
-          ? this.resolveAutoStrategy(task).kind === "single"
-            ? (this.resolveAutoStrategy(task) as { kind: "single"; mode: Exclude<AgentMode, "auto"> }).mode
-            : "coder"
-          : (mode as Exclude<AgentMode, "auto">);
-
-      for await (const token of this.streamAgentTokens(
-        resolvedMode,
-        {
-          userPrompt: task,
-          workspaceContext: "",
-          memoryContext: "",
-        },
-        provider,
-        model,
-        undefined,
-        abortSignal,
-      )) {
-        if (token) {
-          textChunks.push(token);
-          yield { type: "token", token };
-        }
-      }
-
-      const resultText = textChunks.join("").trim() || "Subagent returned an empty response.";
-
-      this.tokenCounter.trackRequest(task, resultText);
-      const subagentStats = this.tokenCounter.getStats();
-      const tokenUsage = {
-        input: subagentStats.totalInput,
-        output: subagentStats.totalOutput,
-        total: subagentStats.total,
-      };
-
-      subagent.updateTask(subtask.id, { status: "completed", result: resultText });
-
-      yield { type: "subagentCompleted", taskId: subtask.id, result: resultText };
-
-      yield {
-        type: "final",
-        response: {
-          text: resultText,
-          modeUsed: resolvedMode,
-          providerUsed: provider,
-          modelUsed: model,
-          proposedEdits: [],
-          diagnostics: [],
-          tokenUsage,
-        },
-      };
-    } catch (error) {
-      const errorStr = String(error);
-      subagent.updateTask(subtask.id, { status: "failed", error: errorStr });
-
-      yield {
-        type: "error",
-        message: `Subagent failed: ${errorStr}`,
-      };
-    }
   }
 
   private async *runSingleModeStreaming(
@@ -1710,6 +1560,95 @@ export class NexcodeOrchestrator {
       proposedEdits: [],
       diagnostics,
     };
+  }
+
+  private async *runAgentLoopStreaming(
+    mode: AgentMode,
+    prompt: string,
+    provider: ProviderId,
+    model: string,
+    temperature: number | undefined,
+    workspaceContext: string,
+    memoryContext: string,
+    sessionContext: string,
+    diagnostics: string[],
+    abortSignal?: AbortSignal,
+  ): AsyncGenerator<OrchestratorEvent, OrchestratorResponse> {
+    const resolvedMode = (mode === "auto" ? "coder" : mode) as Exclude<AgentMode, "auto">;
+    const toolDefs = getAllToolDefinitions();
+    const systemPrompt = await this.prompts.getPrompt(resolvedMode);
+    const groundingNote = buildGroundingNoteForMode(resolvedMode, prompt);
+
+    const contextParts = [
+      `User request:\n${prompt}`,
+      groundingNote ? `Grounding note:\n${groundingNote}` : "",
+      workspaceContext ? `Workspace context:\n${workspaceContext}` : "",
+      memoryContext ? `Memory context:\n${memoryContext}` : "",
+      sessionContext ? `Conversation history:\n${sessionContext}` : "",
+    ].filter((part) => part.length > 0);
+
+    const loopMessages: ChatMessage[] = [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: contextParts.join("\n\n") },
+    ];
+
+    const config: AgentLoopConfig = {
+      maxTurns: 15,
+      maxTokensPerTurn: 4096,
+      timeoutMs: 300000,
+    };
+
+    let finalText = "";
+
+    yield {
+      type: "status",
+      message: `Agent loop starting (${resolvedMode} mode, up to ${config.maxTurns} turns)`,
+    };
+
+    try {
+      for await (const event of runAgentLoop(
+        loopMessages,
+        this.router,
+        this.tools,
+        toolDefs,
+        config,
+        abortSignal,
+      )) {
+        if (event.type === "token") {
+          finalText += event.token;
+          yield event;
+        } else {
+          yield event;
+        }
+      }
+
+      const lastMsg = loopMessages[loopMessages.length - 1];
+      const responseText = lastMsg?.content ?? finalText;
+
+      return {
+        text: responseText.trim() || finalText.trim() || "Agent loop completed with no output.",
+        modeUsed: mode,
+        providerUsed: provider,
+        modelUsed: model,
+        proposedEdits: [],
+        diagnostics,
+      };
+    } catch (error) {
+      if (this.isAbortError(error)) {
+        throw error;
+      }
+
+      const errorStr = String(error);
+      diagnostics.push(`Agent loop error: ${errorStr}`);
+      return {
+        text: finalText.trim() || `Agent loop failed: ${errorStr}`,
+        modeUsed: mode,
+        providerUsed: provider,
+        modelUsed: model,
+        proposedEdits: [],
+        diagnostics,
+      };
+    }
   }
 
   private async *streamAgentTokens(
@@ -2192,6 +2131,54 @@ export class NexcodeOrchestrator {
         this.tools.test.stream(testMatch[1]?.trim()),
         abortSignal,
       );
+    }
+
+    const batchEditMatch = toolCommand.match(/^batch_edit\s+([\s\S]+)$/i);
+    if (batchEditMatch) {
+      try {
+        const batchArgs = JSON.parse(batchEditMatch[1].trim());
+        const editCount = Array.isArray(batchArgs.edits) ? batchArgs.edits.length : 0;
+        yield { type: "batchEditStarted", editCount };
+      } catch {
+        // Parse error handled by tool registry
+      }
+
+      const result = await this.tools.runToolCall(toolCommand);
+      const boundedOutput = clampText(
+        result.output,
+        MAX_TOOL_OUTPUT_CHARS,
+        "Tool output truncated",
+      );
+
+      if (!result.ok) {
+        diagnostics.push(boundedOutput);
+      }
+
+      try {
+        const batchArgs = JSON.parse(batchEditMatch[1].trim());
+        const editCount = Array.isArray(batchArgs.edits) ? batchArgs.edits.length : 0;
+        const successMatch = boundedOutput.match(/(\d+)\/(\d+) succeeded/);
+        const successCount = successMatch ? parseInt(successMatch[1], 10) : (result.ok ? editCount : 0);
+        yield { type: "batchEditCompleted", editCount, successCount };
+      } catch {
+        yield { type: "batchEditCompleted", editCount: 0, successCount: 0 };
+      }
+
+      return {
+        text: [
+          "## Tool Execution",
+          `Command: ${toolCommand}`,
+          "",
+          "```text",
+          boundedOutput,
+          "```",
+        ].join("\n"),
+        modeUsed: mode,
+        providerUsed: provider,
+        modelUsed: model,
+        proposedEdits: [],
+        diagnostics,
+      };
     }
 
     return this.handleToolRequest(
@@ -2723,69 +2710,6 @@ export class NexcodeOrchestrator {
     );
 
     return normalizeActivityPath(withoutKindPrefix, workspaceRoot ?? this.config.workspaceRoot) ?? null;
-  }
-
-  private isHighConfidenceToolCommand(text: string): boolean {
-    const explicitPatterns = [
-      /i'll run/i,
-      /let me (?:execute|run|check|read|search)/i,
-      /running/i,
-      /executing/i,
-      /i'll (?:read|check|search|run)/i,
-      /let me (?:start|begin) by/i,
-      /first,?\s*(?:i'll|let me)/i,
-      /now (?:i'll|let me)/i,
-    ];
-    return explicitPatterns.some((p) => p.test(text));
-  }
-
-  private extractSuggestedToolCommand(responseText: string): string | null {
-    const trimmed = responseText.trim();
-    if (!trimmed || /^##\s+Tool Execution/i.test(trimmed)) {
-      return null;
-    }
-
-    const candidates = trimmed
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0)
-      .flatMap((line) => [line, line.replace(/^[>*-]\s*/, "")]);
-
-    for (const candidate of candidates) {
-      const toolMatch = candidate.match(
-        /(?:^|\s|`|"|')((?:\/tool\s+)?(?:terminal|search|web-search|search-web|online-search|test|read|write|append|git-status|git-diff|git-branch)\b[\s\S]*)/i,
-      );
-
-      if (!toolMatch) {
-        continue;
-      }
-
-      const normalized = this.stripTrailingNarration(toolMatch[1])
-        .replace(/^\/tool\s+/i, "")
-        .trim();
-
-      if (this.normalizeCommandCandidate(normalized)) {
-        const toolName = normalized.split(/\s+/)[0].toLowerCase();
-        if (this.tools.requiresApproval(toolName, normalized)) {
-          if (!this.isHighConfidenceToolCommand(responseText)) {
-            continue;
-          }
-        }
-        return normalized;
-      }
-    }
-
-    return null;
-  }
-
-  private stripTrailingNarration(value: string): string {
-    const trimmed = value.trim();
-    const proseBoundary = trimmed.match(/\.(?=[A-Z][a-z])/);
-    if (proseBoundary && proseBoundary.index !== undefined) {
-      return trimmed.slice(0, proseBoundary.index).trim();
-    }
-
-    return trimmed;
   }
 
   private extractTerminalCommandRequest(prompt: string): string | null {

@@ -259,4 +259,34 @@ describe("ToolRegistry structured methods", () => {
       expect(result.metadata.affectedFiles).toEqual(["a.ts", "b.ts"]);
     }
   });
+
+  it("validateToolArg returns null for unknown tool", () => {
+    expect(registry.validateToolArg("nonexistent", "{}")).toBeNull();
+  });
+
+  it("validateToolArg validates JSON input against schema", () => {
+    const error = registry.validateToolArg("write", '{"path": "test.ts"}');
+    expect(error).toBeTruthy();
+    expect(error).toContain("content");
+  });
+
+  it("validateToolArg passes valid JSON input", () => {
+    const error = registry.validateToolArg(
+      "write",
+      '{"path": "test.ts", "content": "hello"}',
+    );
+    expect(error).toBeNull();
+  });
+
+  it("validateToolArg skips validation for non-JSON input", () => {
+    expect(registry.validateToolArg("read", "src/file.ts")).toBeNull();
+  });
+
+  it("runToolCall rejects invalid tool input", async () => {
+    const result = await registry.runToolCall(
+      'write {"path": "test.ts"}',
+    );
+    expect(result.ok).toBe(false);
+    expect(result.output).toContain("Invalid input");
+  });
 });

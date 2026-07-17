@@ -169,6 +169,32 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     timeoutMs: 30_000,
     inputSchema: mcpSchema,
   },
+  {
+    name: "batch_edit",
+    version: "1.0.0",
+    title: "Batch Edit Files",
+    description: "Apply multiple edits to multiple files in one operation. Each edit specifies a file path and content.",
+    risk: "reversible-write",
+    timeoutMs: 30_000,
+    inputSchema: {
+      type: "object",
+      properties: {
+        edits: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              filePath: { type: "string" },
+              content: { type: "string" },
+              operation: { type: "string", enum: ["create", "update", "delete"] },
+            },
+            required: ["filePath", "content", "operation"],
+          },
+        },
+      },
+      required: ["edits"],
+    },
+  },
 ];
 
 const _byName = new Map<string, ToolDefinition>();

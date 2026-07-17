@@ -171,6 +171,7 @@ export class ModelRouter {
           temperature: options.temperature,
           maxTokens: options.maxTokens,
           signal: options.signal,
+          tools: options.tools,
         });
         this.responseCache.set(cacheKey, JSON.stringify(result));
         return result;
@@ -206,6 +207,7 @@ export class ModelRouter {
             temperature: options.temperature,
             maxTokens: options.maxTokens,
             signal: options.signal,
+            tools: options.tools,
           });
 
           if (result.text) {
@@ -221,6 +223,7 @@ export class ModelRouter {
           temperature: options.temperature,
           maxTokens: options.maxTokens,
           signal: options.signal,
+          tools: options.tools,
         })) {
           if (!token) {
             continue;

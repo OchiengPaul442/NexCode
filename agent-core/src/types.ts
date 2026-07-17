@@ -14,6 +14,7 @@ export interface ChatMessage {
   role: ChatRole;
   content: string;
   images?: string[];
+  attachmentFileNames?: string[];
 }
 
 export type AttachmentKind = "text" | "image" | "binary";

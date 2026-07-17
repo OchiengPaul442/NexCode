@@ -740,6 +740,58 @@ body {
   color: var(--vscode-descriptionForeground);
 }
 
+/* ── Background Agents Panel ────────────────────────────────────────────── */
+.nk-bg-agents {
+  padding: 8px 0;
+  border-top: 1px solid var(--vscode-widget-border);
+}
+
+.nk-bg-agents-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  margin-bottom: 4px;
+}
+
+.nk-bg-agent {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+  font-size: 12px;
+}
+
+.nk-bg-agent-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.nk-bg-agent--running .nk-bg-agent-dot {
+  background: var(--vscode-focusBorder);
+  animation: pulse 1.2s infinite;
+}
+
+.nk-bg-agent--completed .nk-bg-agent-dot {
+  background: var(--vscode-terminal-ansiGreen, #4ec9b0);
+}
+
+.nk-bg-agent--failed .nk-bg-agent-dot {
+  background: var(--vscode-terminal-ansiRed, #f48771);
+}
+
+.nk-bg-agent-desc {
+  flex: 1;
+  color: var(--vscode-foreground);
+}
+
+.nk-bg-agent-status {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+}
+
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
@@ -2259,6 +2311,20 @@ body {
   white-space: nowrap;
 }
 
+/* ── Parallel execution indicator ─────────────────────────────────────────── */
+.nk-parallel-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.nk-parallel-icon {
+  font-size: 10px;
+}
+
 /* ── Response summary ────────────────────────────────────────────────────── */
 .nk-response-summary {
   padding: 6px 0;
@@ -2276,6 +2342,25 @@ body {
 
 .nk-response-changes {
   margin-top: 2px;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+}
+
+/* ── Message attachments ─────────────────────────────────────────────────── */
+.nk-msg-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.nk-msg-attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  background: rgba(121, 121, 121, 0.1);
+  border-radius: 3px;
   font-size: 11px;
   color: var(--vscode-descriptionForeground);
 }

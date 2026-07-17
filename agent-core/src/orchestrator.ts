@@ -50,6 +50,7 @@ import {
   normalizeActivityPath,
 } from "./orchestrator/contextBuilder";
 import { ContextCompressor } from "./utils/contextCompressor";
+import { SessionCompressor } from "./utils/sessionCompressor";
 
 export interface NexcodeOrchestratorOptions {
   workspaceRoot?: string;
@@ -122,6 +123,7 @@ export class NexcodeOrchestrator {
   private readonly promptVersions: PromptVersionManager;
   private readonly mcpRegistry: McpRegistry;
   private readonly compressor = new ContextCompressor(8000);
+  private readonly sessionCompressor = new SessionCompressor();
   private readonly ephemeralSessionId = randomUUID();
   private readonly approvalCallback?: ApprovalCallback;
   private readonly tokenCounter = new TokenCounter();
@@ -309,6 +311,7 @@ export class NexcodeOrchestrator {
     this.memory.appendSessionMessage(sessionId, {
       role: "user",
       content: request.prompt,
+      attachmentFileNames: request.attachments?.map((a) => a.fileName),
     });
 
     yield {
@@ -348,10 +351,30 @@ export class NexcodeOrchestrator {
 
     try {
       this.ensureNotAborted(request.abortSignal);
-      const sessionContextRaw = this.memory.getSessionContext(
-        sessionId,
-        MAX_SESSION_CONTEXT_CHARS,
+      const rawSessionMessages = this.memory.getSessionMessages(sessionId);
+      const compressedSessionMessages = this.sessionCompressor.compressSession(
+        rawSessionMessages.map((m) => ({ role: m.role, text: m.content })),
       );
+      const compressedSessionContext = compressedSessionMessages
+        .map((m) => {
+          const prefix = m.role === "user" ? "User" : "Assistant";
+          return `${prefix}: ${m.text}`;
+        })
+        .join("\n");
+
+      let sessionContextRaw = compressedSessionContext ||
+        this.memory.getSessionContext(sessionId, MAX_SESSION_CONTEXT_CHARS);
+
+      const previousAttachmentNames: string[] = [];
+      for (const msg of rawSessionMessages) {
+        if (msg.role === "user" && msg.attachmentFileNames?.length) {
+          for (const name of msg.attachmentFileNames) {
+            if (!previousAttachmentNames.includes(name)) {
+              previousAttachmentNames.push(name);
+            }
+          }
+        }
+      }
 
       const [memoryContextRaw, workspaceContextRaw] = await Promise.all([
         this.memory.getRelevantContext(request.prompt).catch(() => ""),
@@ -371,11 +394,42 @@ export class NexcodeOrchestrator {
         MAX_WORKSPACE_CONTEXT_CHARS,
         "Workspace context trimmed",
       );
-      const sessionContext = clampText(
+      let sessionContext = clampText(
         sessionContextRaw,
         MAX_SESSION_CONTEXT_CHARS,
         "Session context trimmed",
       );
+
+      if (previousAttachmentNames.length > 0) {
+        const currentAttachmentNames = request.attachments?.map((a) => a.fileName) ?? [];
+        const allAttachmentNames = [
+          ...new Set([...previousAttachmentNames, ...currentAttachmentNames]),
+        ];
+        const attachmentContext = `Previously attached files: ${allAttachmentNames.join(", ")}`;
+        sessionContext = sessionContext
+          ? `${sessionContext}\n\n${attachmentContext}`
+          : attachmentContext;
+      }
+
+      const contextTokenEstimate = this.tokenCounter.estimateTokens(
+        JSON.stringify({ prompt: request.prompt, sessionContext, workspaceContext, memoryContext }),
+      );
+      if (contextTokenEstimate > 80000) {
+        const compressedSession = this.sessionCompressor.compressSession(
+          rawSessionMessages.map((m) => ({ role: m.role, text: m.content })),
+        );
+        sessionContextRaw = compressedSession
+          .map((m) => {
+            const prefix = m.role === "user" ? "User" : "Assistant";
+            return `${prefix}: ${m.text}`;
+          })
+          .join("\n");
+        sessionContext = clampText(
+          sessionContextRaw,
+          MAX_SESSION_CONTEXT_CHARS,
+          "Session context trimmed",
+        );
+      }
 
       yield {
         type: "status",
@@ -1062,6 +1116,7 @@ export class NexcodeOrchestrator {
         model: response.modelUsed,
         filesEdited: response.proposedEdits.map((e) => e.filePath),
         toolUsed: executedToolCommand ? [executedToolCommand] : [],
+        attachmentsUsed: request.attachments?.map((a) => a.fileName),
       });
 
       if (executedToolCommand) {

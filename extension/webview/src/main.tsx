@@ -103,6 +103,12 @@ interface ChatMessage {
   role: "user" | "assistant";
   text: string;
   createdAt: number;
+  attachments?: Array<{
+    id: string;
+    fileName: string;
+    kind: string;
+    textContent?: string;
+  }>;
   provider?: ProviderId;
   model?: string;
   mode?: AgentMode;
@@ -169,6 +175,13 @@ interface AttachmentChip {
   byteSize?: number;
 }
 
+interface SubAgentTask {
+  id: string;
+  description: string;
+  status: "running" | "completed" | "failed";
+  result?: string;
+}
+
 interface McpQuickResult {
   ok: boolean;
   server: string;
@@ -219,6 +232,7 @@ interface StoreState {
   attachments: AttachmentChip[];
   isBusy: boolean;
   settingsPanelOpen: boolean;
+  backgroundAgents: SubAgentTask[];
   defaults: {
     provider: ProviderId;
     model: string;
@@ -240,7 +254,16 @@ interface StoreState {
     update: Partial<Pick<Session, "provider" | "model" | "mode">>,
   ) => void;
   clearActiveSession: () => void;
-  addUserMessageToSession: (sessionId: string, text: string) => void;
+  addUserMessageToSession: (
+    sessionId: string,
+    text: string,
+    attachments?: Array<{
+      id: string;
+      fileName: string;
+      kind: string;
+      textContent?: string;
+    }>,
+  ) => void;
   beginAssistantMessage: (
     sessionId: string,
     meta?: {
@@ -308,6 +331,13 @@ interface StoreState {
   setModelSuggestions: (provider: ProviderId, models: string[]) => void;
   updateSetting: (key: string, value: unknown) => void;
   setDraft: (sessionId: string, value: string) => void;
+  addBackgroundAgent: (agent: SubAgentTask) => void;
+  updateBackgroundAgent: (id: string, updates: Partial<SubAgentTask>) => void;
+  removeBackgroundAgent: (id: string) => void;
+  parallelCount: number;
+  incrementParallel: () => void;
+  decrementParallel: () => void;
+  resetParallel: () => void;
 }
 
 interface BackendEvent {
@@ -865,6 +895,7 @@ const useStore = create<StoreState>((set, get) => {
     attachments: [],
     isBusy: false,
     settingsPanelOpen: false,
+    backgroundAgents: [],
     defaults: initialDefaults,
     settings: {
       ...defaultSidebarSettings,
@@ -1038,7 +1069,7 @@ const useStore = create<StoreState>((set, get) => {
         };
       });
     },
-    addUserMessageToSession: (sessionId, text) => {
+    addUserMessageToSession: (sessionId, text, attachments) => {
       set((state) => {
         return {
           sessions: state.sessions.map((session) => {
@@ -1055,6 +1086,7 @@ const useStore = create<StoreState>((set, get) => {
               role: "user",
               text,
               createdAt: Date.now(),
+              attachments,
               reasoning: [],
               debug: [],
               proposedEdits: [],
@@ -1341,6 +1373,35 @@ const useStore = create<StoreState>((set, get) => {
         },
       }));
     },
+    addBackgroundAgent: (agent) => {
+      set((state) => ({
+        backgroundAgents: [...state.backgroundAgents, agent],
+      }));
+    },
+    updateBackgroundAgent: (id, updates) => {
+      set((state) => ({
+        backgroundAgents: state.backgroundAgents.map((a) =>
+          a.id === id ? { ...a, ...updates } : a,
+        ),
+      }));
+    },
+    removeBackgroundAgent: (id) => {
+      set((state) => ({
+        backgroundAgents: state.backgroundAgents.filter((a) => a.id !== id),
+      }));
+    },
+    parallelCount: 0,
+    incrementParallel: () => {
+      set((state) => ({ parallelCount: state.parallelCount + 1 }));
+    },
+    decrementParallel: () => {
+      set((state) => ({
+        parallelCount: Math.max(0, state.parallelCount - 1),
+      }));
+    },
+    resetParallel: () => {
+      set({ parallelCount: 0 });
+    },
   };
 });
 
@@ -1579,9 +1640,32 @@ function MessageBubble({
             }
           >
             {isUser ? (
-              <pre className="m-0 whitespace-pre-wrap text-[13px] leading-relaxed font-sans">
-                {message.text}
-              </pre>
+              <div>
+                {message.attachments &&
+                  message.attachments.length > 0 && (
+                    <div className="nk-msg-attachments">
+                      {message.attachments.map(
+                        (att: {
+                          id: string;
+                          fileName: string;
+                          kind: string;
+                        }) => (
+                          <div key={att.id} className="nk-msg-attachment">
+                            {att.kind === "image" ? (
+                              <Image size={12} />
+                            ) : (
+                              <FileText size={12} />
+                            )}
+                            <span>{att.fileName}</span>
+                          </div>
+                        ),
+                      )}
+                    </div>
+                  )}
+                <pre className="m-0 whitespace-pre-wrap text-[13px] leading-relaxed font-sans">
+                  {message.text}
+                </pre>
+              </div>
             ) : (
               <StreamingMessage
                 text={message.text || ""}
@@ -1738,6 +1822,17 @@ function MessageBubble({
   );
 }
 
+function ParallelIndicator({ count }: { count: number }) {
+  if (count <= 1) return null;
+
+  return (
+    <div className="nk-parallel-indicator">
+      <span className="nk-parallel-icon">⚡</span>
+      <span>Running {count} tasks in parallel</span>
+    </div>
+  );
+}
+
 function SubagentIndicator({
   description,
   status,
@@ -1750,6 +1845,37 @@ function SubagentIndicator({
       <span className="nk-subagent-dot" />
       <span className="nk-subagent-text">{description}</span>
       <span className="nk-subagent-status">{status}</span>
+    </div>
+  );
+}
+
+function BackgroundAgents({ agents }: { agents: SubAgentTask[] }) {
+  if (agents.length === 0) return null;
+
+  const running = agents.filter((a) => a.status === "running");
+
+  return (
+    <div className="nk-bg-agents">
+      <div className="nk-bg-agents-header">
+        <span className="nk-bg-agents-title">Background Agents</span>
+        <span className="nk-bg-agents-count">
+          {running.length} running
+        </span>
+      </div>
+      {agents.map((agent) => (
+        <div
+          key={agent.id}
+          className={`nk-bg-agent nk-bg-agent--${agent.status}`}
+        >
+          <span className="nk-bg-agent-dot" />
+          <span className="nk-bg-agent-desc">{agent.description}</span>
+          <span className="nk-bg-agent-status">
+            {agent.status === "running" && "Running..."}
+            {agent.status === "completed" && "Done"}
+            {agent.status === "failed" && "Failed"}
+          </span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -1789,6 +1915,8 @@ function App() {
   const settings = useStore((s) => s.settings);
   const providerStatus = useStore((s) => s.providerStatus);
   const modelSuggestions = useStore((s) => s.modelSuggestions);
+  const backgroundAgents = useStore((s) => s.backgroundAgents);
+  const parallelCount = useStore((s) => s.parallelCount);
 
   const [deleteTargetSessionId, setDeleteTargetSessionId] = useState<
     string | null
@@ -2048,7 +2176,13 @@ function App() {
         return false;
       }
 
-      useStore.getState().addUserMessageToSession(session.id, trimmed);
+      useStore.getState().addUserMessageToSession(
+        session.id,
+        trimmed,
+        useStore
+          .getState()
+          .attachments.filter((a) => attachmentIds.includes(a.id)),
+      );
       const request: QueuedPrompt = {
         id: makeId("queue"),
         sessionId: session.id,
@@ -2755,6 +2889,7 @@ function App() {
         }
         case "end":
           useStore.getState().setBusy(false);
+          useStore.getState().resetParallel();
           pendingRef.current = null;
           reasoningRef.current = [];
           debugRef.current = [];
@@ -2793,9 +2928,9 @@ function App() {
           return;
         case "subagentSpawned": {
           const cur = pendingRef.current;
+          const taskId = String(payload.taskId ?? makeId("subagent"));
+          const description = String(payload.description ?? "Working...");
           if (cur) {
-            const taskId = String(payload.taskId ?? "");
-            const description = String(payload.description ?? "");
             debugRef.current.push(`Subagent spawned: ${description} (${taskId})`);
             reasoningRef.current = [
               ...reasoningRef.current.slice(-8),
@@ -2810,16 +2945,18 @@ function App() {
                 [...debugRef.current],
               );
           }
-          setSubagentInfo({
-            description: String(payload.description ?? "Working..."),
-            status: "Running",
+          useStore.getState().addBackgroundAgent({
+            id: taskId,
+            description,
+            status: "running",
           });
+          setSubagentInfo({ description, status: "Running" });
           return;
         }
         case "subagentCompleted": {
           const cur = pendingRef.current;
+          const taskId = String(payload.taskId ?? "");
           if (cur) {
-            const taskId = String(payload.taskId ?? "");
             debugRef.current.push(`Subagent completed: ${taskId}`);
             reasoningRef.current = [
               ...reasoningRef.current.slice(-8),
@@ -2834,6 +2971,10 @@ function App() {
                 [...debugRef.current],
               );
           }
+          useStore.getState().updateBackgroundAgent(taskId, {
+            status: "completed",
+            result: typeof payload.result === "string" ? payload.result : undefined,
+          });
           setSubagentInfo(null);
           return;
         }
@@ -2873,6 +3014,24 @@ function App() {
                 },
               );
           }
+          return;
+        }
+        case "parallelStart": {
+          const count = typeof payload.count === "number" ? payload.count : 1;
+          for (let i = 0; i < count; i++) {
+            useStore.getState().incrementParallel();
+          }
+          return;
+        }
+        case "parallelEnd": {
+          const count = typeof payload.count === "number" ? payload.count : 1;
+          for (let i = 0; i < count; i++) {
+            useStore.getState().decrementParallel();
+          }
+          return;
+        }
+        case "parallelReset": {
+          useStore.getState().resetParallel();
           return;
         }
         default:
@@ -3197,6 +3356,10 @@ function App() {
               description={subagentInfo.description}
               status={subagentInfo.status}
             />
+          )}
+          <BackgroundAgents agents={backgroundAgents} />
+          {parallelCount > 1 && (
+            <ParallelIndicator count={parallelCount} />
           )}
           <div className="nk-messages-list">
             <AnimatePresence initial={false}>

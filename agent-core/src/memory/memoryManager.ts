@@ -38,6 +38,7 @@ export class MemoryManager {
       model?: string;
       filesEdited?: string[];
       toolUsed?: string[];
+      attachmentsUsed?: string[];
     },
   ): Promise<void> {
     const normalizedPrompt = prompt.trim();
@@ -62,6 +63,9 @@ export class MemoryManager {
         metadata?.toolUsed?.length
           ? `Tools used: ${metadata.toolUsed.join(", ")}`
           : "",
+        metadata?.attachmentsUsed?.length
+          ? `Attachments: ${metadata.attachmentsUsed.join(", ")}`
+          : "",
       ]
         .filter(Boolean)
         .join("\n"),
@@ -74,6 +78,7 @@ export class MemoryManager {
         model: metadata?.model,
         filesEdited: metadata?.filesEdited,
         toolUsed: metadata?.toolUsed,
+        attachmentsUsed: metadata?.attachmentsUsed,
       },
     };
 

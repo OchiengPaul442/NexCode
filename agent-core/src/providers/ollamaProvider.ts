@@ -229,10 +229,14 @@ export class OllamaProvider implements ModelProvider {
             continue;
           }
 
-          const json = JSON.parse(trimmed) as OllamaChatResponse;
-          const token = json.message?.content ?? json.response;
-          if (token) {
-            yield token;
+          try {
+            const json = JSON.parse(trimmed) as OllamaChatResponse;
+            const token = json.message?.content ?? json.response;
+            if (token) {
+              yield token;
+            }
+          } catch {
+            // Skip malformed JSON lines from Ollama streaming
           }
         }
       }

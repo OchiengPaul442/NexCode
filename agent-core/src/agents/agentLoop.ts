@@ -6,7 +6,7 @@ import {
 } from "../types";
 import { ModelRouter } from "../providers/modelRouter";
 import { ToolRegistry } from "../tools/toolRegistry";
-import { ToolDefinition } from "../tools/toolProtocol";
+import { ToolDefinition, validateInput } from "../tools/toolProtocol";
 import { ApprovalCallback } from "../tools/toolApprovalPolicy";
 
 export interface AgentLoopConfig {
@@ -72,10 +72,11 @@ function formatToolArgs(
       return JSON.stringify(args);
     }
     default: {
-      const value = args.value ?? args.input ?? args.command ?? "";
-      if (typeof value === "string") {
+      const value = args.value ?? args.input ?? args.command;
+      if (typeof value === "string" && value.length > 0) {
         return value;
       }
+      // For tools with structured args (objects/arrays), serialize as JSON
       return JSON.stringify(args);
     }
   }
@@ -177,10 +178,57 @@ export async function* runAgentLoop(
       if (signal?.aborted) break;
 
       let args: Record<string, unknown>;
+      let parseError: string | null = null;
       try {
         args = JSON.parse(toolCall.function.arguments);
       } catch {
+        // Malformed tool call args from model - try to recover
         args = {};
+        parseError = `Invalid JSON in tool arguments: ${toolCall.function.arguments.slice(0, 200)}`;
+        // Try to extract path from raw arguments string
+        const pathMatch = toolCall.function.arguments.match(/["']?(?:path|filePath|file)["']?\s*[:=]\s*["']([^"']+)["']/i);
+        if (pathMatch) {
+          args.path = pathMatch[1];
+        }
+        const contentMatch = toolCall.function.arguments.match(/["'](?:content|text|command)["']?\s*[:=]\s*["']([\s\S]*?)["']/i);
+        if (contentMatch) {
+          args.content = contentMatch[1];
+          args.command = contentMatch[1];
+        }
+      }
+
+      // Schema validation (§4 B2)
+      const toolDef = toolDefinitions.find((d) => d.name === toolCall.function.name);
+      let validationError: string | null = parseError;
+      if (!validationError && toolDef) {
+        const errors = validateInput(args, toolDef.inputSchema);
+        if (errors.length > 0) {
+          validationError = errors.map((e) => `${e.field}: ${e.message}`).join("; ");
+        }
+      }
+
+      // If validation failed, return error to model instead of executing
+      if (validationError) {
+        const toolDurationMs = Date.now() - Date.now();
+        messages.push({
+          role: "tool",
+          content: JSON.stringify({
+            ok: false,
+            error: `Tool call validation failed for '${toolCall.function.name}': ${validationError}. Fix the arguments and try again.`,
+            toolName: toolCall.function.name,
+            retryable: true,
+          }),
+          tool_call_id: toolCall.id,
+        });
+        yield {
+          type: "toolExecuted",
+          toolName: toolCall.function.name,
+          command: toolCall.function.arguments.slice(0, 100),
+          status: "error",
+          message: `Validation failed: ${validationError}`,
+          durationMs: toolDurationMs,
+        };
+        continue;
       }
 
       yield {

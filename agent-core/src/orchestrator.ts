@@ -1452,32 +1452,37 @@ export class NexcodeOrchestrator {
       let stageText = "";
 
       try {
-        for await (const token of this.streamAgentTokens(
+        // Build stage-specific context
+        const stageContextParts = [
+          `User request:\n${prompt}`,
+          workspaceContext ? `Workspace context:\n${workspaceContext}` : "",
+          memoryContext ? `Memory context:\n${memoryContext}` : "",
+          sessionContext ? `Conversation history:\n${sessionContext}` : "",
+          planContent && stage !== "planner" ? `Plan:\n${planContent}` : "",
+          implementationDraft && stage === "reviewer" ? `Implementation draft:\n${implementationDraft}` : "",
+        ].filter((part) => part.length > 0);
+
+        // Use agent loop for each pipeline stage
+        for await (const event of this.runAgentLoopStreaming(
           stage,
-          {
-            userPrompt: prompt,
-            workspaceContext,
-            memoryContext,
-            sessionContext,
-            plan: planContent,
-            implementationDraft,
-          },
+          stageContextParts.join("\n\n"),
           provider,
           model,
           temperature,
+          workspaceContext,
+          memoryContext,
+          sessionContext,
+          diagnostics,
           abortSignal,
         )) {
           this.ensureNotAborted(abortSignal);
-          if (!token) {
-            continue;
+          if (event.type === "token") {
+            stageText += event.token;
+            composedChunks.push(event.token);
+            yield event;
+          } else if (event.type === "status" || event.type === "toolExecuted") {
+            yield event;
           }
-
-          stageText += token;
-          composedChunks.push(token);
-          yield {
-            type: "token",
-            token,
-          };
         }
       } catch (error) {
         if (this.isAbortError(error)) {
@@ -1624,6 +1629,9 @@ export class NexcodeOrchestrator {
       const lastMsg = loopMessages[loopMessages.length - 1];
       const responseText = lastMsg?.content ?? "";
 
+      // Cleanup: remove any .agents/ directory files created during the loop
+      await this.cleanupSubagentFiles();
+
       return {
         text: responseText.trim() || "Agent loop completed with no output.",
         modeUsed: mode,
@@ -1636,6 +1644,9 @@ export class NexcodeOrchestrator {
       if (this.isAbortError(error)) {
         throw error;
       }
+
+      // Cleanup on error too
+      await this.cleanupSubagentFiles();
 
       const errorStr = String(error);
       diagnostics.push(`Agent loop error: ${errorStr}`);
@@ -3188,6 +3199,20 @@ export class NexcodeOrchestrator {
   private ensureNotAborted(signal?: AbortSignal): void {
     if (signal?.aborted) {
       throw new Error("Request aborted.");
+    }
+  }
+
+  private async cleanupSubagentFiles(): Promise<void> {
+    try {
+      const fs = await import("fs/promises");
+      const path = await import("path");
+      const agentsDir = path.join(this.config.workspaceRoot, ".agents");
+      const exists = await fs.access(agentsDir).then(() => true).catch(() => false);
+      if (exists) {
+        await fs.rm(agentsDir, { recursive: true, force: true });
+      }
+    } catch {
+      // Ignore cleanup errors - not critical
     }
   }
 

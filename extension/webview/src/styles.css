@@ -1088,7 +1088,7 @@ html, body {
   flex-direction: column;
   min-height: clamp(132px, 24vh, 190px);
   background: var(--vscode-input-background);
-  padding: 0;
+  padding: 0 0 6px 0;
   margin: 0 8px;
   border-radius: 10px;
   border: 1px solid var(--vscode-widget-border);
@@ -2202,8 +2202,8 @@ html, body {
 
 @media (max-width: 720px) {
   .nk-header {
-    padding: 0;
-    height: 38px;
+    padding: 0 8px;
+    height: 32px;
   }
 
   .nk-topbar-right {

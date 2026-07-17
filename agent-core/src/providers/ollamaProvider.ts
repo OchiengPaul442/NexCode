@@ -142,16 +142,36 @@ export class OllamaProvider implements ModelProvider {
       const json = (await response.json()) as OllamaChatResponse;
 
       if (json.message?.tool_calls) {
-        const toolCalls: ToolCallRequest[] = json.message.tool_calls.map(
-          (tc, i) => ({
+        const toolCalls: ToolCallRequest[] = [];
+        for (let i = 0; i < json.message.tool_calls.length; i++) {
+          const tc = json.message.tool_calls[i];
+          // Validate and fix malformed tool call arguments
+          let args = tc.function.arguments;
+          if (typeof args !== "string") {
+            args = JSON.stringify(args);
+          }
+          // Try to parse to validate, fall back to empty object on failure
+          try {
+            JSON.parse(args);
+          } catch {
+            // Malformed arguments from Ollama - try to extract useful parts
+            const pathMatch = args.match(/["']?(?:path|filePath|file)["']?\s*[:=]\s*["']([^"']+)["']/i);
+            const contentMatch = args.match(/["'](?:content|text|command)["']?\s*[:=]\s*["']([\s\S]*?)["']/i);
+            const fixedArgs: Record<string, unknown> = {};
+            if (pathMatch) fixedArgs.path = pathMatch[1];
+            if (contentMatch) fixedArgs.content = contentMatch[1];
+            if (contentMatch) fixedArgs.command = contentMatch[1];
+            args = JSON.stringify(fixedArgs);
+          }
+          toolCalls.push({
             id: `call_${i}`,
             type: "function" as const,
             function: {
               name: tc.function.name,
-              arguments: tc.function.arguments,
+              arguments: args,
             },
-          }),
-        );
+          });
+        }
         return {
           text: json.message.content || "",
           toolCalls,

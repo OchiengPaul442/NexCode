@@ -468,6 +468,46 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
 
       for await (const event of orchestrator.stream(fullRequest)) {
         if (event.type === "toolApprovalRequired") {
+          // Check current permission mode
+          const currentConfig = vscode.workspace.getConfiguration("nexcodeKiboko");
+          const currentApproval = currentConfig.get<"auto" | "ask" | "bypass">("toolApproval", "ask");
+
+          if (currentApproval === "bypass") {
+            // Autopilot mode: auto-approve without prompting
+            this.postMessage({
+              type: "toolApprovalResult",
+              approved: true,
+              toolName: event.toolName,
+              pendingArg: event.pendingArg,
+            });
+            continue;
+          }
+
+          if (currentApproval === "auto") {
+            // Auto mode: check if this is a safe tool
+            const safeTools = ["read", "search", "git-status", "git-diff", "git-branch", "test"];
+            if (safeTools.includes(event.toolName)) {
+              this.postMessage({
+                type: "toolApprovalResult",
+                approved: true,
+                toolName: event.toolName,
+                pendingArg: event.pendingArg,
+              });
+              continue;
+            }
+            const safeTerminalPatterns = ["ls", "pwd", "echo", "cat", "head", "tail", "wc", "git status", "git diff", "git log", "git branch", "git show", "npm test", "cargo", "go build", "go test"];
+            if (event.toolName === "terminal" && safeTerminalPatterns.some(p => event.pendingArg.trim().startsWith(p))) {
+              this.postMessage({
+                type: "toolApprovalResult",
+                approved: true,
+                toolName: event.toolName,
+                pendingArg: event.pendingArg,
+              });
+              continue;
+            }
+          }
+
+          // Ask mode: show approval dialog
           const choice = await vscode.window.showWarningMessage(
             `Approval required for ${event.toolName} command:\n\n${event.pendingArg}\n\nContinue?`,
             "Run",
@@ -1029,11 +1069,15 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         tavilyApiKey: rawKeys.tavilyApiKey,
         modeTemperatures: settings.modeTemperatures as any,
         approvalCallback: async (toolName, arg) => {
-          if (settings.toolApproval === "bypass") {
+          // Read current settings each time (not captured in closure)
+          const currentConfig = vscode.workspace.getConfiguration("nexcodeKiboko");
+          const currentApproval = currentConfig.get<"auto" | "ask" | "bypass">("toolApproval", "ask");
+
+          if (currentApproval === "bypass") {
             return true;
           }
 
-          if (settings.toolApproval === "auto") {
+          if (currentApproval === "auto") {
             const safeTools = ["read", "search", "git-status", "git-diff", "git-branch", "test"];
             if (safeTools.includes(toolName)) {
               return true;

@@ -152,11 +152,45 @@ export async function* runAgentLoop(
       yield { type: "status", message: "Analyzing request..." };
     }
 
-    const response = await router.generate(messages, {
-      tools: toolSchemas,
-      maxTokens: config.maxTokensPerTurn,
-      signal,
-    });
+    // Retry logic for provider errors (§4 B4)
+    let response;
+    let lastError: unknown;
+    const maxProviderRetries = process.env.NODE_ENV === "test" ? 0 : 2;
+    for (let retry = 0; retry <= maxProviderRetries; retry++) {
+      try {
+        response = await router.generate(messages, {
+          tools: toolSchemas,
+          maxTokens: config.maxTokensPerTurn,
+          signal,
+        });
+        break; // Success, exit retry loop
+      } catch (error) {
+        lastError = error;
+        const errorStr = String(error ?? "").toLowerCase();
+        const isRecoverable = errorStr.includes("timeout") ||
+          errorStr.includes("econnrefused") ||
+          errorStr.includes("fetch failed") ||
+          errorStr.includes("upstream") ||
+          errorStr.includes("malformed") ||
+          errorStr.includes("json");
+
+        if (isRecoverable && retry < maxProviderRetries) {
+          yield {
+            type: "status",
+            message: `Provider error (attempt ${retry + 1}/${maxProviderRetries + 1}): ${String(error).slice(0, 100)}. Retrying...`,
+          };
+          // Wait before retry with exponential backoff
+          await new Promise((resolve) => setTimeout(resolve, 1000 * (retry + 1)));
+          continue;
+        }
+        // Non-recoverable or max retries exceeded
+        throw error;
+      }
+    }
+
+    if (!response) {
+      throw lastError ?? new Error("Provider returned no response");
+    }
 
     if (!response.toolCalls || response.toolCalls.length === 0) {
       const textToolCalls = tryParseTextAsToolCall(response.text);

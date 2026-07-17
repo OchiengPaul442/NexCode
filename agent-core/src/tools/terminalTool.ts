@@ -513,6 +513,13 @@ export class TerminalTool {
     if (!trimmed) return "Command cannot be empty.";
     if (trimmed.length > MAX_COMMAND_LENGTH) return `Command exceeds ${MAX_COMMAND_LENGTH} characters.`;
 
+    // Reject tool names sent as shell commands (model confusion)
+    const toolNames = ["git-status", "git-diff", "git-branch", "delete", "delete-contents", "move", "batch_edit", "mcp", "web-search", "search-web", "online-search"];
+    const firstWord = trimmed.split(/\s+/)[0].toLowerCase();
+    if (toolNames.includes(firstWord)) {
+      return ` '${firstWord}' is a tool name, not a shell command. Use the actual shell command (e.g., 'git status' instead of 'git-status').`;
+    }
+
     for (const blocked of SHELL_EXPANSION_PATTERNS) {
       if (blocked.pattern.test(trimmed)) {
         return blocked.reason;

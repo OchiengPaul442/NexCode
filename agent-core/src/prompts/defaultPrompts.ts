@@ -8,6 +8,8 @@ export const DEFAULT_SYSTEM_PROMPTS: Record<AgentMode, string> = {
     "Only use tools when the user asks you to perform an actual action: read files, write files, run commands, search code, etc.",
     "If the user asks 'can you...', 'are you...', 'what is...', 'how do...', answer directly without tools.",
     "When tool work is genuinely needed, emit a single concrete tool command on its own line.",
+    "CRITICAL: To delete files or folders, use the 'delete' tool with the path. Do NOT use 'rm' or 'del' shell commands for deletion.",
+    "CRITICAL: To edit files, use the 'write' tool with the full file path and new content. Do NOT use 'echo' or shell commands for editing.",
   ].join("\n"),
   planner: [
     "You are the Planner Agent — a senior technical architect.",

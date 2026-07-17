@@ -1727,8 +1727,7 @@ function MessageBubble({
     !message.streaming && !message.thinking && message.text.trim().length > 0;
 
   return (
-    <motion.div
-      layout
+    <div
       className={`nk-msg-row ${isUser ? "nk-msg-row--user" : "nk-msg-row--bot"}`}
     >
       {/* Bubble */}
@@ -1861,6 +1860,77 @@ function MessageBubble({
             ))}
           </div>
         )}
+
+        {/* Activity Todos - OpenCode-style task list */}
+        {!isUser && (message.activityTodos ?? []).length > 0 && (() => {
+          const todos = message.activityTodos!;
+          const completed = todos.filter((t) => t.status === "completed").length;
+          const total = todos.length;
+          const inProgress = todos.find((t) => t.status === "in-progress");
+
+          return (
+            <div style={{
+              marginTop: "8px",
+              border: "1px solid var(--vscode-widget-border, #454545)",
+              borderRadius: "4px",
+              overflow: "hidden",
+              fontSize: "12px",
+            }}>
+              {/* Header with progress */}
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "6px 10px",
+                background: "var(--vscode-sideBar-background, #252526)",
+                borderBottom: "1px solid var(--vscode-widget-border, #454545)",
+              }}>
+                <span style={{ fontWeight: 600, color: "var(--vscode-foreground, #cccccc)" }}>
+                  {completed} of {total} todos completed
+                </span>
+                {inProgress && (
+                  <span style={{ color: "var(--vscode-descriptionForeground, #8b8b9a)", fontSize: "11px" }}>
+                    {inProgress.title}
+                  </span>
+                )}
+              </div>
+              {/* Todo list */}
+              <div style={{ padding: "4px 0" }}>
+                {todos.map((todo) => (
+                  <div
+                    key={todo.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      padding: "4px 10px",
+                      color: todo.status === "completed"
+                        ? "var(--vscode-descriptionForeground, #8b8b9a)"
+                        : "var(--vscode-foreground, #cccccc)",
+                    }}
+                  >
+                    <span style={{ flexShrink: 0, width: "14px", textAlign: "center" }}>
+                      {todo.status === "completed" && <CheckCircle2 size={12} style={{ color: "var(--vscode-terminal-ansiGreen, #4ec9b0)" }} />}
+                      {todo.status === "in-progress" && <Radio size={12} style={{ color: "var(--vscode-terminal-ansiYellow, #dcdcaa)" }} />}
+                      {todo.status === "not-started" && <Square size={10} style={{ color: "var(--vscode-descriptionForeground, #8b8b9a)" }} />}
+                    </span>
+                    <span style={{
+                      textDecoration: todo.status === "completed" ? "line-through" : "none",
+                      opacity: todo.status === "completed" ? 0.7 : 1,
+                    }}>
+                      {todo.title}
+                    </span>
+                    {todo.detail && (
+                      <span style={{ color: "var(--vscode-descriptionForeground, #8b8b9a)", fontSize: "10px", marginLeft: "auto" }}>
+                        {todo.detail}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Debug */}
         {!isUser && showDebug && message.debug.length > 0 && (
@@ -2030,7 +2100,7 @@ function MessageBubble({
           <ResponseSummary message={message} />
         )}
       </div>
-    </motion.div>
+    </div>
   );
 }
 

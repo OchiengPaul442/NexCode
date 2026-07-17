@@ -169,61 +169,83 @@ export class SearchTool {
   private async searchWithDuckDuckGo(query: string): Promise<ToolResult> {
     try {
       const encodedQuery = encodeURIComponent(query);
-      const url =
-        `https://api.duckduckgo.com/?q=${encodedQuery}` +
-        `&format=json&no_html=1&skip_disambig=1`;
+      // Use DuckDuckGo HTML lite endpoint for actual search results
+      const url = `https://html.duckduckgo.com/html/?q=${encodedQuery}`;
 
-      const json = await this.fetchJson<DuckDuckGoResponse>(url, {
+      const response = await this.fetchWithTimeout(url, {
         method: "GET",
-      });
+        headers: {
+          "User-Agent": "Mozilla/5.0 (compatible; NexCode/1.0)",
+        },
+      }, 15000);
 
-      const abstractText = json.AbstractText?.trim() || "";
-      const abstractUrl = json.AbstractURL?.trim() || "";
-      const heading = json.Heading?.trim() || "";
-      const related = this.flattenDuckTopics(json.RelatedTopics ?? []).slice(
-        0,
-        5,
-      );
+      if (!response.ok) {
+        return { ok: false, output: `DuckDuckGo returned status ${response.status}` };
+      }
 
-      if (!abstractText && related.length === 0) {
-        return {
-          ok: false,
-          output: "DuckDuckGo returned no useful results.",
-        };
+      const html = await response.text();
+
+      // Parse results from HTML
+      const results: Array<{ title: string; url: string; snippet: string }> = [];
+      const resultRegex = /<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>[\s\S]*?<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/gi;
+      let match;
+      while ((match = resultRegex.exec(html)) !== null && results.length < 5) {
+        const url = match[1]?.trim() || "";
+        const title = match[2]?.replace(/<[^>]*>/g, "").trim() || "";
+        const snippet = match[3]?.replace(/<[^>]*>/g, "").trim() || "";
+        if (title && url) {
+          results.push({ title, url, snippet });
+        }
+      }
+
+      // Fallback: try simpler regex if first pattern doesn't match
+      if (results.length === 0) {
+        const simpleRegex = /<a[^>]*href="(https?:\/\/[^"]*)"[^>]*class="result__a"[^>]*>([\s\S]*?)<\/a>/gi;
+        while ((match = simpleRegex.exec(html)) !== null && results.length < 5) {
+          const url = match[1]?.trim() || "";
+          const title = match[2]?.replace(/<[^>]*>/g, "").trim() || "";
+          if (title && url && !url.includes("duckduckgo.com")) {
+            results.push({ title, url, snippet: "" });
+          }
+        }
+      }
+
+      if (results.length === 0) {
+        // Try extracting any links as fallback
+        const linkRegex = /<a[^>]*href="(https?:\/\/(?!duckduckgo\.com)[^"]*)"[^>]*>([\s\S]*?)<\/a>/gi;
+        while ((match = linkRegex.exec(html)) !== null && results.length < 5) {
+          const url = match[1]?.trim() || "";
+          const title = match[2]?.replace(/<[^>]*>/g, "").trim() || "";
+          if (title && url && title.length > 5) {
+            results.push({ title, url, snippet: "" });
+          }
+        }
+      }
+
+      if (results.length === 0) {
+        return { ok: false, output: "DuckDuckGo returned no useful results." };
       }
 
       const lines = [
-        `Web search provider: DuckDuckGo fallback`,
+        `Web search provider: DuckDuckGo`,
         `Query: ${query}`,
+        "",
+        "Results:",
       ];
 
-      if (abstractText) {
-        const abstractLabel = heading ? `Summary (${heading})` : "Summary";
-        lines.push("", `${abstractLabel}: ${this.compact(abstractText, 400)}`);
-        if (abstractUrl) {
-          lines.push(`Source: ${abstractUrl}`);
+      for (let i = 0; i < results.length; i++) {
+        const r = results[i];
+        lines.push(`${i + 1}. ${r.title}`);
+        lines.push(`   ${r.url}`);
+        if (r.snippet) {
+          lines.push(`   ${r.snippet.slice(0, 200)}`);
         }
+        lines.push("");
       }
 
-      if (related.length > 0) {
-        lines.push("", "Related results:");
-        for (let index = 0; index < related.length; index += 1) {
-          const item = related[index];
-          lines.push(
-            `${index + 1}. ${this.compact(item.text, 180)} - ${item.url}`,
-          );
-        }
-      }
-
-      return {
-        ok: true,
-        output: lines.join("\n"),
-      };
+      return { ok: true, output: lines.join("\n") };
     } catch (error) {
-      return {
-        ok: false,
-        output: `DuckDuckGo request failed: ${String(error)}`,
-      };
+      return { ok: false, output: `DuckDuckGo search failed: ${String(error)}` };
     }
   }
 
@@ -322,6 +344,24 @@ export class SearchTool {
     }
 
     return `${collapsed.slice(0, Math.max(0, maxLength - 3))}...`;
+  }
+
+  private async fetchWithTimeout(
+    url: string,
+    init: RequestInit,
+    timeoutMs = 15_000,
+  ): Promise<Response> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      return await fetch(url, {
+        ...init,
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   private async fetchJson<T>(

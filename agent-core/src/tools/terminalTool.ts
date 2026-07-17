@@ -164,141 +164,143 @@ function translateLinuxToPowerShell(command: string): string {
 
   let cmd = command.trim();
 
-  // find . -type f -iname "*.ext" -> Get-ChildItem -Recurse -Filter "*.ext" -File
+  // Handle complex find commands with multiple -iname and -o (OR) conditions
+  // Pattern: find [path] -type f \( -iname "*.ext1" -o -iname "*.ext2" \)
+  const findComplexMatch = cmd.match(
+    /^find\s+(\S*)\s+-type\s+[fd]\s+\\\(\s*(.+?)\s*\\\)/is
+  );
+  if (findComplexMatch) {
+    const searchPath = findComplexMatch[1] || '.';
+    const conditions = findComplexMatch[2];
+    const inameMatches = [...conditions.matchAll(/-iname\s+"([^"]+)"/gi)];
+    if (inameMatches.length > 0) {
+      const filters = inameMatches.map(m => m[1]);
+      const isFile = cmd.includes('-type f');
+      const pathArg = searchPath === '.' ? '' : `-Path "${searchPath}" -Recurse`;
+      const filterStr = filters.length === 1 ? `-Filter "${filters[0]}"` : `-Include ${filters.map(f => `"${f}"`).join(',')}`;
+      const typeFlag = isFile ? '-File' : '-Directory';
+      return `Get-ChildItem ${pathArg} -Recurse ${filterStr} ${typeFlag} -ErrorAction SilentlyContinue`;
+    }
+  }
+
+  // Simple find patterns
   cmd = cmd.replace(
     /^find\s+\.?\s+-type\s+f\s+-iname\s+"([^"]+)"/i,
-    'Get-ChildItem -Recurse -Filter "$1" -File'
+    'Get-ChildItem -Recurse -Filter "$1" -File -ErrorAction SilentlyContinue'
   );
   cmd = cmd.replace(
     /^find\s+\.?\s+-type\s+f\s+-iname\s+(\S+)/i,
-    'Get-ChildItem -Recurse -Filter $1 -File'
+    'Get-ChildItem -Recurse -Filter $1 -File -ErrorAction SilentlyContinue'
   );
   cmd = cmd.replace(
     /^find\s+\.?\s+-type\s+d\s+-iname\s+"([^"]+)"/i,
-    'Get-ChildItem -Recurse -Filter "$1" -Directory'
-  );
-  cmd = cmd.replace(
-    /^find\s+\.?\s+-type\s+d\s+-iname\s+(\S+)/i,
-    'Get-ChildItem -Recurse -Filter $1 -Directory'
+    'Get-ChildItem -Recurse -Filter "$1" -Directory -ErrorAction SilentlyContinue'
   );
   cmd = cmd.replace(
     /^find\s+(\S+)\s+-type\s+f\s+-iname\s+"([^"]+)"/i,
-    'Get-ChildItem -Path "$1" -Recurse -Filter "$2" -File'
+    'Get-ChildItem -Path "$1" -Recurse -Filter "$2" -File -ErrorAction SilentlyContinue'
   );
   cmd = cmd.replace(
     /^find\s+(\S+)\s+-type\s+f\s+-iname\s+(\S+)/i,
-    'Get-ChildItem -Path "$1" -Recurse -Filter $2 -File'
+    'Get-ChildItem -Path "$1" -Recurse -Filter $2 -File -ErrorAction SilentlyContinue'
   );
-  // find . -type f -> Get-ChildItem -Recurse -File
   cmd = cmd.replace(
     /^find\s+\.?\s+-type\s+f$/i,
-    'Get-ChildItem -Recurse -File'
+    'Get-ChildItem -Recurse -File -ErrorAction SilentlyContinue'
   );
-  // find . -type d -> Get-ChildItem -Recurse -Directory
   cmd = cmd.replace(
     /^find\s+\.?\s+-type\s+d$/i,
-    'Get-ChildItem -Recurse -Directory'
+    'Get-ChildItem -Recurse -Directory -ErrorAction SilentlyContinue'
   );
-  // find . -name "pattern" -> Get-ChildItem -Recurse -Filter "pattern"
   cmd = cmd.replace(
     /^find\s+\.?\s+-name\s+"([^"]+)"/i,
-    'Get-ChildItem -Recurse -Filter "$1"'
+    'Get-ChildItem -Recurse -Filter "$1" -ErrorAction SilentlyContinue'
   );
   cmd = cmd.replace(
-    /^find\s+\.?\s+-name\s+(\S+)/i,
-    'Get-ChildItem -Recurse -Filter $1'
+    /^find\s+(\S+)\s+-name\s+"([^"]+)"/i,
+    'Get-ChildItem -Path "$1" -Recurse -Filter "$2" -ErrorAction SilentlyContinue'
   );
+  // Generic find fallback - just list directory
+  cmd = cmd.replace(/^find\b(.+)$/i, 'Get-ChildItem -Recurse -ErrorAction SilentlyContinue$1');
 
-  // ls -la -> Get-ChildItem -Force
+  // ls
   cmd = cmd.replace(/^ls\s+-la$/i, 'Get-ChildItem -Force');
   cmd = cmd.replace(/^ls\s+-l$/i, 'Get-ChildItem');
   cmd = cmd.replace(/^ls$/i, 'Get-ChildItem');
-  // ls -la path -> Get-ChildItem path -Force
   cmd = cmd.replace(/^ls\s+-la\s+(.+)$/i, 'Get-ChildItem "$1" -Force');
   cmd = cmd.replace(/^ls\s+-l\s+(.+)$/i, 'Get-ChildItem "$1"');
   cmd = cmd.replace(/^ls\s+(.+)$/i, 'Get-ChildItem "$1"');
 
-  // cat file -> Get-Content file
+  // cat
   cmd = cmd.replace(/^cat\s+(.+)$/i, 'Get-Content $1');
 
-  // head -n 20 file -> Get-Content file -Head 20
+  // head/tail
   cmd = cmd.replace(/^head\s+-n\s+(\d+)\s+(.+)$/i, 'Get-Content $2 -Head $1');
   cmd = cmd.replace(/^head\s+(\d+)\s+(.+)$/i, 'Get-Content $2 -Head $1');
   cmd = cmd.replace(/^head\s+(.+)$/i, 'Get-Content $1 -Head 10');
-
-  // tail -n 20 file -> Get-Content file -Tail 20
   cmd = cmd.replace(/^tail\s+-n\s+(\d+)\s+(.+)$/i, 'Get-Content $2 -Tail $1');
   cmd = cmd.replace(/^tail\s+(\d+)\s+(.+)$/i, 'Get-Content $2 -Tail $1');
   cmd = cmd.replace(/^tail\s+(.+)$/i, 'Get-Content $1 -Tail 10');
 
-  // wc -l file -> (Get-Content file).Count
+  // wc
   cmd = cmd.replace(/^wc\s+-l\s+(.+)$/i, '(Get-Content $1).Count');
   cmd = cmd.replace(/^wc\s+(.+)$/i, '(Get-Content $1).Count');
 
-  // grep "pattern" file -> Select-String -Pattern "pattern" -Path file
+  // grep
   cmd = cmd.replace(/^grep\s+"([^"]+)"\s+(.+)$/i, 'Select-String -Pattern "$1" -Path $2');
   cmd = cmd.replace(/^grep\s+(\S+)\s+(.+)$/i, 'Select-String -Pattern $1 -Path $2');
-  // grep -r "pattern" dir -> Select-String -Pattern "pattern" -Path dir\* -Recurse
   cmd = cmd.replace(/^grep\s+-r\s+"([^"]+)"\s+(.+)$/i, 'Select-String -Pattern "$1" -Path "$2\\*" -Recurse');
-  cmd = cmd.replace(/^grep\s+-r\s+(\S+)\s+(.+)$/i, 'Select-String -Pattern $1 -Path "$2\\*" -Recurse');
-  // grep -rn "pattern" file -> Select-String -Pattern "pattern" -Path file
   cmd = cmd.replace(/^grep\s+-rn\s+"([^"]+)"\s+(.+)$/i, 'Select-String -Pattern "$1" -Path $2');
-  cmd = cmd.replace(/^grep\s+-rn\s+(\S+)\s+(.+)$/i, 'Select-String -Pattern $1 -Path $2');
 
-  // mkdir -p dir -> New-Item -ItemType Directory -Path dir -Force
+  // mkdir
   cmd = cmd.replace(/^mkdir\s+-p\s+(.+)$/i, 'New-Item -ItemType Directory -Path "$1" -Force');
   cmd = cmd.replace(/^mkdir\s+(.+)$/i, 'New-Item -ItemType Directory -Path "$1"');
 
-  // rm file -> Remove-Item file
-  cmd = cmd.replace(/^rm\s+(.+)$/i, 'Remove-Item $1 -Force');
-  // rm -rf dir -> Remove-Item dir -Recurse -Force
+  // rm
   cmd = cmd.replace(/^rm\s+-rf\s+(.+)$/i, 'Remove-Item "$1" -Recurse -Force');
   cmd = cmd.replace(/^rm\s+-r\s+(.+)$/i, 'Remove-Item "$1" -Recurse -Force');
+  cmd = cmd.replace(/^rm\s+(.+)$/i, 'Remove-Item $1 -Force');
 
-  // cp src dest -> Copy-Item src dest
-  cmd = cmd.replace(/^cp\s+(.+)\s+(.+)$/i, 'Copy-Item $1 $2');
-  // cp -r src dest -> Copy-Item src dest -Recurse
+  // cp/mv
   cmd = cmd.replace(/^cp\s+-r\s+(.+)\s+(.+)$/i, 'Copy-Item $1 $2 -Recurse');
-
-  // mv src dest -> Move-Item src dest
+  cmd = cmd.replace(/^cp\s+(.+)\s+(.+)$/i, 'Copy-Item $1 $2');
   cmd = cmd.replace(/^mv\s+(.+)\s+(.+)$/i, 'Move-Item $1 $2');
 
-  // touch file -> New-Item -ItemType File -Path file -Force
+  // touch
   cmd = cmd.replace(/^touch\s+(.+)$/i, 'New-Item -ItemType File -Path "$1" -Force');
 
-  // pwd -> Get-Location
+  // pwd
   cmd = cmd.replace(/^pwd$/i, 'Get-Location');
 
-  // echo "text" -> Write-Output "text"
+  // echo
   cmd = cmd.replace(/^echo\s+(.+)$/i, 'Write-Output $1');
 
-  // which cmd -> Get-Command cmd
+  // which/where
   cmd = cmd.replace(/^which\s+(.+)$/i, 'Get-Command $1');
-  // where cmd -> Get-Command cmd
   cmd = cmd.replace(/^where\s+(.+)$/i, 'Get-Command $1');
 
-  // diff file1 file2 -> Compare-Object (Get-Content file1) (Get-Content file2)
+  // diff
   cmd = cmd.replace(/^diff\s+(.+)\s+(.+)$/i, 'Compare-Object (Get-Content $1) (Get-Content $2)');
 
-  // du -sh dir -> (Get-ChildItem dir -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB
+  // du
   cmd = cmd.replace(/^du\s+-sh\s+(.+)$/i, 'Write-Output "$((Get-ChildItem $1 -Recurse -File | Measure-Object -Property Length -Sum).Sum / 1MB) MB"');
 
-  // df -h -> Get-PSDrive
+  // df
   cmd = cmd.replace(/^df\s+-h$/i, 'Get-PSDrive');
 
-  // env -> Get-ChildItem Env:
+  // env
   cmd = cmd.replace(/^env$/i, 'Get-ChildItem Env:');
 
-  // date -> Get-Date
+  // date
   cmd = cmd.replace(/^date$/i, 'Get-Date');
 
-  // whoami -> $env:USERNAME
+  // whoami
   cmd = cmd.replace(/^whoami$/i, '$env:USERNAME');
 
-  // chmod 755 file -> icacls file /grant Everyone:F
+  // chmod
   cmd = cmd.replace(/^chmod\s+\d+\s+(.+)$/i, 'icacls "$1" /grant Everyone:F');
 
-  // tar -xzf file -> Expand-Archive file
+  // tar
   cmd = cmd.replace(/^tar\s+-xzf\s+(.+)$/i, 'Expand-Archive -Path "$1" -DestinationPath .');
   cmd = cmd.replace(/^tar\s+-xf\s+(.+)$/i, 'Expand-Archive -Path "$1" -DestinationPath .');
 

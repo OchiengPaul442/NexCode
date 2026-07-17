@@ -132,7 +132,18 @@
           "default": 0.2,
           "minimum": 0,
           "maximum": 2,
-          "description": "Default temperature for provider requests."
+          "description": "Default temperature for all modes. Can be overridden per mode."
+        },
+        "nexcodeKiboko.modeTemperatures": {
+          "type": "object",
+          "default": {
+            "planner": 0.3,
+            "coder": 0.15,
+            "reviewer": 0.05,
+            "qa": 0.05,
+            "security": 0.1
+          },
+          "description": "Per-mode temperature overrides. Keys: planner, coder, reviewer, qa, security."
         },
         "nexcodeKiboko.showReasoning": {
           "type": "boolean",

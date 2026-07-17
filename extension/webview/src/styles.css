@@ -2392,12 +2392,13 @@ html, body {
 
 .nk-tool-status {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 6px;
-  padding: 4px 8px;
+  padding: 6px 8px;
   border-radius: var(--nk-radius-sm);
   font-size: 11px;
   border: 1px solid transparent;
+  word-break: break-word;
 }
 
 .nk-tool-status--success {
@@ -2421,12 +2422,17 @@ html, body {
 .nk-tool-status-icon {
   font-weight: bold;
   flex-shrink: 0;
+  margin-top: 1px;
 }
 
 .nk-tool-status-command {
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 .nk-tool-card {

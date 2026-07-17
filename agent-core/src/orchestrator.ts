@@ -1,7 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 import { randomUUID } from "crypto";
-import { createRuntimeConfig, RuntimeConfig } from "./config";
+import { createRuntimeConfig, getTemperatureForMode, RuntimeConfig } from "./config";
 
 import { CoderAgent } from "./agents/coderAgent";
 import { PlannerAgent } from "./agents/plannerAgent";
@@ -66,6 +66,7 @@ export interface NexcodeOrchestratorOptions {
   tavilyApiKey?: string;
   tavilyBaseUrl?: string;
   approvalCallback?: ApprovalCallback;
+  modeTemperatures?: Partial<Record<AgentMode, number>>;
 }
 
 type AutoRoutingStrategy =
@@ -148,6 +149,7 @@ export class NexcodeOrchestrator {
         tavilyApiKey: options.tavilyApiKey ?? process.env.TAVILY_API_KEY,
         tavilyBaseUrl: options.tavilyBaseUrl ?? "https://api.tavily.com/search",
       },
+      modeTemperatures: options.modeTemperatures,
     });
 
     this.router = new ModelRouter(
@@ -329,7 +331,7 @@ export class NexcodeOrchestrator {
     const temperature =
       typeof request.temperature === "number"
         ? Math.min(2, Math.max(0, request.temperature))
-        : undefined;
+        : getTemperatureForMode(mode, this.config.modeTemperatures);
     const sessionId = this.getSessionId(request.workspaceRoot);
     const diagnostics: string[] = [];
     let streamedAnyToken = false;

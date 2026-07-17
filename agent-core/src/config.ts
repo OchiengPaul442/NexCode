@@ -1,5 +1,14 @@
 import path from "path";
-import { ProviderId } from "./types";
+import { AgentMode, ProviderId } from "./types";
+
+export const MODE_TEMPERATURES: Record<AgentMode, number> = {
+  auto: 0.2,
+  planner: 0.3,
+  coder: 0.15,
+  reviewer: 0.05,
+  qa: 0.05,
+  security: 0.1,
+};
 
 export interface RuntimeConfig {
   workspaceRoot: string;
@@ -16,6 +25,14 @@ export interface RuntimeConfig {
     tavilyApiKey?: string;
     tavilyBaseUrl: string;
   };
+  modeTemperatures?: Partial<Record<AgentMode, number>>;
+}
+
+export function getTemperatureForMode(
+  mode: AgentMode,
+  overrides?: Partial<Record<AgentMode, number>>,
+): number {
+  return overrides?.[mode] ?? MODE_TEMPERATURES[mode] ?? 0.2;
 }
 
 export function createRuntimeConfig(
@@ -43,5 +60,6 @@ export function createRuntimeConfig(
       tavilyBaseUrl:
         partial.toolDefaults?.tavilyBaseUrl ?? "https://api.tavily.com/search",
     },
+    modeTemperatures: partial.modeTemperatures,
   };
 }

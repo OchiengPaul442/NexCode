@@ -147,14 +147,9 @@ export async function* runAgentLoop(
       return messages;
     }
 
-    const statusMessages = [
-      "Analyzing request...",
-      "Processing...",
-      "Working on it...",
-      "Thinking...",
-      "Preparing response...",
-    ];
-    yield { type: "status", message: statusMessages[turn % statusMessages.length] };
+    if (turn === 0) {
+      yield { type: "status", message: "Analyzing request..." };
+    }
 
     const response = await router.generate(messages, {
       tools: toolSchemas,

@@ -1027,6 +1027,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         openAIBaseUrl: settings.openAIBaseUrl,
         openAIApiKey: rawKeys.openAIApiKey,
         tavilyApiKey: rawKeys.tavilyApiKey,
+        modeTemperatures: settings.modeTemperatures as any,
         approvalCallback: async (toolName, arg) => {
           if (settings.toolApproval === "bypass") {
             return true;
@@ -1212,6 +1213,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     requireTerminalApproval: boolean;
     toolApproval: "auto" | "ask" | "bypass";
     temperature: number;
+    modeTemperatures: Record<string, number>;
     showReasoning: boolean;
     autoApplyChanges: boolean;
     allowWebSearch: boolean;
@@ -1243,6 +1245,10 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         "ask",
       ),
       temperature: config.get<number>("temperature", 0.2),
+      modeTemperatures: config.get<Record<string, number>>(
+        "modeTemperatures",
+        { planner: 0.3, coder: 0.15, reviewer: 0.05, qa: 0.05, security: 0.1 },
+      ),
       showReasoning: config.get<boolean>("showReasoning", true),
       autoApplyChanges: config.get<boolean>("autoApplyChanges", false),
       allowWebSearch: config.get<boolean>("allowWebSearch", true),

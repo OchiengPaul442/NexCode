@@ -7,6 +7,9 @@ const execAsync = promisify(exec);
 const MAX_COMMAND_LENGTH = 2_000;
 
 // SAFE_COMMANDS - always allowed without approval
+// Removed: npm run, npm install, npx, node, python, pip
+// These can execute arbitrary code (node -e, python -c, npm postinstall scripts)
+// They now require approval via the DESTRUCTIVE_TOOLS gate in toolApprovalPolicy.ts
 export const SAFE_PATTERNS = [
   /^ls\b/,
   /^pwd\b/,
@@ -21,12 +24,6 @@ export const SAFE_PATTERNS = [
   /^git\s+branch\b/,
   /^git\s+show\b/,
   /^npm\s+test\b/,
-  /^npm\s+run\b/,
-  /^npm\s+install\b/,
-  /^npx\b/,
-  /^node\b/,
-  /^python\b/,
-  /^pip\b/,
   /^cargo\s+(check|build|test|clippy|fmt)\b/,
   /^go\s+(build|test|fmt|vet)\b/,
 ];
@@ -37,6 +34,9 @@ const SHELL_EXPANSION_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /`[^`]+`/, reason: 'Backtick command substitution is blocked.' },
   { pattern: /\$\{/, reason: 'Parameter expansion ${} is blocked.' },
   { pattern: /;\s*(?:rm|del|format|mkfs|shutdown|reboot)/i, reason: 'Chained destructive command blocked.' },
+  { pattern: /\bnode\s+-e\b/i, reason: 'Inline node execution (node -e) is blocked.' },
+  { pattern: /\bpython\s+-c\b/i, reason: 'Inline python execution (python -c) is blocked.' },
+  { pattern: /\bpython3\s+-c\b/i, reason: 'Inline python3 execution (python3 -c) is blocked.' },
 ];
 
 // BLOCKED_COMMANDS - always blocked regardless of approval

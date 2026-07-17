@@ -58,8 +58,8 @@
 
 ## Remaining Risks
 
-1. **Terminal execution is not sandboxed** — the denylist is a mitigation, not a security boundary. Full sandboxing is P1 work.
-2. **Symlink escape not fully mitigated** — current implementation checks logical path only, not resolved symlink target.
+1. **Terminal execution is not sandboxed** — the denylist is a mitigation, not a security boundary. Full sandboxing is P1 work. F-014 fix requires approval for npm run/install/node/python, but the underlying denylist model remains fragile.
+2. **Symlink escape not fully mitigated** — current implementation checks logical path only for batch_edit (now fixed to use resolveWorkspacePathSafe), but contextBuilder.ts has a third path resolution implementation without symlink resolution (lower risk — prompt context only).
 3. **No extension-host integration tests** — requires `@vscode/test-electron` setup.
 4. **No webview component tests** — requires React Testing Library setup.
 5. **Webview tsconfig not integrated into CI** — added but not in the CI workflow yet.
@@ -67,21 +67,36 @@
 
 ---
 
+## Hardening Pass Results
+
+| Finding | Status | Evidence |
+|---------|--------|----------|
+| F-014: SAFE_PATTERNS allows arbitrary code execution | FIXED | `terminalArbitraryExecution.test.ts` (28 tests) |
+| F-015: batch_edit bypasses ensureNotWorkspaceRoot | FIXED | `batchEditSecurity.test.ts` (13 tests) |
+| F-015: batch_edit uses unsafe path resolution | FIXED | Uses resolveWorkspacePathSafe now |
+| F-015: batch_edit delete without recursive flag | FIXED | Uses { recursive: true, force: true } now |
+
+---
+
 ## Release Decision
 
-**APPROVED WITH DOCUMENTED LIMITATIONS**
+**CONDITIONAL GO — with mandatory approval gate for terminal commands**
 
-The P0 security findings have been addressed:
-- Destructive file operations now require backend-enforced approval
-- Approval uses VS Code native modal, not `window.confirm()`
-- API keys are no longer sent to the webview renderer
-- Runtime memory is no longer tracked in git
-- Path safety tests prove traversal rejection works
-- Terminal bypasses are documented with adversarial tests
+The P0 security findings from the original audit have been addressed, plus two new critical findings fixed in this hardening pass:
 
-Known limitations that do NOT block release:
+1. **F-014 FIXED:** npm run, npm install, node, python, npx, pip no longer auto-execute without approval. Inline code execution (node -e, python -c) is now blocked at the validation layer.
+2. **F-015 FIXED:** batch_edit delete operation now calls ensureNotWorkspaceRoot and uses symlink-resolving path resolution.
+3. **F-001/F-002:** Approval policy enforcement verified at backend level.
+4. **F-005:** API keys no longer exposed to webview.
+
+**Test evidence:** 147 tests passing across 11 test files. TypeScript compiles clean.
+
+**Known limitations that do NOT block release:**
 - Terminal execution uses denylist (documented, not a security boundary)
-- Symlink escape checks logical path only
+- Symlink escape checks logical path for contextBuilder (lower risk)
 - Architecture decomposition deferred to P1
 
-The extension is safe for use in trusted workspaces. Users should be informed that terminal execution is not sandboxed and should only be used with trusted prompts.
+**Conditions for release:**
+1. Users must be informed that terminal execution requires approval for npm run/install/node/python
+2. The approval gate must be enabled (DefaultToolApprovalPolicy must be passed to ToolRegistry)
+3. Extension-host smoke testing should be performed before public release

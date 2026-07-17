@@ -246,6 +246,7 @@ describe("ToolRegistry structured methods", () => {
   });
 
   it("runToolCallStructured populates affectedFiles for write", async () => {
+    registry.markApproved("write", "/tmp/nexcode-test.txt :: hello");
     const result = await registry.runToolCallStructured(
       "write /tmp/nexcode-test.txt :: hello",
     );

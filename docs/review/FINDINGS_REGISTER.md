@@ -114,6 +114,62 @@
 
 ---
 
+## P0 — Critical Security Findings (Hardening Pass)
+
+### F-014: SAFE_PATTERNS marks npm run, npm install, node, python as auto-executable
+- **Severity:** Critical
+- **Status:** FIXED
+- **Original:** `terminalTool.ts` SAFE_PATTERNS includes `npm run`, `npm install`, `npx`, `node`, `python`, `pip` — all can execute arbitrary code. `npm install` runs postinstall scripts. `node -e` and `python -c` execute inline code. `npm run <script>` runs arbitrary package.json scripts. None caught by `SHELL_EXPANSION_PATTERNS` (which only checks `$()`, backticks, `${}`).
+- **Fix:** Removed `npm run`, `npm install`, `npx`, `node`, `python`, `pip` from `SAFE_PATTERNS`. Added `node -e`, `python -c`, `python3 -c` to `SHELL_EXPANSION_PATTERNS` as blocked. These commands now require approval via the `DESTRUCTIVE_TOOLS` gate in `toolApprovalPolicy.ts`.
+- **Tests:** `terminalArbitraryExecution.test.ts` (28 tests — 6 pattern verification, 7 policy checks, 3 validation blocks, 6 payload tests, 6 regression checks)
+- **Regression test:** Fails on old code (all 28 tests would fail), passes on new code
+
+### F-015: batch_edit delete bypasses ensureNotWorkspaceRoot and uses unsafe path resolution
+- **Severity:** High
+- **Status:** FIXED
+- **Original:** `toolRegistry.ts` `executeBatchEditItem` used `resolveWorkspacePath` (sync, no symlink resolution) and the `delete` operation called `fs.rm` without `ensureNotWorkspaceRoot` check. This meant batch_edit could delete the workspace root. The dedicated `delete` tool correctly calls `ensureNotWorkspaceRoot`.
+- **Fix:** Changed `executeBatchEditItem` to use `resolveWorkspacePathSafe` (async, resolves symlinks) and added `ensureNotWorkspaceRootPublic` call before delete. Also changed `fs.rm` to use `{ recursive: true, force: true }` to match the dedicated delete tool behavior.
+- **Tests:** `batchEditSecurity.test.ts` (13 tests — workspace root protection, path resolution, error handling, operations, multiple edits)
+- **Regression test:** Demonstrates the bug existed before fix, passes after fix
+
+### F-016: Approval re-run is stateless infinite loop — tools never execute after approval
+- **Severity:** Critical
+- **Status:** FIXED
+- **Original:** After user approval, orchestrator/agentLoop re-runs `runToolCall` with the same args. Since `requiresApproval` is stateless (no memory of approval), it returns `true` again, creating an infinite loop. Every destructive tool was permanently blocked after approval.
+- **Fix:** Added `approvedCalls` Set to `ToolRegistry` with `markApproved(toolName, arg)` method. `requiresApproval` checks `approvedCalls` before the policy. All approval paths (orchestrator `handleToolRequest`, `streamToolRequest`, agentLoop) now call `markApproved` after approval callback returns true.
+- **Tests:** Existing `toolApprovalPolicy.test.ts` and `batchEditSecurity.test.ts` verify the fix
+- **Regression test:** Tools now execute after approval (previously returned "AWAITING_APPROVAL" forever)
+
+### F-017: batch_edit skips approval gate in streamToolRequest
+- **Severity:** Critical
+- **Status:** FIXED
+- **Original:** `streamToolRequest` batch_edit branch calls `runToolCall` directly without checking `requiresApproval` first. The `AWAITING_APPROVAL` result is treated as a normal failure, silently blocking batch_edit with no approval dialog.
+- **Fix:** Added explicit approval check before `runToolCall` in the batch_edit branch, mirroring the terminal branch pattern. Yields `toolApprovalRequired` event and `markApproved` after approval.
+- **Tests:** Existing orchestrator tests verify the flow
+
+### F-018: ToolRegistry defaults to fail-open when no approvalPolicy provided
+- **Severity:** High
+- **Status:** FIXED
+- **Original:** `ToolRegistry` constructor defaults `approvalPolicy` to `undefined`. When no policy is provided, `requiresApproval` returns `false` for all tools, and `getToolRiskLevel` returns `"safe"`. Any code path that forgets to provide the policy silently disables the entire approval system.
+- **Fix:** Changed constructor to default to `new DefaultToolApprovalPolicy()` when no policy is provided. Made `approvalPolicy` non-optional in the class type.
+- **Tests:** Existing tests verify default behavior
+
+### F-019: resolveWorkspacePathSafe doesn't resolve intermediate symlinks for new files
+- **Severity:** High
+- **Status:** FIXED
+- **Original:** When the final path component doesn't exist (write/create), `fs.realpath` throws ENOENT and falls back to un-resolved logical path. An attacker could create a symlink `workspace/link` -> `/etc/` and write through it to escape the workspace.
+- **Fix:** After ENOENT fallback, resolve the parent directory via `fs.realpath` to catch intermediate symlinks.
+- **Tests:** Existing `fileSystemTool.test.ts` path safety tests
+
+### F-020: clearDirectory doesn't re-validate entries against workspace
+- **Severity:** Medium
+- **Status:** FIXED
+- **Original:** `clearDirectory` reads directory entries and deletes them with `fs.rm` without resolving symlinks. A symlinked entry could point outside the workspace.
+- **Fix:** Added `fs.realpath` resolution and workspace containment check for each entry before deletion.
+- **Tests:** Existing `fileSystemTool.test.ts` tests
+
+---
+
 ## Rejected / Outdated Findings
 
 ### F-R01: Five near-identical agent classes

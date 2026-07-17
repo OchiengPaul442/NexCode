@@ -205,6 +205,7 @@ export async function* runAgentLoop(
         if (approvalCallback) {
           const approved = await approvalCallback(toolName, pendingArg);
           if (approved) {
+            tools.markApproved(toolName, pendingArg);
             result = await tools.runToolCall(
               `${toolCall.function.name} ${argString}`,
             );

@@ -7,7 +7,7 @@ import { McpRegistry } from "../mcp/mcpRegistry";
 import { SearchTool } from "./searchTool";
 import { TerminalTool } from "./terminalTool";
 import { TestRunnerTool } from "./testRunnerTool";
-import { ToolApprovalPolicy } from "./toolApprovalPolicy";
+import { DefaultToolApprovalPolicy, ToolApprovalPolicy } from "./toolApprovalPolicy";
 import {
   StructuredToolResult,
   ToolResultError,
@@ -36,7 +36,8 @@ export class ToolRegistry {
   public readonly test: TestRunnerTool;
   public readonly search: SearchTool;
   private readonly mcpRegistry?: McpRegistry;
-  private readonly approvalPolicy?: ToolApprovalPolicy;
+  private readonly approvalPolicy: ToolApprovalPolicy;
+  private readonly approvedCalls = new Set<string>();
 
   public constructor(workspaceRoot: string, options: ToolRegistryOptions = {}) {
     this.filesystem = new FileSystemTool(workspaceRoot);
@@ -48,27 +49,25 @@ export class ToolRegistry {
       tavilyBaseUrl: options.tavilyBaseUrl,
     });
     this.mcpRegistry = options.mcpRegistry;
-    this.approvalPolicy = options.approvalPolicy;
+    this.approvalPolicy = options.approvalPolicy ?? new DefaultToolApprovalPolicy();
+  }
+
+  public markApproved(toolName: string, arg: string): void {
+    this.approvedCalls.add(`${toolName}::${arg}`);
   }
 
   public requiresApproval(toolName: string, arg: string): boolean {
-    if (!this.approvalPolicy) {
+    if (this.approvedCalls.has(`${toolName}::${arg}`)) {
       return false;
     }
     return this.approvalPolicy.requiresApproval(toolName, arg);
   }
 
   public getToolRiskLevel(toolName: string, arg: string): "safe" | "low-risk" | "destructive" {
-    if (!this.approvalPolicy) {
-      return "safe";
-    }
     return this.approvalPolicy.getToolRiskLevel(toolName, arg);
   }
 
   public isAutoExecutable(toolName: string, arg: string): boolean {
-    if (!this.approvalPolicy) {
-      return true;
-    }
     return this.approvalPolicy.isAutoExecutable(toolName, arg);
   }
 
@@ -129,10 +128,7 @@ export class ToolRegistry {
       };
     }
 
-    if (
-      this.approvalPolicy &&
-      this.approvalPolicy.requiresApproval(toolName, arg)
-    ) {
+    if (this.requiresApproval(toolName, arg)) {
       return {
         ok: false,
         output: "AWAITING_APPROVAL",
@@ -302,10 +298,7 @@ export class ToolRegistry {
       );
     }
 
-    if (
-      this.approvalPolicy &&
-      this.approvalPolicy.requiresApproval(toolName, arg)
-    ) {
+    if (this.requiresApproval(toolName, arg)) {
       return createStructuredResult(
         false,
         `Awaiting approval for ${toolName}`,
@@ -375,7 +368,7 @@ export class ToolRegistry {
 
   private async executeBatchEditItem(edit: { filePath: string; content: string; operation: string }): Promise<ToolResult> {
     try {
-      const absolutePath = this.filesystem.resolveWorkspacePath(edit.filePath);
+      const absolutePath = await this.filesystem.resolveWorkspacePathSafe(edit.filePath);
 
       switch (edit.operation) {
         case "create": {
@@ -388,7 +381,8 @@ export class ToolRegistry {
           return { ok: true, output: `Updated ${edit.filePath}` };
         }
         case "delete": {
-          await fs.rm(absolutePath, { force: true });
+          this.filesystem.ensureNotWorkspaceRootPublic(absolutePath, edit.filePath);
+          await fs.rm(absolutePath, { recursive: true, force: true });
           return { ok: true, output: `Deleted ${edit.filePath}` };
         }
         default:

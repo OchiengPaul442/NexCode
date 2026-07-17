@@ -1954,6 +1954,7 @@ export class NexcodeOrchestrator {
           };
         }
         // Re-run the tool after approval
+        this.tools.markApproved(toolName, pendingArg);
         const approvedResult = await this.tools.runToolCall(toolCommand);
         const boundedOutput = clampText(
           approvedResult.output,
@@ -2084,6 +2085,7 @@ export class NexcodeOrchestrator {
               diagnostics,
             };
           }
+          this.tools.markApproved("terminal", terminalArg);
         } else {
           yield {
             type: "toolExecuted",
@@ -2146,6 +2148,58 @@ export class NexcodeOrchestrator {
         yield { type: "batchEditStarted", editCount };
       } catch {
         // Parse error handled by tool registry
+      }
+
+      if (this.tools.requiresApproval("batch_edit", batchEditMatch[1]?.trim() ?? "")) {
+        if (this.approvalCallback) {
+          const approved = await this.approvalCallback("batch_edit", batchEditMatch[1]?.trim() ?? "");
+          if (!approved) {
+            return {
+              text: [
+                "## Tool Execution",
+                `Command: ${toolCommand}`,
+                "",
+                "```text",
+                "Command cancelled by user.",
+                "```",
+              ].join("\n"),
+              modeUsed: mode,
+              providerUsed: provider,
+              modelUsed: model,
+              proposedEdits: [],
+              diagnostics,
+            };
+          }
+          this.tools.markApproved("batch_edit", batchEditMatch[1]?.trim() ?? "");
+        } else {
+          yield {
+            type: "toolExecuted",
+            toolName: "batch_edit",
+            command: batchEditMatch[1]?.trim() ?? "",
+            status: "awaiting-approval",
+            message: "Waiting for user approval",
+          };
+          yield {
+            type: "toolApprovalRequired",
+            toolName: "batch_edit",
+            pendingArg: batchEditMatch[1]?.trim() ?? "",
+          };
+          return {
+            text: [
+              "## Tool Execution",
+              `Command: ${toolCommand}`,
+              "",
+              "```text",
+              "AWAITING_APPROVAL",
+              "```",
+            ].join("\n"),
+            modeUsed: mode,
+            providerUsed: provider,
+            modelUsed: model,
+            proposedEdits: [],
+            diagnostics,
+          };
+        }
       }
 
       const result = await this.tools.runToolCall(toolCommand);

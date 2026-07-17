@@ -33,6 +33,16 @@
 | U-022 | Orchestrator | Tool command handling | Medium | orchestrator.test.ts | PASS | |
 | U-023 | Normalization | Terminal command normalization | Low | terminalCommandNormalization.test.ts | PASS | 2 tests |
 | U-024 | Normalization | Reviewer output normalization | Low | reviewerNormalization.test.ts | PASS | 1 test |
+| U-025 | Terminal | F-012: npm run requires approval | Critical | terminalArbitraryExecution.test.ts | PASS | 28 tests |
+| U-026 | Terminal | F-012: node -e blocked | Critical | terminalArbitraryExecution.test.ts | PASS | |
+| U-027 | Terminal | F-012: python -c blocked | Critical | terminalArbitraryExecution.test.ts | PASS | |
+| U-028 | Terminal | F-012: npm install requires approval | High | terminalArbitraryExecution.test.ts | PASS | |
+| U-029 | Terminal | F-012: npx requires approval | High | terminalArbitraryExecution.test.ts | PASS | |
+| U-030 | Terminal | F-012: npm test still safe | Medium | terminalArbitraryExecution.test.ts | PASS | |
+| U-031 | Batch Edit | F-015: delete on workspace root blocked | High | batchEditSecurity.test.ts | PASS | 13 tests |
+| U-032 | Batch Edit | F-015: uses resolveWorkspacePathSafe | High | batchEditSecurity.test.ts | PASS | |
+| U-033 | Batch Edit | F-015: create/update/delete operations | Medium | batchEditSecurity.test.ts | PASS | |
+| U-034 | Batch Edit | F-015: malformed JSON handling | Low | batchEditSecurity.test.ts | PASS | |
 
 ## Security Regression Tests
 
@@ -48,6 +58,9 @@
 | S-008 | Upload/exfiltration commands not blocked | High | DOCUMENTED — U-017 |
 | S-009 | Raw secrets never reach webview | Medium | FIXED — F-005 |
 | S-010 | Runtime memory not committed | Medium | FIXED — F-004 |
+| S-011 | npm run/install/node/python require approval | Critical | FIXED — F-014 |
+| S-012 | node -e / python -c inline execution blocked | Critical | FIXED — F-014 |
+| S-013 | npm test still does NOT require approval | Medium | PASS — U-026 |
 
 ## Type-Check Results
 

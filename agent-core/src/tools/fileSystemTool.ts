@@ -112,7 +112,19 @@ export class FileSystemTool {
       const entries = await fs.readdir(absolutePath, { withFileTypes: true });
 
       for (const entry of entries) {
-        await fs.rm(path.join(absolutePath, entry.name), {
+        const entryPath = path.join(absolutePath, entry.name);
+        // Resolve symlinks to prevent escape via symlinked entries
+        let resolvedEntry: string;
+        try {
+          resolvedEntry = await fs.realpath(entryPath);
+        } catch {
+          resolvedEntry = entryPath;
+        }
+        const relative = path.relative(this.workspaceRoot, resolvedEntry);
+        if (relative.startsWith("..") || path.isAbsolute(relative)) {
+          continue; // skip entries that escape workspace
+        }
+        await fs.rm(resolvedEntry, {
           recursive: true,
           force: true,
         });
@@ -165,9 +177,14 @@ export class FileSystemTool {
     try {
       resolvedPath = await fs.realpath(absolutePath);
     } catch {
-      // Path doesn't exist yet - use normalized path for writes
-      // For reads, this will fail with ENOENT which is correct
-      resolvedPath = absolutePath;
+      // Path doesn't exist yet - resolve parent directory to catch intermediate symlinks
+      try {
+        const parentResolved = await fs.realpath(path.dirname(absolutePath));
+        resolvedPath = path.join(parentResolved, path.basename(absolutePath));
+      } catch {
+        // Parent doesn't exist yet - use normalized path (mkdir will create it)
+        resolvedPath = absolutePath;
+      }
     }
 
     const relative = path.relative(this.workspaceRoot, resolvedPath);
@@ -189,6 +206,13 @@ export class FileSystemTool {
     }
 
     return absolutePath;
+  }
+
+  public ensureNotWorkspaceRootPublic(
+    absolutePath: string,
+    requestedPath: string,
+  ): void {
+    this.ensureNotWorkspaceRoot(absolutePath, requestedPath);
   }
 
   private ensureNotWorkspaceRoot(

@@ -296,17 +296,13 @@ export class NexcodeOrchestrator {
   private isSimpleQuestion(prompt: string): boolean {
     const lower = prompt.toLowerCase().trim();
 
-    if (lower.length < 50) return true;
+    if (lower.length < 20) return true;
 
-    if (/^(hi|hello|hey|yo|sup|what|who|how|why|when|where|which|can you|could you|would you|do you|are you|is it|tell me|explain|describe|define|summarize|what's|what is|who are|how do|how can|thanks|thank you|yes|no|ok|sure|please|help)/.test(lower)) {
+    if (/^(hi|hello|hey|yo|sup|thanks|thank you|yes|no|ok|sure|please|help)\s*$/i.test(lower)) {
       return true;
     }
 
-    if (/\b(your name|who are you|what can you|what do you|your capabilities|what are you)\b/.test(lower)) {
-      return true;
-    }
-
-    if (lower.length < 100 && !/\b(read|write|edit|delete|search|run|execute|test|build|install|create|fix|refactor)\b/.test(lower)) {
+    if (/^(what's your name|who are you|what can you do|what are you|how are you)\s*\??$/i.test(lower)) {
       return true;
     }
 

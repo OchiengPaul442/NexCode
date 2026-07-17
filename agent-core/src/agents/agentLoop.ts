@@ -172,7 +172,7 @@ export async function* runAgentLoop(
     messages.push({
       role: "assistant",
       content: response.text,
-      toolCalls: response.toolCalls,
+      tool_calls: response.toolCalls,
     });
 
     for (const toolCall of response.toolCalls) {
@@ -227,7 +227,7 @@ export async function* runAgentLoop(
       messages.push({
         role: "tool",
         content: result.output,
-        toolCallId: toolCall.id,
+        tool_call_id: toolCall.id,
       });
 
       yield {

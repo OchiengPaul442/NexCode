@@ -32,8 +32,8 @@ export interface ChatMessage {
   content: string;
   images?: string[];
   attachmentFileNames?: string[];
-  toolCalls?: ToolCallRequest[];
-  toolCallId?: string;
+  tool_calls?: ToolCallRequest[];
+  tool_call_id?: string;
 }
 
 export type AttachmentKind = "text" | "image" | "binary";

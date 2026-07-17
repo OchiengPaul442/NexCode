@@ -3169,65 +3169,64 @@ function App() {
           {/* Toolbar row */}
           <div className="nk-input-toolbar">
             <div className="nk-input-toolbar-left">
-              <div className="nk-composer-selector">
-                <div className="nk-mode-selector-wrap" ref={modePopupRef}>
-                  <button
-                    type="button"
-                    className={`nk-mode-selector ${modePopupOpen ? "nk-mode-selector--active" : ""}`}
-                    onClick={() => setModePopupOpen(!modePopupOpen)}
-                    aria-label="Choose conversation mode"
-                    aria-expanded={modePopupOpen}
-                    aria-haspopup="menu"
-                  >
-                    {activeSession.mode === "agent" && <Code2 size={14} />}
-                    {activeSession.mode === "ask" && <MessageSquare size={14} />}
-                    {activeSession.mode === "plan" && <Compass size={14} />}
-                  </button>
+              <div className="nk-mode-selector-wrap" ref={modePopupRef}>
+                <button
+                  type="button"
+                  className={`nk-mode-selector ${modePopupOpen ? "nk-mode-selector--active" : ""}`}
+                  onClick={() => setModePopupOpen(!modePopupOpen)}
+                  aria-label="Choose conversation mode"
+                  aria-expanded={modePopupOpen}
+                  aria-haspopup="menu"
+                >
+                  {activeSession.mode === "agent" && <Code2 size={14} />}
+                  {activeSession.mode === "ask" && <MessageSquare size={14} />}
+                  {activeSession.mode === "plan" && <Compass size={14} />}
+                </button>
 
-                  {modePopupOpen && (
-                    <div className="nk-mode-popup">
-                    <div
-                      className={`nk-mode-option ${activeSession.mode === "agent" ? "nk-mode-option--active" : ""}`}
-                      onClick={() => { onModeChange("agent"); setModePopupOpen(false); }}
-                    >
-                      <Code2 size={14} />
-                      <div>
-                        <div className="nk-mode-option-title">Build</div>
-                        <div className="nk-mode-option-desc">Full coding assistant</div>
-                      </div>
+                {modePopupOpen && (
+                  <div className="nk-mode-popup">
+                  <div
+                    className={`nk-mode-option ${activeSession.mode === "agent" ? "nk-mode-option--active" : ""}`}
+                    onClick={() => { onModeChange("agent"); setModePopupOpen(false); }}
+                  >
+                    <Code2 size={14} />
+                    <div>
+                      <div className="nk-mode-option-title">Build</div>
+                      <div className="nk-mode-option-desc">Full coding assistant</div>
                     </div>
-                    <div
-                      className={`nk-mode-option ${activeSession.mode === "ask" ? "nk-mode-option--active" : ""}`}
-                      onClick={() => { onModeChange("ask"); setModePopupOpen(false); }}
-                    >
-                      <MessageSquare size={14} />
-                      <div>
-                        <div className="nk-mode-option-title">Ask</div>
-                        <div className="nk-mode-option-desc">Quick questions</div>
-                      </div>
+                  </div>
+                  <div
+                    className={`nk-mode-option ${activeSession.mode === "ask" ? "nk-mode-option--active" : ""}`}
+                    onClick={() => { onModeChange("ask"); setModePopupOpen(false); }}
+                  >
+                    <MessageSquare size={14} />
+                    <div>
+                      <div className="nk-mode-option-title">Ask</div>
+                      <div className="nk-mode-option-desc">Quick questions</div>
                     </div>
-                    <div
-                      className={`nk-mode-option ${activeSession.mode === "plan" ? "nk-mode-option--active" : ""}`}
-                      onClick={() => { onModeChange("plan"); setModePopupOpen(false); }}
-                    >
-                      <Compass size={14} />
-                      <div>
-                        <div className="nk-mode-option-title">Plan</div>
-                        <div className="nk-mode-option-desc">Architecture planning</div>
-                      </div>
+                  </div>
+                  <div
+                    className={`nk-mode-option ${activeSession.mode === "plan" ? "nk-mode-option--active" : ""}`}
+                    onClick={() => { onModeChange("plan"); setModePopupOpen(false); }}
+                  >
+                    <Compass size={14} />
+                    <div>
+                      <div className="nk-mode-option-title">Plan</div>
+                      <div className="nk-mode-option-desc">Architecture planning</div>
                     </div>
-                    </div>
-                  )}
-                </div>
-                <ToolbarSelect
-                  value={activeSession.model}
-                  options={modelOptions}
-                  onChange={onModelChange}
-                  label="Model"
-                  className="nk-toolbar-select--model"
-                  menuClassName="nk-toolbar-select-menu--model"
-                />
+                  </div>
+                  </div>
+                )}
               </div>
+              <div className="nk-toolbar-separator" />
+              <ToolbarSelect
+                value={activeSession.model}
+                options={modelOptions}
+                onChange={onModelChange}
+                label="Model"
+                className="nk-toolbar-select--model"
+                menuClassName="nk-toolbar-select-menu--model"
+              />
               <button
                 className="nk-toolbar-btn"
                 type="button"

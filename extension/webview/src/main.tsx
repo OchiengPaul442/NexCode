@@ -142,6 +142,8 @@ interface ToolExecution {
   status: "success" | "error" | "awaiting-approval";
   message?: string;
   timestamp: number;
+  durationMs?: number;
+  filesChanged?: string[];
 }
 
 interface QueuedPrompt {
@@ -1788,7 +1790,7 @@ function MessageBubble({
 
         {/* Tool executions */}
         {!isUser && (message.toolExecutions ?? []).length > 0 && (
-          <div className="nk-tool-executions">
+          <div style={{ marginTop: "6px" }}>
             {message.toolExecutions!.map((execution, i) => (
               <ToolStatusIndicator
                 key={`${message.id}-tool-${i}`}
@@ -1796,6 +1798,8 @@ function MessageBubble({
                 command={execution.command}
                 status={execution.status}
                 message={execution.message}
+                durationMs={execution.durationMs}
+                filesChanged={execution.filesChanged}
               />
             ))}
           </div>
@@ -1815,6 +1819,84 @@ function MessageBubble({
             </ol>
           </details>
         )}
+
+        {/* Work Summary */}
+        {!isUser && (message.toolExecutions ?? []).length > 0 && (() => {
+          const toolExecs = message.toolExecutions!;
+          const filesModified = new Set<string>();
+          const filesCreated = new Set<string>();
+          const filesDeleted = new Set<string>();
+          let totalDuration = 0;
+          let successCount = 0;
+          let errorCount = 0;
+
+          for (const exec of toolExecs) {
+            if (exec.status === "success") successCount++;
+            if (exec.status === "error") errorCount++;
+            if (exec.durationMs) totalDuration += exec.durationMs;
+            if (exec.filesChanged) {
+              for (const f of exec.filesChanged) filesModified.add(f);
+            }
+            // Infer file operations from command
+            const cmd = exec.command.toLowerCase();
+            if (exec.toolName === "write" || exec.toolName === "append") {
+              const pathMatch = exec.command.match(/^(.+?)\s*::/);
+              if (pathMatch) filesModified.add(pathMatch[1].trim());
+            }
+            if (exec.toolName === "delete") {
+              filesDeleted.add(exec.command.trim());
+            }
+          }
+
+          if (toolExecs.length < 2) return null;
+
+          const allFiles = [...filesModified].sort();
+          const durationStr = totalDuration < 1000 ? `${totalDuration}ms` : totalDuration < 60000 ? `${(totalDuration / 1000).toFixed(1)}s` : `${Math.floor(totalDuration / 60000)}m ${Math.floor((totalDuration % 60000) / 1000)}s`;
+
+          return (
+            <div style={{
+              marginTop: "8px",
+              padding: "8px 10px",
+              borderRadius: "4px",
+              background: "rgba(0,122,204,0.06)",
+              border: "1px solid rgba(0,122,204,0.15)",
+              fontSize: "11px",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: allFiles.length > 0 ? "6px" : "0", color: "var(--vscode-foreground, #cccccc)" }}>
+                <span style={{ fontWeight: 600 }}>Summary</span>
+                <span style={{ color: "var(--vscode-descriptionForeground, #8b8b9a)" }}>
+                  {toolExecs.length} tool{toolExecs.length !== 1 ? "s" : ""} &middot; {durationStr}
+                </span>
+                {successCount > 0 && (
+                  <span style={{ color: "var(--vscode-terminal-ansiGreen, #4ec9b0)" }}>
+                    {successCount} ok
+                  </span>
+                )}
+                {errorCount > 0 && (
+                  <span style={{ color: "var(--vscode-terminal-ansiRed, #f48771)" }}>
+                    {errorCount} failed
+                  </span>
+                )}
+              </div>
+              {allFiles.length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
+                  {allFiles.map((f, i) => (
+                    <span key={i} style={{
+                      fontSize: "10px",
+                      padding: "2px 6px",
+                      borderRadius: "3px",
+                      background: "var(--vscode-textCodeBlock-background, #1a1a2e)",
+                      color: "var(--vscode-textLinkForeground, #3794ff)",
+                      fontFamily: "var(--vscode-editor-font-family, monospace)",
+                    }}>
+                      {f}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Proposed edits */}
         {message.proposedEdits.length > 0 && (
@@ -1958,76 +2040,142 @@ function ToolStatusIndicator({
   command,
   status,
   message,
+  durationMs,
+  filesChanged,
 }: {
   toolName: string;
   command: string;
   status: "success" | "error" | "awaiting-approval";
   message?: string;
+  durationMs?: number;
+  filesChanged?: string[];
 }) {
+  const [expanded, setExpanded] = useState(false);
   const isRunning = status === "awaiting-approval";
   const isError = status === "error";
   const isSuccess = status === "success";
+  const borderColor = isSuccess ? "var(--vscode-terminal-ansiGreen, #4ec9b0)" : isError ? "var(--vscode-terminal-ansiRed, #f48771)" : "var(--vscode-terminal-ansiYellow, #dcdcaa)";
 
   const toolIcon = (() => {
     switch (toolName.toLowerCase()) {
-      case "terminal": return <Terminal size={12} />;
-      case "read": return <FileText size={12} />;
-      case "write": case "append": return <Pencil size={12} />;
-      case "delete": case "delete-contents": return <Trash2 size={12} />;
-      case "move": return <RotateCcw size={12} />;
-      case "search": case "web-search": return <Search size={12} />;
-      case "batch_edit": return <ListTodo size={12} />;
-      case "git-status": case "git-diff": case "git-branch": return <GitBranch size={12} />;
-      case "test": return <Shield size={12} />;
-      default: return <Code2 size={12} />;
+      case "terminal": return <Terminal size={13} />;
+      case "read": return <FileText size={13} />;
+      case "write": case "append": return <Pencil size={13} />;
+      case "delete": case "delete-contents": return <Trash2 size={13} />;
+      case "move": return <RotateCcw size={13} />;
+      case "search": case "web-search": return <Search size={13} />;
+      case "batch_edit": return <ListTodo size={13} />;
+      case "git-status": case "git-diff": case "git-branch": return <GitBranch size={13} />;
+      case "test": return <Shield size={13} />;
+      default: return <Code2 size={13} />;
     }
   })();
 
   const toolLabel = toolName === "terminal" ? "Shell" : toolName;
+  const durationStr = durationMs != null ? durationMs < 1000 ? `${durationMs}ms` : `${(durationMs / 1000).toFixed(1)}s` : null;
+  const hasOutput = message && message.trim().length > 0;
+  const truncatedCmd = command.length > 100 ? command.slice(0, 100) + "..." : command;
 
   return (
-    <div className="nk-tool-card" style={{
-      borderLeft: `3px solid ${isSuccess ? "var(--vscode-terminal-ansiGreen, #4ec9b0)" : isError ? "var(--vscode-terminal-ansiRed, #f48771)" : "var(--vscode-terminal-ansiYellow, #dcdcaa)"}`,
-      background: "var(--vscodesideBar-background, #1e1e1e)",
+    <div style={{
+      borderLeft: `3px solid ${borderColor}`,
       borderRadius: "4px",
-      padding: "6px 10px",
-      marginBottom: "4px",
+      marginBottom: "6px",
       fontSize: "12px",
       fontFamily: "var(--vscode-editor-font-family, monospace)",
+      background: "var(--vscodesideBar-background, #1e1e1e)",
     }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: isRunning ? "4px" : "0" }}>
-        <span style={{ color: "var(--vscode-descriptionForeground, #8b8b9a)", display: "flex" }}>{toolIcon}</span>
-        <span style={{ fontWeight: 600, color: "var(--vscode-descriptionForeground, #8b8b9a)", fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+      {/* Header - always visible, clickable to expand */}
+      <div
+        onClick={() => hasOutput && setExpanded(!expanded)}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "8px",
+          padding: "6px 10px",
+          cursor: hasOutput ? "pointer" : "default",
+          userSelect: "none",
+        }}
+      >
+        {/* Icon + Tool name */}
+        <span style={{ color: "var(--vscode-descriptionForeground, #8b8b9a)", display: "flex", flexShrink: 0 }}>{toolIcon}</span>
+        <span style={{ fontWeight: 600, color: "var(--vscode-descriptionForeground, #8b8b9a)", fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px", flexShrink: 0 }}>
           {toolLabel}
         </span>
-        {isRunning && (
-          <span className="nk-tool-spinner" style={{ marginLeft: "auto" }}>
-            <span style={{ display: "inline-block", width: "10px", height: "10px", border: "2px solid var(--vscode-descriptionForeground, #8b8b9a)", borderTopColor: "transparent", borderRadius: "50%", animation: "nk-spin 0.8s linear infinite" }} />
-          </span>
-        )}
-        {isSuccess && <span style={{ color: "var(--vscode-terminal-ansiGreen, #4ec9b0)", marginLeft: "auto", fontSize: "11px" }}>done</span>}
-        {isError && <span style={{ color: "var(--vscode-terminal-ansiRed, #f48771)", marginLeft: "auto", fontSize: "11px" }}>failed</span>}
-      </div>
-      {command && (
-        <div style={{ color: "var(--vscode-terminal-foreground, #cccccc)", fontSize: "11px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          <code style={{ background: "var(--vscode-textCodeBlock-background, #1a1a2e)", padding: "2px 6px", borderRadius: "3px" }}>
-            {command.length > 120 ? command.slice(0, 120) + "..." : command}
-          </code>
-        </div>
-      )}
-      {message && !isRunning && (
-        <div style={{
-          marginTop: "4px",
-          padding: "6px 8px",
-          background: isError ? "rgba(244,135,113,0.08)" : "rgba(78,201,176,0.06)",
-          borderRadius: "3px",
+
+        {/* Command preview */}
+        <code style={{
+          color: "var(--vscode-terminal-foreground, #cccccc)",
           fontSize: "11px",
-          color: isError ? "var(--vscode-terminal-ansiRed, #f48771)" : "var(--vscode-terminal-foreground, #cccccc)",
-          maxHeight: "80px",
-          overflow: "auto",
-          whiteSpace: "pre-wrap",
+          background: "var(--vscode-textCodeBlock-background, #1a1a2e)",
+          padding: "2px 6px",
+          borderRadius: "3px",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+          flex: 1,
+          minWidth: 0,
         }}>
-          {message.length > 500 ? message.slice(0, 500) + "..." : message}
+          {truncatedCmd}
+        </code>
+
+        {/* Status + duration */}
+        <span style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
+          {durationStr && <span style={{ color: "var(--vscode-descriptionForeground, #8b8b9a)", fontSize: "10px" }}>{durationStr}</span>}
+          {isRunning && (
+            <span style={{ display: "inline-block", width: "10px", height: "10px", border: "2px solid var(--vscode-descriptionForeground, #8b8b9a)", borderTopColor: "transparent", borderRadius: "50%", animation: "nk-spin 0.8s linear infinite" }} />
+          )}
+          {isSuccess && <span style={{ color: "var(--vscode-terminal-ansiGreen, #4ec9b0)", fontSize: "11px", fontWeight: 500 }}>done</span>}
+          {isError && <span style={{ color: "var(--vscode-terminal-ansiRed, #f48771)", fontSize: "11px", fontWeight: 500 }}>failed</span>}
+          {hasOutput && (
+            <ChevronRight
+              size={12}
+              style={{
+                color: "var(--vscode-descriptionForeground, #8b8b9a)",
+                transform: expanded ? "rotate(90deg)" : "rotate(0deg)",
+                transition: "transform 0.15s ease",
+              }}
+            />
+          )}
+        </span>
+      </div>
+
+      {/* Expanded output */}
+      {expanded && hasOutput && (
+        <div style={{
+          padding: "0 10px 8px",
+          borderTop: "1px solid var(--vscode-widget-border, #454545)",
+        }}>
+          <pre style={{
+            margin: 0,
+            padding: "8px",
+            background: "var(--vscode-textCodeBlock-background, #1a1a2e)",
+            borderRadius: "4px",
+            fontSize: "11px",
+            lineHeight: "1.5",
+            color: isError ? "var(--vscode-terminal-ansiRed, #f48771)" : "var(--vscode-terminal-foreground, #cccccc)",
+            overflow: "auto",
+            maxHeight: "300px",
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
+          }}>
+            {message!.length > 2000 ? message!.slice(0, 2000) + "\n... (truncated)" : message}
+          </pre>
+          {filesChanged && filesChanged.length > 0 && (
+            <div style={{ marginTop: "6px", display: "flex", flexWrap: "wrap", gap: "4px" }}>
+              {filesChanged.map((f, i) => (
+                <span key={i} style={{
+                  fontSize: "10px",
+                  padding: "1px 6px",
+                  borderRadius: "3px",
+                  background: "rgba(0,122,204,0.15)",
+                  color: "var(--vscode-textLinkForeground, #3794ff)",
+                }}>
+                  {f}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -3125,6 +3273,8 @@ function App() {
             const command = String(payload.command ?? "");
             const status = String(payload.status ?? "success") as "success" | "error" | "awaiting-approval";
             const message = typeof payload.message === "string" ? payload.message : undefined;
+            const durationMs = typeof payload.durationMs === "number" ? payload.durationMs : undefined;
+            const filesChanged = Array.isArray(payload.filesChanged) ? payload.filesChanged as string[] : undefined;
             const statusIcon = status === "success" ? "✓" : status === "error" ? "✗" : "⏳";
             const statusText = `${statusIcon} ${toolName}: ${command}`;
             debugRef.current.push(statusText);
@@ -3151,6 +3301,8 @@ function App() {
                   status,
                   message,
                   timestamp: Date.now(),
+                  durationMs,
+                  filesChanged,
                 },
               );
           }
@@ -3450,19 +3602,33 @@ function App() {
                   </select>
                 </div>
 
-                {/* Auto-approve Toggle */}
+                {/* Permission Mode */}
                 <div className="nk-settings-section">
-                  <label className="nk-settings-toggle-row">
-                    <span>Auto-approve tools</span>
-                    <div
-                      className={`nk-toggle ${settings.autoApprove ? "nk-toggle--on" : ""}`}
-                      onClick={() =>
-                        useStore.getState().updateSetting("autoApprove", !settings.autoApprove)
+                  <div className="nk-settings-label">Permission Mode</div>
+                  <select
+                    className="nk-settings-select"
+                    value={settings.autoApprove ? "bypass" : settings.requireTerminalApproval ? "auto" : "ask"}
+                    onChange={(e) => {
+                      const mode = e.target.value;
+                      if (mode === "bypass") {
+                        useStore.getState().updateSetting("autoApprove", true);
+                        useStore.getState().updateSetting("requireTerminalApproval", false);
+                        vscode.postMessage({ type: "updateSetting", key: "toolApproval", value: "bypass" });
+                      } else if (mode === "auto") {
+                        useStore.getState().updateSetting("autoApprove", false);
+                        useStore.getState().updateSetting("requireTerminalApproval", true);
+                        vscode.postMessage({ type: "updateSetting", key: "toolApproval", value: "auto" });
+                      } else {
+                        useStore.getState().updateSetting("autoApprove", false);
+                        useStore.getState().updateSetting("requireTerminalApproval", true);
+                        vscode.postMessage({ type: "updateSetting", key: "toolApproval", value: "ask" });
                       }
-                    >
-                      <div className="nk-toggle-thumb" />
-                    </div>
-                  </label>
+                    }}
+                  >
+                    <option value="ask">Ask — require approval for destructive tools</option>
+                    <option value="auto">Auto — approve safe tools automatically</option>
+                    <option value="bypass">Autopilot — no prompts (trusted only)</option>
+                  </select>
                 </div>
 
                 {/* Links */}

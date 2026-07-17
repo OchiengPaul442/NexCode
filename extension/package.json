@@ -156,8 +156,13 @@
             "ask",
             "bypass"
           ],
+          "enumDescriptions": [
+            "Auto-approve read-only and safe terminal commands. Ask for destructive operations.",
+            "Require explicit approval for all destructive tools (terminal, delete, write, batch_edit).",
+            "Autopilot mode: approve all tools automatically without prompting. Use only in trusted workspaces."
+          ],
           "default": "ask",
-          "description": "Tool approval mode: auto (approve safe tools automatically), ask (require approval for all destructive tools), bypass (approve all tools without prompting)."
+          "description": "Tool approval mode. 'auto' approves safe tools, 'ask' requires approval for destructive tools, 'bypass' is autopilot (no prompts)."
         }
       }
     }

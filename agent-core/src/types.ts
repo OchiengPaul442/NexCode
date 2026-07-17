@@ -172,6 +172,8 @@ export type OrchestratorEvent =
       command: string;
       status: "success" | "error" | "awaiting-approval";
       message?: string;
+      durationMs?: number;
+      filesChanged?: string[];
     }
   | {
       type: "batchEditStarted";

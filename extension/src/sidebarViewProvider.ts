@@ -897,6 +897,17 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
             return true;
           }
 
+          if (settings.toolApproval === "auto") {
+            const safeTools = ["read", "search", "git-status", "git-diff", "git-branch", "test"];
+            if (safeTools.includes(toolName)) {
+              return true;
+            }
+            const safeTerminalPatterns = ["ls", "pwd", "echo", "cat", "head", "tail", "wc", "git status", "git diff", "git log", "git branch", "git show", "npm test", "cargo", "go build", "go test"];
+            if (toolName === "terminal" && safeTerminalPatterns.some(p => arg.trim().startsWith(p))) {
+              return true;
+            }
+          }
+
           const choice = await vscode.window.showWarningMessage(
             `Approval required for ${toolName} command:\n\n${arg}\n\nContinue?`,
             { modal: true },

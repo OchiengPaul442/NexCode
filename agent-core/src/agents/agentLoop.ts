@@ -194,6 +194,7 @@ export async function* runAgentLoop(
       };
 
       const argString = formatToolArgs(toolCall.function.name, args);
+      const toolStartTime = Date.now();
       let result = await tools.runToolCall(
         `${toolCall.function.name} ${argString}`,
       );
@@ -228,6 +229,13 @@ export async function* runAgentLoop(
         }
       }
 
+      const toolDurationMs = Date.now() - toolStartTime;
+      const filesChanged = toolCall.function.name === "write" || toolCall.function.name === "append"
+        ? [argString.split("::")[0]?.trim() ?? ""]
+        : toolCall.function.name === "delete"
+          ? [argString.trim()]
+          : undefined;
+
       messages.push({
         role: "tool",
         content: result.output,
@@ -244,6 +252,8 @@ export async function* runAgentLoop(
         message: result.output === "AWAITING_APPROVAL"
           ? "Waiting for user approval"
           : result.output.slice(0, 200),
+        durationMs: toolDurationMs,
+        filesChanged,
       };
     }
   }

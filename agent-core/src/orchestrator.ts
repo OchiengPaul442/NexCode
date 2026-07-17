@@ -296,6 +296,11 @@ export class NexcodeOrchestrator {
   private isSimpleQuestion(prompt: string): boolean {
     const lower = prompt.toLowerCase().trim();
 
+    const actionVerbs = /\b(read|write|create|delete|edit|search|run|execute|test|build|install|scaffold|fix|refactor|check|list|show|open|grep|find|git|npm|npx|node|python|pip|cargo|go)\b/;
+    if (actionVerbs.test(lower)) {
+      return false;
+    }
+
     if (lower.length < 20) return true;
 
     if (/^(hi|hello|hey|yo|sup|thanks|thank you|yes|no|ok|sure|please|help)\s*$/i.test(lower)) {

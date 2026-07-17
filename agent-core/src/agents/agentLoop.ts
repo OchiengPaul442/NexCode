@@ -68,6 +68,9 @@ function formatToolArgs(
       const input = args.input ?? "";
       return `${server}:${tool} :: ${input}`;
     }
+    case "batch_edit": {
+      return JSON.stringify(args);
+    }
     default: {
       const value = args.value ?? args.input ?? args.command ?? "";
       if (typeof value === "string") {

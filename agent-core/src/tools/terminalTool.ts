@@ -7,7 +7,7 @@ const execAsync = promisify(exec);
 const MAX_COMMAND_LENGTH = 2_000;
 
 // SAFE_COMMANDS - always allowed without approval
-const SAFE_PATTERNS = [
+export const SAFE_PATTERNS = [
   /^ls\b/,
   /^pwd\b/,
   /^echo\b/,
@@ -29,6 +29,14 @@ const SAFE_PATTERNS = [
   /^pip\b/,
   /^cargo\s+(check|build|test|clippy|fmt)\b/,
   /^go\s+(build|test|fmt|vet)\b/,
+];
+
+// SHELL_EXPANSION_PATTERNS - block command substitution and shell expansion
+const SHELL_EXPANSION_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
+  { pattern: /\$\(/, reason: 'Command substitution $() is blocked.' },
+  { pattern: /`[^`]+`/, reason: 'Backtick command substitution is blocked.' },
+  { pattern: /\$\{/, reason: 'Parameter expansion ${} is blocked.' },
+  { pattern: /;\s*(?:rm|del|format|mkfs|shutdown|reboot)/i, reason: 'Chained destructive command blocked.' },
 ];
 
 // BLOCKED_COMMANDS - always blocked regardless of approval
@@ -285,6 +293,12 @@ export class TerminalTool {
     const trimmed = command.trim();
     if (!trimmed) return "Command cannot be empty.";
     if (trimmed.length > MAX_COMMAND_LENGTH) return `Command exceeds ${MAX_COMMAND_LENGTH} characters.`;
+
+    for (const blocked of SHELL_EXPANSION_PATTERNS) {
+      if (blocked.pattern.test(trimmed)) {
+        return blocked.reason;
+      }
+    }
 
     for (const blocked of BLOCKED_PATTERNS) {
       if (blocked.pattern.test(trimmed)) {

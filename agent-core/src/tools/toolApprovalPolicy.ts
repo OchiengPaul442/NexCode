@@ -1,3 +1,5 @@
+import { SAFE_PATTERNS } from './terminalTool';
+
 export interface ToolApprovalPolicy {
   requiresApproval(toolName: string, arg: string): boolean;
   isAutoExecutable(toolName: string, arg: string): boolean;
@@ -22,10 +24,18 @@ export class DefaultToolApprovalPolicy implements ToolApprovalPolicy {
     this.autoApproveTools = new Set([...SAFE_TOOLS, ...autoApproveTools]);
   }
 
-  public requiresApproval(toolName: string, _arg: string): boolean {
+  public requiresApproval(toolName: string, arg: string): boolean {
     if (this.bypassTools.has(toolName)) {
       return false;
     }
+
+    if (toolName === 'terminal' && typeof arg === 'string') {
+      const isSafe = SAFE_PATTERNS.some(pattern => pattern.test(arg.trim()));
+      if (isSafe) {
+        return false;
+      }
+    }
+
     return DESTRUCTIVE_TOOLS.includes(toolName) || LOW_RISK_WRITE_TOOLS.includes(toolName);
   }
 

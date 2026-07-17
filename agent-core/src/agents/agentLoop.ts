@@ -87,6 +87,7 @@ export async function* runAgentLoop(
   signal?: AbortSignal,
   approvalCallback?: ApprovalCallback,
 ): AsyncGenerator<OrchestratorEvent, ChatMessage[]> {
+  const startedAt = Date.now();
   const toolSchemas: ToolCallRequestTool[] = toolDefinitions.map((def) => ({
     name: def.name,
     description: def.description,
@@ -94,6 +95,14 @@ export async function* runAgentLoop(
   }));
 
   for (let turn = 0; turn < config.maxTurns; turn++) {
+    if (Date.now() - startedAt > config.timeoutMs) {
+      yield {
+        type: "stopped",
+        message: "Agent loop stopped: time budget exceeded",
+      };
+      break;
+    }
+
     if (signal?.aborted) {
       yield { type: "stopped", message: "Agent loop cancelled" };
       return messages;
@@ -185,6 +194,21 @@ export async function* runAgentLoop(
         message: result.output.slice(0, 200),
       };
     }
+  }
+
+  if (messages[messages.length - 1]?.role === "tool") {
+    messages.push({
+      role: "user",
+      content:
+        "You have used all available tool calls. Please provide a final summary of what you accomplished and what remains to be done. Do not make any more tool calls.",
+    });
+
+    const finalResponse = await router.generate(messages, {
+      maxTokens: config.maxTokensPerTurn,
+      signal,
+    });
+
+    messages.push({ role: "assistant", content: finalResponse.text });
   }
 
   return messages;

@@ -911,74 +911,35 @@ export class NexcodeOrchestrator {
           );
           latestActivityFiles = inferredFiles;
 
-          if (strategy.mode === "coder") {
-            const iterator = this.runAgentLoopStreaming(
-              "auto",
-              request.prompt,
-              provider,
-              model,
-              temperature,
-              workspaceContext,
-              memoryContext,
-              sessionContext,
-              diagnostics,
-              request.abortSignal,
-            );
+          const iterator = this.runAgentLoopStreaming(
+            "auto",
+            request.prompt,
+            provider,
+            model,
+            temperature,
+            workspaceContext,
+            memoryContext,
+            sessionContext,
+            diagnostics,
+            request.abortSignal,
+          );
 
-            while (true) {
-              const step = await iterator.next();
-              if (step.done) {
-                response = step.value;
-                break;
-              }
-
-              if (step.value.type === "token") {
-                streamedAnyToken = true;
-              }
-
-              if (step.value.type === "activity") {
-                latestActivityFiles = step.value.files ?? latestActivityFiles;
-              }
-
-              yield step.value;
+          while (true) {
+            const step = await iterator.next();
+            if (step.done) {
+              response = step.value;
+              break;
             }
-          } else {
-            const iterator = this.runSingleModeStreaming(
-              strategy.mode,
-              "auto",
-              request.prompt,
-              provider,
-              model,
-              temperature,
-              workspaceContext,
-              memoryContext,
-              sessionContext,
-              diagnostics,
-              request.abortSignal,
-              {
-                statusLabel: strategy.statusLabel,
-                todoTitle: strategy.todoTitle,
-                files: inferredFiles,
-              },
-            );
 
-            while (true) {
-              const step = await iterator.next();
-              if (step.done) {
-                response = step.value;
-                break;
-              }
-
-              if (step.value.type === "token") {
-                streamedAnyToken = true;
-              }
-
-              if (step.value.type === "activity") {
-                latestActivityFiles = step.value.files ?? latestActivityFiles;
-              }
-
-              yield step.value;
+            if (step.value.type === "token") {
+              streamedAnyToken = true;
             }
+
+            if (step.value.type === "activity") {
+              latestActivityFiles = step.value.files ?? latestActivityFiles;
+            }
+
+            yield step.value;
           }
         }
       } else {
@@ -990,74 +951,35 @@ export class NexcodeOrchestrator {
         );
         latestActivityFiles = inferredFiles;
 
-        if (selectedMode === "coder") {
-          const iterator = this.runAgentLoopStreaming(
-            selectedMode,
-            request.prompt,
-            provider,
-            model,
-            temperature,
-            workspaceContext,
-            memoryContext,
-            sessionContext,
-            diagnostics,
-            request.abortSignal,
-          );
+        const iterator = this.runAgentLoopStreaming(
+          mode,
+          request.prompt,
+          provider,
+          model,
+          temperature,
+          workspaceContext,
+          memoryContext,
+          sessionContext,
+          diagnostics,
+          request.abortSignal,
+        );
 
-          while (true) {
-            const step = await iterator.next();
-            if (step.done) {
-              response = step.value;
-              break;
-            }
-
-            if (step.value.type === "token") {
-              streamedAnyToken = true;
-            }
-
-            if (step.value.type === "activity") {
-              latestActivityFiles = step.value.files ?? latestActivityFiles;
-            }
-
-            yield step.value;
+        while (true) {
+          const step = await iterator.next();
+          if (step.done) {
+            response = step.value;
+            break;
           }
-        } else {
-          const iterator = this.runSingleModeStreaming(
-            selectedMode,
-            mode,
-            request.prompt,
-            provider,
-            model,
-            temperature,
-            workspaceContext,
-            memoryContext,
-            sessionContext,
-            diagnostics,
-            request.abortSignal,
-            {
-              statusLabel: this.describePipelineStage(selectedMode),
-              todoTitle: `Run ${this.formatPipelineStage(selectedMode)} stage`,
-              files: inferredFiles,
-            },
-          );
 
-          while (true) {
-            const step = await iterator.next();
-            if (step.done) {
-              response = step.value;
-              break;
-            }
-
-            if (step.value.type === "token") {
-              streamedAnyToken = true;
-            }
-
-            if (step.value.type === "activity") {
-              latestActivityFiles = step.value.files ?? latestActivityFiles;
-            }
-
-            yield step.value;
+          if (step.value.type === "token") {
+            streamedAnyToken = true;
           }
+
+          if (step.value.type === "activity") {
+            latestActivityFiles = step.value.files ?? latestActivityFiles;
+          }
+
+          yield step.value;
         }
       }
 

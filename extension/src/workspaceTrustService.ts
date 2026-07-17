@@ -1,46 +1,10 @@
 import * as vscode from "vscode";
 
 export class WorkspaceTrustService {
-  private static readonly TRUST_KEY = "nexcode.workspace.trusted";
-
   public constructor(private readonly context: vscode.ExtensionContext) {}
 
   public isWorkspaceTrusted(): boolean {
     return vscode.workspace.isTrusted;
-  }
-
-  public async getTrustDecision(): Promise<"trusted" | "untrusted" | "cancelled"> {
-    if (this.isWorkspaceTrusted()) {
-      return "trusted";
-    }
-
-    const previouslyDenied = this.context.globalState.get<boolean>(
-      WorkspaceTrustService.TRUST_KEY,
-      false,
-    );
-
-    if (previouslyDenied) {
-      return "untrusted";
-    }
-
-    const choice = await vscode.window.showWarningMessage(
-      "This workspace is not trusted. NexCode will have limited functionality in untrusted workspaces. Terminal commands, file writes, and network operations will be restricted.",
-      "Trust Workspace",
-      "Continue Untrusted",
-      "Cancel",
-    );
-
-    if (choice === "Trust Workspace") {
-      await vscode.commands.executeCommand("workbench.action.trustWorkspace");
-      return "trusted";
-    }
-
-    if (choice === "Continue Untrusted") {
-      await this.context.globalState.update(WorkspaceTrustService.TRUST_KEY, true);
-      return "untrusted";
-    }
-
-    return "cancelled";
   }
 
   public canRunTool(toolName: string): boolean {

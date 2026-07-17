@@ -4,7 +4,6 @@ import { ToolResult } from "../types";
 interface TestToolInput {
   runner?: string;
   filter?: string;
-  script?: string;
 }
 
 const RUNNER_COMMANDS: Record<string, (filter?: string) => string> = {
@@ -53,10 +52,6 @@ export class TestRunnerTool {
   }
 
   private buildCommand(input: TestToolInput): string {
-    if (input.script) {
-      return input.script.trim();
-    }
-
     const runner = input.runner ?? "npm";
     const commandBuilder = RUNNER_COMMANDS[runner];
     if (!commandBuilder) {

@@ -57,12 +57,6 @@ describe("Security Regression Tests", () => {
       expect(command).toBe('npx vitest run "my test"');
     });
 
-    it("should parse JSON input with custom script", () => {
-      const input = JSON.stringify({ script: "make test" });
-      const command = testRunner.resolveCommand(input);
-      expect(command).toBe("make test");
-    });
-
     it("should default to npm test for empty input", () => {
       const command = testRunner.resolveCommand(undefined);
       expect(command).toBe("npm test");

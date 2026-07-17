@@ -1003,16 +1003,6 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     return this.orchestrator;
   }
 
-  private resolveAttachmentsForPrompt(
-    selectedAttachmentIds?: string[],
-  ): RequestAttachment[] {
-    if (!selectedAttachmentIds || selectedAttachmentIds.length === 0) {
-      return [];
-    }
-
-    return this.taskController.resolveAttachmentsForPrompt(selectedAttachmentIds);
-  }
-
   private async readAttachment(uri: vscode.Uri): Promise<RequestAttachment> {
     const bytes = await vscode.workspace.fs.readFile(uri);
     const fileName = path.basename(uri.fsPath);
@@ -1424,21 +1414,6 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         // Ignore postMessage race conditions during shutdown.
       });
     }
-  }
-
-  private async fileExists(uri: vscode.Uri): Promise<boolean> {
-    try {
-      await vscode.workspace.fs.stat(uri);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  private fullDocumentRange(document: vscode.TextDocument): vscode.Range {
-    const lastLineIndex = Math.max(0, document.lineCount - 1);
-    const lastLine = document.lineAt(lastLineIndex);
-    return new vscode.Range(0, 0, lastLineIndex, lastLine.text.length);
   }
 
   private createNonce(): string {

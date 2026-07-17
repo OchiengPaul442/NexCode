@@ -116,10 +116,6 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
           type: "string",
           description: "Optional test name or pattern to filter tests",
         },
-        script: {
-          type: "string",
-          description: "Custom test script command (overrides runner detection)",
-        },
       },
       required: ["runner"],
     },

@@ -2235,6 +2235,9 @@ function App() {
   const modelSuggestions = useStore((s) => s.modelSuggestions);
   const backgroundAgents = useStore((s) => s.backgroundAgents);
   const parallelCount = useStore((s) => s.parallelCount);
+  const taskQueue = useStore((s) => s.taskQueue);
+  const taskQueuePendingCount = useStore((s) => s.taskQueuePendingCount);
+  const taskQueueActiveCount = useStore((s) => s.taskQueueActiveCount);
 
   const [deleteTargetSessionId, setDeleteTargetSessionId] = useState<
     string | null
@@ -3473,7 +3476,7 @@ function App() {
               status: "queued" as const,
               createdAt: typeof task.createdAt === "number" ? task.createdAt : Date.now(),
             };
-            set((state) => ({
+            useStore.setState((state) => ({
               taskQueue: [newTask, ...state.taskQueue],
             }));
           }

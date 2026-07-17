@@ -297,6 +297,14 @@ interface StoreState {
     messageId: string,
     execution: ToolExecution,
   ) => void;
+  updateToolExecutionStatus: (
+    sessionId: string,
+    messageId: string,
+    toolName: string,
+    pendingArg: string,
+    status: "success" | "error",
+    message?: string,
+  ) => void;
   finalizeAssistantMessage: (
     sessionId: string,
     messageId: string,
@@ -1188,6 +1196,32 @@ const useStore = create<StoreState>((set, get) => {
                         ],
                       }
                     : message,
+                ),
+              }
+            : session,
+        ),
+      }));
+    },
+    updateToolExecutionStatus: (sessionId, messageId, toolName, pendingArg, status, message) => {
+      set((state) => ({
+        sessions: state.sessions.map((session) =>
+          session.id === sessionId
+            ? {
+                ...session,
+                updatedAt: Date.now(),
+                messages: session.messages.map((msg) =>
+                  msg.id === messageId
+                    ? {
+                        ...msg,
+                        toolExecutions: (msg.toolExecutions ?? []).map((exec) =>
+                          exec.toolName === toolName &&
+                          exec.command === pendingArg &&
+                          exec.status === "awaiting-approval"
+                            ? { ...exec, status, message: message ?? exec.message }
+                            : exec
+                        ),
+                      }
+                    : msg,
                 ),
               }
             : session,
@@ -3059,6 +3093,41 @@ function App() {
                   message,
                   timestamp: Date.now(),
                 },
+              );
+          }
+          return;
+        }
+        case "toolApprovalResult": {
+          const cur = pendingRef.current;
+          if (cur) {
+            const toolName = String(payload.toolName ?? "");
+            const pendingArg = String(payload.pendingArg ?? "");
+            const approved = Boolean(payload.approved);
+            const statusText = approved
+              ? `✓ ${toolName}: approved`
+              : `✗ ${toolName}: denied`;
+            debugRef.current.push(statusText);
+            reasoningRef.current = [
+              ...reasoningRef.current.slice(-8),
+              statusText,
+            ];
+            useStore
+              .getState()
+              .updateAssistantTrace(
+                cur.sessionId,
+                cur.messageId,
+                [...reasoningRef.current],
+                [...debugRef.current],
+              );
+            useStore
+              .getState()
+              .updateToolExecutionStatus(
+                cur.sessionId,
+                cur.messageId,
+                toolName,
+                pendingArg,
+                approved ? "success" : "error",
+                approved ? "Approved by user" : "Denied by user",
               );
           }
           return;

@@ -293,6 +293,26 @@ export class NexcodeOrchestrator {
     };
   }
 
+  private isSimpleQuestion(prompt: string): boolean {
+    const lower = prompt.toLowerCase().trim();
+
+    if (lower.length < 50) return true;
+
+    if (/^(hi|hello|hey|yo|sup|what|who|how|why|when|where|which|can you|could you|would you|do you|are you|is it|tell me|explain|describe|define|summarize|what's|what is|who are|how do|how can|thanks|thank you|yes|no|ok|sure|please|help)/.test(lower)) {
+      return true;
+    }
+
+    if (/\b(your name|who are you|what can you|what do you|your capabilities|what are you)\b/.test(lower)) {
+      return true;
+    }
+
+    if (lower.length < 100 && !/\b(read|write|edit|delete|search|run|execute|test|build|install|create|fix|refactor)\b/.test(lower)) {
+      return true;
+    }
+
+    return false;
+  }
+
   public async *stream(
     request: OrchestratorRequest,
   ): AsyncGenerator<OrchestratorEvent> {
@@ -461,6 +481,60 @@ export class NexcodeOrchestrator {
         ],
         note: "Context ready",
       };
+
+      if (this.isSimpleQuestion(request.prompt)) {
+        const messages: ChatMessage[] = [
+          { role: "system", content: await this.prompts.getPrompt("coder") },
+          { role: "user", content: request.prompt },
+        ];
+        const response = await this.router.generate(messages, { maxTokens: 2048 });
+
+        for (const token of chunkText(response.text, 32)) {
+          yield { type: "token", token };
+        }
+
+        const finalResponse: OrchestratorResponse = {
+          text: response.text,
+          modeUsed: mode,
+          providerUsed: provider,
+          modelUsed: model,
+          proposedEdits: [],
+          diagnostics,
+        };
+
+        this.memory.appendSessionMessage(sessionId, {
+          role: "assistant",
+          content: response.text,
+        });
+
+        yield {
+          type: "activity",
+          todos: [
+            {
+              id: "context",
+              title: "Collect workspace and memory context",
+              status: "completed",
+              detail: "Completed",
+            },
+            {
+              id: "execution",
+              title: "Execute request",
+              status: "completed",
+              detail: "Completed",
+            },
+            {
+              id: "finalize",
+              title: "Finalize response",
+              status: "completed",
+              detail: "Saved to memory and ready in chat",
+            },
+          ],
+          note: "Response ready",
+        };
+
+        yield { type: "final", response: finalResponse };
+        return;
+      }
 
       const inferredToolCommand =
         request.allowTools !== false
@@ -1018,7 +1092,7 @@ export class NexcodeOrchestrator {
 
       response.efficiency = this.efficiencyTracker.getMetrics();
 
-      if (!streamedAnyToken && response.text.trim().length > 0) {
+      if (!streamedAnyToken && response.proposedEdits.length === 0 && response.text.trim().length > 0) {
         for (const token of chunkText(response.text, 32)) {
           yield {
             type: "token",
@@ -1520,8 +1594,6 @@ export class NexcodeOrchestrator {
       timeoutMs: 300000,
     };
 
-    let finalText = "";
-
     yield {
       type: "status",
       message: `Agent loop starting (${resolvedMode} mode, up to ${config.maxTurns} turns)`,
@@ -1537,19 +1609,14 @@ export class NexcodeOrchestrator {
         abortSignal,
         this.approvalCallback,
       )) {
-        if (event.type === "token") {
-          finalText += event.token;
-          yield event;
-        } else {
-          yield event;
-        }
+        yield event;
       }
 
       const lastMsg = loopMessages[loopMessages.length - 1];
-      const responseText = lastMsg?.content ?? finalText;
+      const responseText = lastMsg?.content ?? "";
 
       return {
-        text: responseText.trim() || finalText.trim() || "Agent loop completed with no output.",
+        text: responseText.trim() || "Agent loop completed with no output.",
         modeUsed: mode,
         providerUsed: provider,
         modelUsed: model,
@@ -1564,7 +1631,7 @@ export class NexcodeOrchestrator {
       const errorStr = String(error);
       diagnostics.push(`Agent loop error: ${errorStr}`);
       return {
-        text: finalText.trim() || `Agent loop failed: ${errorStr}`,
+        text: `Agent loop failed: ${errorStr}`,
         modeUsed: mode,
         providerUsed: provider,
         modelUsed: model,
@@ -1831,14 +1898,14 @@ export class NexcodeOrchestrator {
     }
   }
 
-  private async handleToolRequest(
+  private async *handleToolRequest(
     prompt: string,
     mode: AgentMode,
     provider: ProviderId,
     model: string,
     diagnostics: string[],
     allowWebSearch: boolean,
-  ): Promise<OrchestratorResponse> {
+  ): AsyncGenerator<OrchestratorEvent, OrchestratorResponse> {
     const toolCommand = prompt.replace(/^\s*\/tool\s+/, "").trim();
 
     if (
@@ -1912,6 +1979,13 @@ export class NexcodeOrchestrator {
         };
       }
 
+      yield {
+        type: "toolExecuted",
+        toolName: result.toolName ?? "",
+        command: result.pendingArg ?? "",
+        status: "awaiting-approval",
+        message: "Waiting for user approval",
+      };
       return {
         text: [
           "## Tool Execution",
@@ -2011,6 +2085,13 @@ export class NexcodeOrchestrator {
           }
         } else {
           yield {
+            type: "toolExecuted",
+            toolName: "terminal",
+            command: terminalArg,
+            status: "awaiting-approval",
+            message: "Waiting for user approval",
+          };
+          yield {
             type: "toolApprovalRequired",
             toolName: "terminal",
             pendingArg: terminalArg,
@@ -2104,7 +2185,7 @@ export class NexcodeOrchestrator {
       };
     }
 
-    return this.handleToolRequest(
+    return yield* this.handleToolRequest(
       prompt,
       mode,
       provider,

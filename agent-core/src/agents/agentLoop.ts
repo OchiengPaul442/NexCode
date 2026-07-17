@@ -144,7 +144,14 @@ export async function* runAgentLoop(
       return messages;
     }
 
-    yield { type: "status", message: `Turn ${turn + 1}/${config.maxTurns}` };
+    const statusMessages = [
+      "Analyzing request...",
+      "Processing...",
+      "Working on it...",
+      "Thinking...",
+      "Preparing response...",
+    ];
+    yield { type: "status", message: statusMessages[turn % statusMessages.length] };
 
     const response = await router.generate(messages, {
       tools: toolSchemas,
@@ -167,10 +174,6 @@ export async function* runAgentLoop(
       content: response.text,
       toolCalls: response.toolCalls,
     });
-
-    if (response.text) {
-      yield { type: "token", token: response.text };
-    }
 
     for (const toolCall of response.toolCalls) {
       if (signal?.aborted) break;
@@ -231,8 +234,12 @@ export async function* runAgentLoop(
         type: "toolExecuted",
         toolName: toolCall.function.name,
         command: argString,
-        status: result.ok ? "success" : "error",
-        message: result.output.slice(0, 200),
+        status: result.output === "AWAITING_APPROVAL"
+          ? "error"
+          : result.ok ? "success" : "error",
+        message: result.output === "AWAITING_APPROVAL"
+          ? "Waiting for user approval"
+          : result.output.slice(0, 200),
       };
     }
   }

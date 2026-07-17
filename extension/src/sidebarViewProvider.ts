@@ -893,8 +893,13 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         openAIApiKey: rawKeys.openAIApiKey,
         tavilyApiKey: rawKeys.tavilyApiKey,
         approvalCallback: async (toolName, arg) => {
+          if (settings.toolApproval === "bypass") {
+            return true;
+          }
+
           const choice = await vscode.window.showWarningMessage(
             `Approval required for ${toolName} command:\n\n${arg}\n\nContinue?`,
+            { modal: true },
             "Run",
             "Cancel",
           );
@@ -1059,6 +1064,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     tavilyApiKeyConfigured: boolean;
     allowTools: boolean;
     requireTerminalApproval: boolean;
+    toolApproval: "auto" | "ask" | "bypass";
     temperature: number;
     showReasoning: boolean;
     autoApplyChanges: boolean;
@@ -1085,6 +1091,10 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       requireTerminalApproval: config.get<boolean>(
         "requireTerminalApproval",
         true,
+      ),
+      toolApproval: config.get<"auto" | "ask" | "bypass">(
+        "toolApproval",
+        "ask",
       ),
       temperature: config.get<number>("temperature", 0.2),
       showReasoning: config.get<boolean>("showReasoning", true),

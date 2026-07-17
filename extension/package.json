@@ -148,6 +148,16 @@
           "type": "boolean",
           "default": true,
           "description": "Allow /tool web-search commands from the sidebar."
+        },
+        "nexcodeKiboko.toolApproval": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "ask",
+            "bypass"
+          ],
+          "default": "ask",
+          "description": "Tool approval mode: auto (approve safe tools automatically), ask (require approval for all destructive tools), bypass (approve all tools without prompting)."
         }
       }
     }

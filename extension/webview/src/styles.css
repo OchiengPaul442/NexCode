@@ -676,27 +676,19 @@ body {
   color: var(--vscode-descriptionForeground);
 }
 
-.nk-activity-text {
+.nk-reasoning-dynamic {
+  padding: 4px 0;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.nk-reasoning-line {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 2px 0;
-  font-size: 12px;
-  color: var(--vscode-descriptionForeground);
-  font-style: italic;
 }
 
-.nk-reasoning-inline {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 2px 0;
-  font-size: 12px;
-  color: var(--vscode-descriptionForeground);
-  font-style: italic;
-}
-
-.nk-reasoning-dots {
+.nk-reasoning-dot {
   width: 4px;
   height: 4px;
   border-radius: 50%;
@@ -705,55 +697,13 @@ body {
   flex-shrink: 0;
 }
 
-.nk-reasoning-thinking {
-  padding: 4px 8px;
-  margin-bottom: 4px;
-  border-left: 2px solid var(--vscode-focusBorder);
-  background: rgba(var(--vscode-focusBorder), 0.05);
-}
-
-.nk-reasoning-label {
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--vscode-focusBorder);
-  margin-bottom: 2px;
-}
-
-.nk-reasoning-step {
-  font-size: 12px;
+.nk-reasoning-text {
   color: var(--vscode-descriptionForeground);
   font-style: italic;
 }
 
-/* ── Codex-style reasoning display ──────────────────────────────────────────── */
-.nk-codex-reasoning {
-  padding: 8px 0;
-  border-top: 1px solid var(--vscode-widget-border);
-  margin-top: 4px;
-}
-
-.nk-codex-status {
-  font-size: 12px;
+.nk-reasoning-timer {
   color: var(--vscode-descriptionForeground);
-  margin-bottom: 6px;
-}
-
-.nk-codex-thinking {
-  font-size: 13px;
-  color: var(--vscode-descriptionForeground);
-  font-style: italic;
-  line-height: 1.5;
-  padding: 8px 12px;
-  background: rgba(121, 121, 121, 0.05);
-  border-radius: 4px;
-}
-
-.nk-codex-label {
-  font-size: 11px;
-  color: var(--vscode-descriptionForeground);
-  margin-top: 6px;
   opacity: 0.7;
 }
 
@@ -2260,4 +2210,51 @@ body {
   .nk-enhance-feedback {
     display: none;
   }
+}
+
+/* ── Tool execution status ────────────────────────────────────────────────── */
+.nk-tool-executions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.nk-tool-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: var(--nk-radius-sm);
+  font-size: 11px;
+  border: 1px solid transparent;
+}
+
+.nk-tool-status--success {
+  background: rgba(78, 201, 176, 0.1);
+  border-color: rgba(78, 201, 176, 0.2);
+  color: #4ec9b0;
+}
+
+.nk-tool-status--error {
+  background: rgba(244, 71, 113, 0.1);
+  border-color: rgba(244, 71, 113, 0.2);
+  color: #f48771;
+}
+
+.nk-tool-status--pending {
+  background: rgba(0, 122, 204, 0.1);
+  border-color: rgba(0, 122, 204, 0.2);
+  color: #3794ff;
+}
+
+.nk-tool-status-icon {
+  font-weight: bold;
+  flex-shrink: 0;
+}
+
+.nk-tool-status-command {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

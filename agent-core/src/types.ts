@@ -130,6 +130,13 @@ export type OrchestratorEvent =
       type: "subagentCompleted";
       taskId: string;
       result: string;
+    }
+  | {
+      type: "toolExecuted";
+      toolName: string;
+      command: string;
+      status: "success" | "error" | "awaiting-approval";
+      message?: string;
     };
 
 export interface ModelRequest {

@@ -56,6 +56,20 @@ export class ToolRegistry {
     return this.approvalPolicy.requiresApproval(toolName, arg);
   }
 
+  public getToolRiskLevel(toolName: string, arg: string): "safe" | "low-risk" | "destructive" {
+    if (!this.approvalPolicy) {
+      return "safe";
+    }
+    return this.approvalPolicy.getToolRiskLevel(toolName, arg);
+  }
+
+  public isAutoExecutable(toolName: string, arg: string): boolean {
+    if (!this.approvalPolicy) {
+      return true;
+    }
+    return this.approvalPolicy.isAutoExecutable(toolName, arg);
+  }
+
   public getToolDefinition(name: string) {
     return getToolDefinition(name);
   }

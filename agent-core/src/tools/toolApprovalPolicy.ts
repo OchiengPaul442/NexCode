@@ -1,5 +1,7 @@
 export interface ToolApprovalPolicy {
   requiresApproval(toolName: string, arg: string): boolean;
+  isAutoExecutable(toolName: string, arg: string): boolean;
+  getToolRiskLevel(toolName: string, arg: string): "safe" | "low-risk" | "destructive";
 }
 
 export type ApprovalCallback = (
@@ -7,19 +9,43 @@ export type ApprovalCallback = (
   arg: string,
 ) => Promise<boolean>;
 
-const DEFAULT_APPROVAL_TOOLS = ["delete", "delete-contents", "move", "terminal", "write", "append", "mcp"];
+const SAFE_TOOLS = ["read", "git-status", "git-diff", "git-branch", "search", "web-search", "search-web", "online-search", "test"];
+const LOW_RISK_WRITE_TOOLS = ["write", "append"];
+const DESTRUCTIVE_TOOLS = ["delete", "delete-contents", "move", "terminal", "mcp"];
 
 export class DefaultToolApprovalPolicy implements ToolApprovalPolicy {
   private readonly bypassTools: Set<string>;
+  private readonly autoApproveTools: Set<string>;
 
-  constructor(bypassTools: string[] = []) {
+  constructor(bypassTools: string[] = [], autoApproveTools: string[] = []) {
     this.bypassTools = new Set(bypassTools);
+    this.autoApproveTools = new Set([...SAFE_TOOLS, ...autoApproveTools]);
   }
 
   public requiresApproval(toolName: string, _arg: string): boolean {
     if (this.bypassTools.has(toolName)) {
       return false;
     }
-    return DEFAULT_APPROVAL_TOOLS.includes(toolName);
+    return DESTRUCTIVE_TOOLS.includes(toolName) || LOW_RISK_WRITE_TOOLS.includes(toolName);
+  }
+
+  public isAutoExecutable(toolName: string, _arg: string): boolean {
+    if (this.bypassTools.has(toolName)) {
+      return true;
+    }
+    return this.autoApproveTools.has(toolName);
+  }
+
+  public getToolRiskLevel(toolName: string, _arg: string): "safe" | "low-risk" | "destructive" {
+    if (this.bypassTools.has(toolName)) {
+      return "safe";
+    }
+    if (SAFE_TOOLS.includes(toolName)) {
+      return "safe";
+    }
+    if (LOW_RISK_WRITE_TOOLS.includes(toolName)) {
+      return "low-risk";
+    }
+    return "destructive";
   }
 }

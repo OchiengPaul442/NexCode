@@ -948,9 +948,26 @@ export class NexcodeOrchestrator {
         );
 
         if (suggestedToolCommand) {
+          const toolName = suggestedToolCommand.split(/\s+/)[0].toLowerCase();
+          const riskLevel = this.tools.requiresApproval(toolName, suggestedToolCommand)
+            ? "destructive"
+            : this.tools.getToolRiskLevel?.(toolName, suggestedToolCommand) ?? "safe";
+
+          const isAutoSafe = !this.tools.requiresApproval(toolName, suggestedToolCommand);
+
           diagnostics.push(
-            `Auto-executing suggested tool command: ${suggestedToolCommand}`,
+            `Auto-executing suggested tool command: ${suggestedToolCommand} (risk: ${riskLevel})`,
           );
+
+          yield {
+            type: "toolExecuted",
+            toolName,
+            command: suggestedToolCommand,
+            status: isAutoSafe ? "success" : "awaiting-approval",
+            message: isAutoSafe
+              ? `Auto-executing: ${suggestedToolCommand}`
+              : `Approval required for: ${suggestedToolCommand}`,
+          };
 
           yield {
             type: "status",
@@ -2535,6 +2552,20 @@ export class NexcodeOrchestrator {
     return normalizeActivityPath(withoutKindPrefix, workspaceRoot ?? this.config.workspaceRoot) ?? null;
   }
 
+  private isHighConfidenceToolCommand(text: string): boolean {
+    const explicitPatterns = [
+      /i'll run/i,
+      /let me (?:execute|run|check|read|search)/i,
+      /running/i,
+      /executing/i,
+      /i'll (?:read|check|search|run)/i,
+      /let me (?:start|begin) by/i,
+      /first,?\s*(?:i'll|let me)/i,
+      /now (?:i'll|let me)/i,
+    ];
+    return explicitPatterns.some((p) => p.test(text));
+  }
+
   private extractSuggestedToolCommand(responseText: string): string | null {
     const trimmed = responseText.trim();
     if (!trimmed || /^##\s+Tool Execution/i.test(trimmed)) {
@@ -2561,6 +2592,12 @@ export class NexcodeOrchestrator {
         .trim();
 
       if (this.normalizeCommandCandidate(normalized)) {
+        const toolName = normalized.split(/\s+/)[0].toLowerCase();
+        if (this.tools.requiresApproval(toolName, normalized)) {
+          if (!this.isHighConfidenceToolCommand(responseText)) {
+            continue;
+          }
+        }
         return normalized;
       }
     }

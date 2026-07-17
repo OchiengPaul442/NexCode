@@ -117,6 +117,15 @@ interface ChatMessage {
   activityTodos: ActivityTodo[];
   activityFiles: ActivityFile[];
   activityNote?: string;
+  toolExecutions?: ToolExecution[];
+}
+
+interface ToolExecution {
+  toolName: string;
+  command: string;
+  status: "success" | "error" | "awaiting-approval";
+  message?: string;
+  timestamp: number;
 }
 
 interface QueuedPrompt {
@@ -248,6 +257,11 @@ interface StoreState {
     todos: ActivityTodo[],
     files: ActivityFile[],
     note?: string,
+  ) => void;
+  addToolExecution: (
+    sessionId: string,
+    messageId: string,
+    execution: ToolExecution,
   ) => void;
   finalizeAssistantMessage: (
     sessionId: string,
@@ -536,41 +550,16 @@ function activityStatusClass(status: ActivityStatus): string {
   }
 }
 
-function ActivityText({
-  todos,
-  files,
-  streaming,
-}: {
-  todos: ActivityTodo[];
-  files: ActivityFile[];
-  streaming: boolean;
-}) {
-  if (todos.length === 0 && files.length === 0) return null;
-  if (!streaming) return null;
 
-  const running =
-    todos.filter((t) => t.status === "in-progress").length +
-    files.filter((f) => f.status === "in-progress").length;
-
-  if (running === 0) return null;
-
-  return (
-    <div className="nk-activity-text">
-      <span className="nk-activity-dot" />
-      <span>Working on {running} task{running > 1 ? "s" : ""}...</span>
-    </div>
-  );
-}
 
 function hasThinkingCapability(model?: string): boolean {
   if (!model) return false;
   return /claude|deepseek-r1|qwen3|o1|o3|glm-5|kimi-k2/i.test(model);
 }
 
-function ReasoningIndicator({ reasoning, streaming, model, startTime }: {
+function ReasoningIndicator({ reasoning, streaming, startTime }: {
   reasoning: string[];
   streaming: boolean;
-  model?: string;
   startTime?: number;
 }) {
   const [elapsed, setElapsed] = useState(0);
@@ -583,21 +572,18 @@ function ReasoningIndicator({ reasoning, streaming, model, startTime }: {
     return () => clearInterval(interval);
   }, [streaming, startTime]);
 
-  if (!streaming) return null;
+  if (!streaming || reasoning.length === 0) return null;
 
-  const latest = reasoning[reasoning.length - 1] || "";
+  const latest = reasoning[reasoning.length - 1];
 
   return (
-    <div className="nk-codex-reasoning">
-      <div className="nk-codex-status">
-        Working for {elapsed}s
+    <div className="nk-reasoning-dynamic">
+      <div className="nk-reasoning-line">
+        <span className="nk-reasoning-dot" />
+        <span className="nk-reasoning-timer">Working for {elapsed}s</span>
+        <span>—</span>
+        <span className="nk-reasoning-text">{latest}</span>
       </div>
-      {latest && (
-        <div className="nk-codex-thinking">
-          {latest}
-        </div>
-      )}
-      <div className="nk-codex-label">Thinking</div>
     </div>
   );
 }
@@ -1100,6 +1086,7 @@ const useStore = create<StoreState>((set, get) => {
                     proposedEdits: [],
                     activityTodos: [],
                     activityFiles: [],
+                    toolExecutions: [],
                   },
                 ],
               }
@@ -1111,6 +1098,29 @@ const useStore = create<StoreState>((set, get) => {
         sessionId,
         messageId,
       };
+    },
+    addToolExecution: (sessionId, messageId, execution) => {
+      set((state) => ({
+        sessions: state.sessions.map((session) =>
+          session.id === sessionId
+            ? {
+                ...session,
+                updatedAt: Date.now(),
+                messages: session.messages.map((message) =>
+                  message.id === messageId
+                    ? {
+                        ...message,
+                        toolExecutions: [
+                          ...(message.toolExecutions ?? []),
+                          execution,
+                        ],
+                      }
+                    : message,
+                ),
+              }
+            : session,
+        ),
+      }));
     },
     updateAssistantTrace: (sessionId, messageId, reasoning, debug) => {
       set((state) => ({
@@ -1493,20 +1503,9 @@ function MessageBubble({
           <MemoizedReasoningIndicator
             reasoning={message.reasoning}
             streaming={Boolean(message.streaming || message.thinking)}
-            model={message.model}
             startTime={message.startTime}
           />
         )}
-
-        {!isUser &&
-          (message.activityTodos.length > 0 ||
-            message.activityFiles.length > 0) && (
-            <MemoizedActivityText
-              todos={message.activityTodos}
-              files={message.activityFiles}
-              streaming={message.streaming}
-            />
-          )}
 
         {/* Main text */}
         {(isUser ? message.text.trim().length > 0 : true) && (
@@ -1567,6 +1566,21 @@ function MessageBubble({
                 <RotateCcw size={11} />
               </button>
             )}
+          </div>
+        )}
+
+        {/* Tool executions */}
+        {!isUser && (message.toolExecutions ?? []).length > 0 && (
+          <div className="nk-tool-executions">
+            {message.toolExecutions!.map((execution, i) => (
+              <ToolStatusIndicator
+                key={`${message.id}-tool-${i}`}
+                toolName={execution.toolName}
+                command={execution.command}
+                status={execution.status}
+                message={execution.message}
+              />
+            ))}
           </div>
         )}
 
@@ -1675,7 +1689,28 @@ function SubagentIndicator({
   );
 }
 
-const MemoizedActivityText = React.memo(ActivityText);
+function ToolStatusIndicator({
+  toolName,
+  command,
+  status,
+  message,
+}: {
+  toolName: string;
+  command: string;
+  status: "success" | "error" | "awaiting-approval";
+  message?: string;
+}) {
+  const statusIcon = status === "success" ? "✓" : status === "error" ? "✗" : "⏳";
+  const statusClass = status === "success" ? "nk-tool-status--success" : status === "error" ? "nk-tool-status--error" : "nk-tool-status--pending";
+
+  return (
+    <div className={`nk-tool-status ${statusClass}`}>
+      <span className="nk-tool-status-icon">{statusIcon}</span>
+      <span className="nk-tool-status-command">{message || `${toolName} ${command}`}</span>
+    </div>
+  );
+}
+
 const MemoizedReasoningIndicator = React.memo(ReasoningIndicator);
 const MemoizedMessageBubble = React.memo(MessageBubble);
 
@@ -2724,6 +2759,44 @@ function App() {
               );
           }
           setSubagentInfo(null);
+          return;
+        }
+        case "toolExecuted": {
+          const cur = pendingRef.current;
+          if (cur) {
+            const toolName = String(payload.toolName ?? "");
+            const command = String(payload.command ?? "");
+            const status = String(payload.status ?? "success") as "success" | "error" | "awaiting-approval";
+            const message = typeof payload.message === "string" ? payload.message : undefined;
+            const statusIcon = status === "success" ? "✓" : status === "error" ? "✗" : "⏳";
+            const statusText = `${statusIcon} ${toolName}: ${command}`;
+            debugRef.current.push(statusText);
+            reasoningRef.current = [
+              ...reasoningRef.current.slice(-8),
+              statusText,
+            ];
+            useStore
+              .getState()
+              .updateAssistantTrace(
+                cur.sessionId,
+                cur.messageId,
+                [...reasoningRef.current],
+                [...debugRef.current],
+              );
+            useStore
+              .getState()
+              .addToolExecution(
+                cur.sessionId,
+                cur.messageId,
+                {
+                  toolName,
+                  command,
+                  status,
+                  message,
+                  timestamp: Date.now(),
+                },
+              );
+          }
           return;
         }
         default:

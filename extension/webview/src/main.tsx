@@ -267,6 +267,7 @@ interface StoreState {
   hydrateConfig: (config: BackendConfig) => void;
   setBusy: (value: boolean) => void;
   setTaskQueue: (tasks: QueuedTask[], pending: number, active: number) => void;
+  clearTaskQueue: () => void;
   updateTaskStatus: (taskId: string, status: QueuedTask["status"], note?: string) => void;
   setAttachments: (attachments: AttachmentChip[]) => void;
   setSettingsPanelOpen: (open: boolean) => void;
@@ -1479,12 +1480,28 @@ const useStore = create<StoreState>((set, get) => {
         taskQueueActiveCount: active,
       });
     },
+    clearTaskQueue: () => {
+      set((state) => ({
+        taskQueue: state.taskQueue.filter((t) => t.status === "running" || t.status === "planning" || t.status === "verifying"),
+        taskQueuePendingCount: 0,
+      }));
+    },
     updateTaskStatus: (taskId, status, note) => {
       set((state) => ({
         taskQueue: state.taskQueue.map((t) =>
           t.id === taskId ? { ...t, status, activityNote: note ?? t.activityNote } : t,
         ),
       }));
+      // Auto-remove completed/failed tasks after 3 seconds
+      if (status === "completed" || status === "failed" || status === "cancelled") {
+        setTimeout(() => {
+          useStore.getState().setTaskQueue(
+            useStore.getState().taskQueue.filter((t) => t.id !== taskId),
+            Math.max(0, useStore.getState().taskQueuePendingCount - (status === "queued" ? 1 : 0)),
+            useStore.getState().taskQueueActiveCount - (status === "running" || status === "planning" || status === "verifying" ? 1 : 0),
+          );
+        }, 3000);
+      }
     },
     parallelCount: 0,
     incrementParallel: () => {
@@ -3562,8 +3579,10 @@ function App() {
     if (!ta) return;
     ta.style.height = "auto";
     const scrollH = ta.scrollHeight;
-    ta.style.height = `${Math.min(scrollH, 240)}px`;
-    ta.style.overflowY = scrollH > 240 ? "auto" : "hidden";
+    const minH = 38;
+    const maxH = 200;
+    ta.style.height = `${Math.min(Math.max(scrollH, minH), maxH)}px`;
+    ta.style.overflowY = scrollH > maxH ? "auto" : "hidden";
   }, [activeDraft]);
 
   // DnD file handler
@@ -3925,6 +3944,19 @@ function App() {
                 </span>
               )}
             </span>
+            {taskQueuePendingCount > 0 && (
+              <button
+                className="nk-task-queue-cancel"
+                title="Clear all queued tasks"
+                onClick={() => {
+                  useStore.getState().clearTaskQueue();
+                }}
+                style={{ marginLeft: "auto", fontSize: "10px", gap: "3px" }}
+              >
+                <Trash2 size={10} />
+                <span>Clear</span>
+              </button>
+            )}
           </div>
           <div className="nk-task-queue-list">
             {taskQueue.slice(0, 3).map((task) => (
@@ -4010,7 +4042,7 @@ function App() {
             className="nk-textarea"
             placeholder="Ask anything..."
             value={activeDraft}
-            rows={3}
+            rows={1}
             onChange={(e) =>
               useStore.getState().setDraft(activeSession.id, e.target.value)
             }

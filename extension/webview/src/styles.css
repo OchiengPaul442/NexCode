@@ -86,6 +86,7 @@ html, body {
 /* ── Shell layout ──────────────────────────────────────────────────────────── */
 .nk-shell {
   padding: 0;
+  padding-bottom: 4px;
   margin: 0;
   height: 100vh;
   display: flex;
@@ -999,10 +1000,9 @@ html, body {
 /* ── Input area ────────────────────────────────────────────────────────────── */
 .nk-input-area {
   flex-shrink: 0;
-  padding: 0 0 6px 0;
+  padding: 0 0 8px 0;
   margin: 0;
   background: var(--vscode-editor-background);
-  overflow: visible;
 }
 
 .nk-banner {

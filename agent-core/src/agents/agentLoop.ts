@@ -78,6 +78,42 @@ function formatToolArgs(
   }
 }
 
+function tryParseTextAsToolCall(text: string): ToolCallRequest[] | null {
+  const fenceMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
+  const content = fenceMatch ? fenceMatch[1] : text;
+
+  const trimmed = content.trim();
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return null;
+
+  try {
+    const parsed = JSON.parse(trimmed);
+    const items = Array.isArray(parsed) ? parsed : [parsed];
+    const calls: ToolCallRequest[] = [];
+
+    for (const item of items) {
+      if (
+        item &&
+        typeof item.name === "string" &&
+        item.arguments &&
+        typeof item.arguments === "object"
+      ) {
+        calls.push({
+          id: `call_text_${Date.now()}_${calls.length}`,
+          type: "function",
+          function: {
+            name: item.name,
+            arguments: JSON.stringify(item.arguments),
+          },
+        });
+      }
+    }
+
+    return calls.length > 0 ? calls : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function* runAgentLoop(
   messages: ChatMessage[],
   router: ModelRouter,
@@ -117,8 +153,13 @@ export async function* runAgentLoop(
     });
 
     if (!response.toolCalls || response.toolCalls.length === 0) {
-      messages.push({ role: "assistant", content: response.text });
-      return messages;
+      const textToolCalls = tryParseTextAsToolCall(response.text);
+      if (textToolCalls && textToolCalls.length > 0) {
+        response.toolCalls = textToolCalls;
+      } else {
+        messages.push({ role: "assistant", content: response.text });
+        return messages;
+      }
     }
 
     messages.push({

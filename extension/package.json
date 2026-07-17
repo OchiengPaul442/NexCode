@@ -166,8 +166,9 @@
     "build:webview:js": "esbuild webview/src/main.tsx --bundle --format=iife --platform=browser --target=es2020 --outfile=media/main.js --minify",
     "build:webview:css": "tailwindcss -i ./webview/src/styles.css -o ./media/main.css --minify",
     "build:webview": "npm run build:webview:js && npm run build:webview:css",
-    "build": "npm run build:webview && tsc -p .",
-    "watch": "tsc -watch -p .",
+    "build:node": "esbuild src/extension.ts --bundle --platform=node --target=node18 --format=cjs --outfile=out/extension.js --external:vscode --minify",
+    "build": "npm run build:webview && npm run build:node",
+    "watch": "npm run build:webview && esbuild src/extension.ts --bundle --platform=node --target=node18 --format=cjs --outfile=out/extension.js --external:vscode --watch",
     "lint": "tsc -p . --noEmit",
     "package": "node ../tools/extension-release.mjs --no-bump --no-install"
   },

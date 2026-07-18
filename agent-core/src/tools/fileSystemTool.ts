@@ -67,6 +67,37 @@ export class FileSystemTool {
     }
   }
 
+  public async patchFile(
+    targetPath: string,
+    oldText: string,
+    newText: string,
+  ): Promise<ToolResult> {
+    try {
+      const absolutePath = await this.resolveWorkspacePathSafe(targetPath);
+      const content = await fs.readFile(absolutePath, "utf8");
+
+      if (!content.includes(oldText)) {
+        return {
+          ok: false,
+          output: `Could not find the specified old text in ${targetPath}. The file may have been modified. Read the file and try again with the current content.`,
+        };
+      }
+
+      const newContent = content.replace(oldText, newText);
+      await fs.writeFile(absolutePath, newContent, "utf8");
+
+      return {
+        ok: true,
+        output: `Patched ${targetPath} (${content.length} -> ${newContent.length} bytes)`,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        output: String(error),
+      };
+    }
+  }
+
   public async movePath(
     sourcePath: string,
     destinationPath: string,

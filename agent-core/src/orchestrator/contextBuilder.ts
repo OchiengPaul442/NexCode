@@ -4,6 +4,9 @@ import { RequestAttachment, OrchestratorRequest } from "../types";
 import { ContextCache } from "../utils/contextCache";
 
 const workspaceContextCache = new ContextCache(30000);
+const fileTreeCache = new ContextCache(30_000);
+const manifestCache = new ContextCache(300_000);
+const recentlyModifiedCache = new ContextCache(30_000);
 
 const MAX_WORKSPACE_CONTEXT_CHARS = 12_000;
 const MAX_MEMORY_CONTEXT_CHARS = 4_000;
@@ -11,6 +14,8 @@ const MAX_TOOL_OUTPUT_CHARS = 16_000;
 const MAX_ACTIVE_SNIPPET_CHARS = 3_200;
 const MAX_REFERENCED_FILE_SNIPPET_CHARS = 1_600;
 const MAX_ATTACHMENT_TEXT_CHARS = 3_000;
+const MAX_FILE_TREE_FILES = 500;
+const MAX_ABBREVIATED_TREE_FILES = 100;
 
 interface WorkspaceSnapshotCache {
   workspaceRoot: string;
@@ -40,14 +45,31 @@ export async function buildWorkspaceContext(
   if (cached) return cached;
 
   const sections: string[] = [];
+  sections.push(`Workspace root: ${workspaceRoot}`);
 
   try {
-    const names = await getWorkspaceTopLevelEntries(workspaceRoot);
-    sections.push(`Workspace root: ${workspaceRoot}`);
-    sections.push(`Top-level entries: ${names.join(", ")}`);
-  } catch {
-    // Best-effort context only.
-  }
+    const manifest = await detectProjectManifest(workspaceRoot);
+    if (manifest) {
+      sections.push(manifest);
+    }
+  } catch {}
+
+  try {
+    const files = await getWorkspaceFileTree(workspaceRoot);
+    if (files.length <= MAX_ABBREVIATED_TREE_FILES) {
+      sections.push(`Project files (${files.length}):\n${files.map((f) => `  ${f}`).join("\n")}`);
+    } else {
+      const abbreviated = formatFileTreeAsAbbreviated(files);
+      sections.push(`Project files (${files.length} total, abbreviated):\n${abbreviated}`);
+    }
+  } catch {}
+
+  try {
+    const recent = await getRecentlyModifiedFiles(workspaceRoot);
+    if (recent.length > 0) {
+      sections.push(`Recently modified:\n${recent.map((f) => `  ${f}`).join("\n")}`);
+    }
+  } catch {}
 
   if (request.activeFilePath) {
     const absoluteActivePath = resolvePathWithinWorkspaceRoot(
@@ -206,6 +228,230 @@ function extractRelevantSnippet(
   return result;
 }
 
+const SKIP_DIRS = new Set([
+  "node_modules",
+  ".git",
+  "dist",
+  "build",
+  "__pycache__",
+  ".next",
+  "coverage",
+  ".vscode",
+  ".idea",
+  ".cache",
+  "out",
+  ".turbo",
+  ".vercel",
+  ".netlify",
+  "vendor",
+  "target",
+  ".gradle",
+  ".maven",
+]);
+
+async function getWorkspaceFileTree(
+  workspaceRoot: string,
+): Promise<string[]> {
+  const cacheKey = `filetree:${workspaceRoot}`;
+  const cached = fileTreeCache.get(cacheKey);
+  if (cached) {
+    return JSON.parse(cached);
+  }
+
+  const files: string[] = [];
+
+  async function walk(dir: string, relativeBase: string): Promise<void> {
+    if (files.length >= MAX_FILE_TREE_FILES) {
+      return;
+    }
+
+    let entries;
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    entries.sort((a, b) => a.name.localeCompare(b.name));
+
+    for (const entry of entries) {
+      if (files.length >= MAX_FILE_TREE_FILES) {
+        return;
+      }
+
+      if (entry.name.startsWith(".") && entry.name !== ".env.example" && entry.name !== ".gitignore" && entry.name !== ".eslintrc" && entry.name !== ".prettierrc") {
+        if (SKIP_DIRS.has(entry.name)) {
+          continue;
+        }
+      }
+
+      if (SKIP_DIRS.has(entry.name)) {
+        continue;
+      }
+
+      const rel = relativeBase
+        ? `${relativeBase}/${entry.name}`
+        : entry.name;
+
+      if (entry.isDirectory()) {
+        await walk(path.join(dir, entry.name), rel);
+      } else {
+        files.push(rel);
+      }
+    }
+  }
+
+  await walk(workspaceRoot, "");
+
+  fileTreeCache.set(cacheKey, JSON.stringify(files));
+  return files;
+}
+
+function formatFileTreeAsAbbreviated(files: string[]): string {
+  const tree: Record<string, string[]> = {};
+
+  for (const file of files) {
+    const parts = file.split("/");
+    if (parts.length <= 1) {
+      const key = "(root)";
+      if (!tree[key]) tree[key] = [];
+      tree[key].push(file);
+    } else {
+      const dir = parts[0];
+      if (!tree[dir]) tree[dir] = [];
+      tree[dir].push(parts.slice(1).join("/"));
+    }
+  }
+
+  const lines: string[] = [];
+  for (const [dir, dirFiles] of Object.entries(tree).sort(([a], [b]) => a.localeCompare(b))) {
+    if (dir === "(root)") {
+      for (const f of dirFiles.sort()) {
+        lines.push(`  ${f}`);
+      }
+    } else {
+      lines.push(`  ${dir}/`);
+      const subDirs: Record<string, string[]> = {};
+      const rootFiles: string[] = [];
+      for (const f of dirFiles) {
+        const parts = f.split("/");
+        if (parts.length > 1) {
+          const subDir = parts[0];
+          if (!subDirs[subDir]) subDirs[subDir] = [];
+          subDirs[subDir].push(parts.slice(1).join("/"));
+        } else {
+          rootFiles.push(f);
+        }
+      }
+      for (const rf of rootFiles.sort()) {
+        lines.push(`    ${rf}`);
+      }
+      for (const [sd, sdFiles] of Object.entries(subDirs).sort(([a], [b]) => a.localeCompare(b))) {
+        lines.push(`    ${sd}/ (${sdFiles.length} files)`);
+      }
+    }
+  }
+
+  return lines.join("\n");
+}
+
+async function detectProjectManifest(
+  workspaceRoot: string,
+): Promise<string | null> {
+  const cacheKey = `manifest:${workspaceRoot}`;
+  const cached = manifestCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const summary = await readManifest(workspaceRoot);
+  if (summary) {
+    manifestCache.set(cacheKey, summary);
+  }
+  return summary;
+}
+
+async function readManifest(workspaceRoot: string): Promise<string | null> {
+  try {
+    const raw = await fs.readFile(path.join(workspaceRoot, "package.json"), "utf8");
+    const pkg = JSON.parse(raw);
+    const depCount = Object.keys(pkg.dependencies ?? {}).length +
+      Object.keys(pkg.devDependencies ?? {}).length;
+    const scriptCount = Object.keys(pkg.scripts ?? {}).length;
+    return `Project: ${pkg.name ?? "unknown"} (Node.js), ${depCount} dependencies, ${scriptCount} scripts`;
+  } catch {}
+
+  try {
+    const raw = await fs.readFile(path.join(workspaceRoot, "pyproject.toml"), "utf8");
+    const nameMatch = raw.match(/^name\s*=\s*"([^"]+)"/m);
+    const deps = (raw.match(/(?:dependencies|requires)\s*=\s*\[/g) ?? []).length;
+    return `Project: ${nameMatch?.[1] ?? "unknown"} (Python), ~${deps} dependency block(s)`;
+  } catch {}
+
+  try {
+    const raw = await fs.readFile(path.join(workspaceRoot, "go.mod"), "utf8");
+    const modMatch = raw.match(/^module\s+(\S+)/m);
+    return `Project: ${modMatch?.[1] ?? "unknown"} (Go)`;
+  } catch {}
+
+  try {
+    const raw = await fs.readFile(path.join(workspaceRoot, "Cargo.toml"), "utf8");
+    const nameMatch = raw.match(/^name\s*=\s*"([^"]+)"/m);
+    return `Project: ${nameMatch?.[1] ?? "unknown"} (Rust)`;
+  } catch {}
+
+  try {
+    const files = await fs.readdir(workspaceRoot);
+    const soln = files.find((f) => f.endsWith(".sln"));
+    if (soln) {
+      return `Project: ${soln.replace(/\.sln$/, "")} (C#/.NET)`;
+    }
+    const csproj = files.find((f) => f.endsWith(".csproj"));
+    if (csproj) {
+      return `Project: ${csproj.replace(/\.csproj$/, "")} (C#/.NET)`;
+    }
+  } catch {}
+
+  try {
+    const files = await fs.readdir(workspaceRoot);
+    const hasGradle = files.includes("build.gradle") || files.includes("build.gradle.kts");
+    const hasPom = files.includes("pom.xml");
+    if (hasGradle || hasPom) {
+      return `Project: (Java/${hasGradle ? "Gradle" : "Maven"})`;
+    }
+  } catch {}
+
+  return null;
+}
+
+async function getRecentlyModifiedFiles(
+  workspaceRoot: string,
+): Promise<string[]> {
+  const cacheKey = `recent:${workspaceRoot}`;
+  const cached = recentlyModifiedCache.get(cacheKey);
+  if (cached) {
+    return JSON.parse(cached);
+  }
+
+  const files = await getWorkspaceFileTree(workspaceRoot);
+  const candidates = files.slice(0, 200);
+
+  const withMtime: Array<{ file: string; mtime: number }> = [];
+
+  for (const file of candidates) {
+    try {
+      const stat = await fs.stat(path.join(workspaceRoot, file));
+      withMtime.push({ file, mtime: stat.mtimeMs });
+    } catch {}
+  }
+
+  withMtime.sort((a, b) => b.mtime - a.mtime);
+  const recent = withMtime.slice(0, 10).map((e) => e.file);
+
+  recentlyModifiedCache.set(cacheKey, JSON.stringify(recent));
+  return recent;
+}
+
 async function getWorkspaceTopLevelEntries(
   workspaceRoot: string,
 ): Promise<string[]> {
@@ -339,6 +585,9 @@ function normalizeActivityPath(
 
 export {
   getWorkspaceTopLevelEntries,
+  getWorkspaceFileTree,
+  detectProjectManifest,
+  getRecentlyModifiedFiles,
   resolvePathWithinWorkspaceRoot,
   clampText,
   extractLikelyFileReferences,

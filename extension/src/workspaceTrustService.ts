@@ -26,6 +26,10 @@ export class WorkspaceTrustService {
       "search-web",
       "online-search",
       "search",
+      "git-stage",
+      "git-unstage",
+      "git-commit",
+      "git-create-branch",
     ];
 
     return !restrictedTools.includes(toolName);
@@ -50,6 +54,10 @@ export class WorkspaceTrustService {
       "search-web": "Web search is restricted in untrusted workspaces.",
       "online-search": "Online search is restricted in untrusted workspaces.",
       search: "Search (executes rg/grep) is restricted in untrusted workspaces.",
+      "git-stage": "Git staging is restricted in untrusted workspaces.",
+      "git-unstage": "Git unstaging is restricted in untrusted workspaces.",
+      "git-commit": "Git commits are restricted in untrusted workspaces.",
+      "git-create-branch": "Git branch creation is restricted in untrusted workspaces.",
     };
 
     return restrictions[toolName] ?? null;

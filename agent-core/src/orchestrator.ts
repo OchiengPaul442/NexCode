@@ -1498,23 +1498,22 @@ export class NexcodeOrchestrator {
       );
     const isLarge = prompt.length > 900 || normalized.split(/\s+/).length > 180;
 
-    if (isPlanningHeavy && !isBuildOrCreate) {
-      return ["planner", "coder", "reviewer"];
+    const stages: Exclude<AgentMode, "auto">[] = ["coder", "reviewer"];
+
+    if (isPlanningHeavy && !isBuildOrCreate && !stages.includes("planner")) {
+      stages.unshift("planner");
+    }
+    if (isSecuritySensitive && !stages.includes("security")) {
+      stages.push("security");
+    }
+    if (
+      (isLarge || isValidationHeavy || isBuildOrCreate) &&
+      !stages.includes("qa")
+    ) {
+      stages.push("qa");
     }
 
-    if (isSecuritySensitive) {
-      return ["coder", "reviewer", "security"];
-    }
-
-    if (isLarge || isValidationHeavy) {
-      return ["coder", "reviewer", "qa"];
-    }
-
-    if (isBuildOrCreate) {
-      return ["coder", "reviewer", "qa"];
-    }
-
-    return ["coder", "reviewer"];
+    return stages;
   }
 
   private describePipelineStage(stage: Exclude<AgentMode, "auto">): string {

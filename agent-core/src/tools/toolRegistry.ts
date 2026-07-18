@@ -4,6 +4,7 @@ import { ToolResult } from "../types";
 import { FileSystemTool } from "./fileSystemTool";
 import { GitTool } from "./gitTool";
 import { McpRegistry } from "../mcp/mcpRegistry";
+import { FilesystemAdapter } from "../mcp/adapters/filesystemAdapter";
 import { SearchTool } from "./searchTool";
 import { TerminalTool } from "./terminalTool";
 import { TestRunnerTool } from "./testRunnerTool";
@@ -15,6 +16,7 @@ import {
   validateInput,
 } from "./toolProtocol";
 import { getToolDefinition, TOOL_DEFINITIONS } from "./toolDefinitions";
+import { AuditLog } from "./auditLog";
 
 export interface ToolApprovalRequiredResult extends ToolResult {
   requiresApproval: true;
@@ -27,6 +29,7 @@ interface ToolRegistryOptions {
   tavilyBaseUrl?: string;
   mcpRegistry?: McpRegistry;
   approvalPolicy?: ToolApprovalPolicy;
+  auditLog?: AuditLog;
 }
 
 export class ToolRegistry {
@@ -38,6 +41,7 @@ export class ToolRegistry {
   private readonly mcpRegistry?: McpRegistry;
   private readonly approvalPolicy: ToolApprovalPolicy;
   private readonly approvedCalls = new Set<string>();
+  public auditLog?: AuditLog;
 
   public constructor(workspaceRoot: string, options: ToolRegistryOptions = {}) {
     this.filesystem = new FileSystemTool(workspaceRoot);
@@ -48,8 +52,15 @@ export class ToolRegistry {
       tavilyApiKey: options.tavilyApiKey,
       tavilyBaseUrl: options.tavilyBaseUrl,
     });
-    this.mcpRegistry = options.mcpRegistry;
+    if (options.mcpRegistry) {
+      this.mcpRegistry = options.mcpRegistry;
+    } else {
+      const mcp = new McpRegistry();
+      mcp.register(new FilesystemAdapter(workspaceRoot));
+      this.mcpRegistry = mcp;
+    }
     this.approvalPolicy = options.approvalPolicy ?? new DefaultToolApprovalPolicy();
+    this.auditLog = options.auditLog;
   }
 
   public markApproved(toolName: string, arg: string): void {
@@ -69,6 +80,28 @@ export class ToolRegistry {
 
   public isAutoExecutable(toolName: string, arg: string): boolean {
     return this.approvalPolicy.isAutoExecutable(toolName, arg);
+  }
+
+  private emitAudit(
+    toolName: string,
+    arg: string,
+    approved: boolean,
+    approvalRequired: boolean,
+    ok: boolean,
+    output: string,
+    start: number,
+  ): void {
+    if (!this.auditLog) return;
+    this.auditLog.log({
+      timestamp: new Date().toISOString(),
+      toolName,
+      arg,
+      approved,
+      approvalRequired,
+      ok,
+      outputPreview: output.substring(0, 200),
+      durationMs: Date.now() - start,
+    });
   }
 
   public getToolDefinition(name: string) {
@@ -105,6 +138,7 @@ export class ToolRegistry {
   }
 
   public async runToolCall(input: string): Promise<ToolResult> {
+    const auditStart = Date.now();
     const trimmed = input.trim();
     if (!trimmed) {
       return {
@@ -122,145 +156,208 @@ export class ToolRegistry {
 
     const validationError = this.validateToolArg(toolName, arg);
     if (validationError) {
-      return {
-        ok: false,
-        output: `Invalid input: ${validationError}`,
-      };
+      const r = { ok: false, output: `Invalid input: ${validationError}` };
+      this.emitAudit(toolName, arg, false, false, false, r.output, auditStart);
+      return r;
     }
 
     if (this.requiresApproval(toolName, arg)) {
-      return {
+      const r = {
         ok: false,
         output: "AWAITING_APPROVAL",
         requiresApproval: true,
         toolName,
         pendingArg: arg,
       } as ToolApprovalRequiredResult;
+      this.emitAudit(toolName, arg, false, true, false, r.output, auditStart);
+      return r;
     }
 
+    let result: ToolResult;
     switch (toolName) {
       case "search":
-        return this.search.search(arg);
+        result = await this.search.search(arg);
+        break;
       case "web-search":
       case "search-web":
       case "online-search":
-        return this.search.webSearch(arg);
+        result = await this.search.webSearch(arg);
+        break;
       case "terminal":
-        return this.terminal.run(arg);
+        result = await this.terminal.run(arg);
+        break;
       case "git-status":
-        return this.git.status();
+        result = await this.git.status();
+        break;
       case "git-diff":
-        return this.git.diff();
+        result = await this.git.diff();
+        break;
       case "git-branch":
-        return this.git.branch();
+        result = await this.git.branch();
+        break;
+      case "git-stage": {
+        const stagePaths = this.parsePathList(arg);
+        if (!stagePaths) {
+          result = { ok: false, output: "Use: git-stage <path1> [path2] ..." };
+        } else {
+          result = await this.git.stage(stagePaths);
+        }
+        break;
+      }
+      case "git-unstage": {
+        const unstagePaths = this.parsePathList(arg);
+        if (!unstagePaths) {
+          result = { ok: false, output: "Use: git-unstage <path1> [path2] ..." };
+        } else {
+          result = await this.git.unstage(unstagePaths);
+        }
+        break;
+      }
+      case "git-commit":
+        result = await this.git.commit(arg);
+        break;
+      case "git-create-branch":
+        result = await this.git.createBranch(arg);
+        break;
+      case "git-log":
+        result = await this.git.log(arg ? parseInt(arg, 10) || 10 : 10);
+        break;
+      case "git-show":
+        result = await this.git.show(arg);
+        break;
       case "test":
-        return this.test.run(arg);
+        result = await this.test.run(arg);
+        break;
       case "read":
-        return this.filesystem.readFile(arg);
+        result = await this.filesystem.readFile(arg);
+        break;
       case "write": {
         const writeMatch = arg.match(/^(.+?)\s*::\s*([\s\S]*)$/);
         if (!writeMatch) {
-          return {
+          result = {
             ok: false,
             output: "Use: write <path> :: <content>",
           };
+        } else {
+          result = await this.filesystem.writeFile(
+            writeMatch[1].trim(),
+            writeMatch[2] ?? "",
+          );
         }
-
-        return this.filesystem.writeFile(
-          writeMatch[1].trim(),
-          writeMatch[2] ?? "",
-        );
+        break;
       }
       case "append": {
         const appendMatch = arg.match(/^(.+?)\s*::\s*([\s\S]*)$/);
         if (!appendMatch) {
-          return {
+          result = {
             ok: false,
             output: "Use: append <path> :: <content>",
           };
+        } else {
+          result = await this.filesystem.appendFile(
+            appendMatch[1].trim(),
+            appendMatch[2] ?? "",
+          );
         }
-
-        return this.filesystem.appendFile(
-          appendMatch[1].trim(),
-          appendMatch[2] ?? "",
-        );
+        break;
       }
       case "move": {
         const moveMatch = arg.match(/^(.+?)\s*::\s*(.+)$/);
         if (!moveMatch) {
-          return {
+          result = {
             ok: false,
             output: "Use: move <source> :: <destination>",
           };
+        } else {
+          result = await this.filesystem.movePath(
+            moveMatch[1].trim(),
+            moveMatch[2].trim(),
+          );
         }
-
-        return this.filesystem.movePath(
-          moveMatch[1].trim(),
-          moveMatch[2].trim(),
-        );
+        break;
+      }
+      case "patch": {
+        const patchMatch = arg.match(/^(.+?)\s*::\s*(.+?)\s*::\s*([\s\S]*)$/);
+        if (!patchMatch) {
+          result = { ok: false, output: "Use: patch <path> :: <old text> :: <new text>" };
+        } else {
+          result = await this.filesystem.patchFile(
+            patchMatch[1].trim(),
+            patchMatch[2],
+            patchMatch[3] ?? "",
+          );
+        }
+        break;
       }
       case "delete":
-        return this.filesystem.deletePath(arg);
+        result = await this.filesystem.deletePath(arg);
+        break;
       case "delete-contents":
-        return this.filesystem.clearDirectory(arg);
+        result = await this.filesystem.clearDirectory(arg);
+        break;
       case "batch_edit": {
         try {
           const batchArgs = JSON.parse(arg);
           const results: ToolResult[] = [];
 
           for (const edit of batchArgs.edits) {
-            const result = await this.executeBatchEditItem(edit);
-            results.push(result);
+            const batchResult = await this.executeBatchEditItem(edit);
+            results.push(batchResult);
           }
 
           const successCount = results.filter(r => r.ok).length;
-          return {
+          result = {
             ok: successCount === results.length,
             output: `Batch edit: ${successCount}/${results.length} succeeded`,
           };
         } catch (error) {
-          return { ok: false, output: `Batch edit failed: ${error}` };
+          result = { ok: false, output: `Batch edit failed: ${error}` };
         }
+        break;
       }
       case "mcp": {
         if (!this.mcpRegistry) {
-          return {
+          result = {
             ok: false,
             output:
               "MCP registry is not configured. Register adapters before using /tool mcp.",
           };
+        } else {
+          const parsed = arg.match(
+            /^([a-zA-Z0-9._-]+):([a-zA-Z0-9._-]+)\s*::\s*([\s\S]*)$/,
+          );
+          if (!parsed) {
+            result = {
+              ok: false,
+              output: "Use: mcp <server>:<tool> :: <input>",
+            };
+          } else {
+            const mcpResult = await this.mcpRegistry.call({
+              server: parsed[1],
+              tool: parsed[2],
+              input: parsed[3] ?? "",
+            });
+
+            result = {
+              ok: mcpResult.ok,
+              output: mcpResult.ok
+                ? `${mcpResult.output}\n\n[latency ${mcpResult.latencyMs}ms]`
+                : mcpResult.output,
+            };
+          }
         }
-
-        const parsed = arg.match(
-          /^([a-zA-Z0-9._-]+):([a-zA-Z0-9._-]+)\s*::\s*([\s\S]*)$/,
-        );
-        if (!parsed) {
-          return {
-            ok: false,
-            output: "Use: mcp <server>:<tool> :: <input>",
-          };
-        }
-
-        const result = await this.mcpRegistry.call({
-          server: parsed[1],
-          tool: parsed[2],
-          input: parsed[3] ?? "",
-        });
-
-        return {
-          ok: result.ok,
-          output: result.ok
-            ? `${result.output}\n\n[latency ${result.latencyMs}ms]`
-            : result.output,
-        };
+        break;
       }
       default:
-        return {
+        result = {
           ok: false,
           output:
-            "Unknown tool command. Use one of: search, web-search, terminal, git-status, git-diff, git-branch, test, read, write, append, move, delete, delete-contents, mcp, batch_edit",
+            "Unknown tool command. Use one of: search, web-search, terminal, git-status, git-diff, git-branch, git-stage, git-unstage, git-commit, git-create-branch, git-log, git-show, test, read, write, append, patch, move, delete, delete-contents, mcp, batch_edit",
         };
     }
+
+    this.emitAudit(toolName, arg, true, false, result.ok, result.output, auditStart);
+    return result;
   }
 
   public async runToolCallStructured(input: string): Promise<StructuredToolResult> {
@@ -299,6 +396,7 @@ export class ToolRegistry {
     }
 
     if (this.requiresApproval(toolName, arg)) {
+      this.emitAudit(toolName, arg, false, true, false, `Awaiting approval for ${toolName}`, startTime);
       return createStructuredResult(
         false,
         `Awaiting approval for ${toolName}`,
@@ -342,13 +440,20 @@ export class ToolRegistry {
       "git-status": "GIT_STATUS_FAILED",
       "git-diff": "GIT_DIFF_FAILED",
       "git-branch": "GIT_BRANCH_FAILED",
+      "git-stage": "GIT_STAGE_FAILED",
+      "git-unstage": "GIT_UNSTAGE_FAILED",
+      "git-commit": "GIT_COMMIT_FAILED",
+      "git-create-branch": "GIT_CREATE_BRANCH_FAILED",
+      "git-log": "GIT_LOG_FAILED",
+      "git-show": "GIT_SHOW_FAILED",
+      patch: "PATCH_FAILED",
       mcp: "MCP_CALL_FAILED",
     };
     return map[toolName] ?? "TOOL_FAILED";
   }
 
   private extractAffectedFiles(toolName: string, arg: string): string[] | undefined {
-    const pathTools = ["read", "write", "append", "move", "delete", "delete-contents"];
+    const pathTools = ["read", "write", "append", "move", "delete", "delete-contents", "patch"];
     if (!pathTools.includes(toolName)) return undefined;
 
     const writeMatch = arg.match(/^(.+?)\s*::/);
@@ -364,6 +469,12 @@ export class ToolRegistry {
       return [arg.trim()];
     }
     return undefined;
+  }
+
+  private parsePathList(arg: string): string[] | null {
+    const trimmed = arg.trim();
+    if (!trimmed) return null;
+    return trimmed.split(/\s+/).filter(Boolean);
   }
 
   private async executeBatchEditItem(edit: { filePath: string; content: string; operation: string }): Promise<ToolResult> {

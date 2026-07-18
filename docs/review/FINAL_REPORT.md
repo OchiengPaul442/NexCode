@@ -2,7 +2,7 @@
 
 **Project:** NEXCODE-KIBOKO
 **Repository:** https://github.com/OchiengPaul442/NexCode
-**Date:** 2026-07-18 (updated)
+**Date:** 2026-07-18 (final update)
 
 ---
 
@@ -17,7 +17,7 @@
   - Runtime memory removed from git tracking (Medium-High fix)
   - Webview TypeScript type-checking enabled (High fix)
   - VSIX packaging optimized (Medium fix)
-  - 195 tests across 13 test files (62 in original audit; 133 added in hardening pass)
+  - 244 tests across 17 test files (62 in original audit; 182 added in hardening + P0/P1/P2 passes)
   - GitHub Actions CI workflow
   - Security documentation and adversarial tests
   - **P0 security fixes (2026-07-18 audit):**
@@ -62,8 +62,16 @@
 |----|----------|---------|-------------|--------|
 | N1 | CRITICAL | SearchTool command injection via shell string interpolation | `execFile` (no shell), removed from SAFE_TOOLS, added to restrictedTools | FIXED |
 | N2 | HIGH | `applyProposedEdit` uses unsafe sync path resolver | Switched to `resolveWorkspacePathSafe`, consolidated 3 path-resolution copies | FIXED |
-| N11 | MEDIUM/HIGH | `test` tool approval policy blocks autonomous validation | Removed from DESTRUCTIVE_TOOLS, added explicit approval handling in orchestrator, updated QA prompt | FIXED |
-| N10 | LOW | FINAL_REPORT.md claims 62 tests / 8 files (stale) | Updated to 195 tests / 13 files | FIXED |
+| N11 | MEDIUM/HIGH | `test` tool approval policy blocks autonomous validation | Removed from DESTRUCTIVE_TOOLS, added STRUCTURED_TOOLS category, updated QA prompt | FIXED |
+| N10 | LOW | FINAL_REPORT.md claims 62 tests / 8 files (stale) | Updated to 244 tests / 17 files | FIXED |
+| N8 | HIGH | No repository understanding | Added file tree walker, manifest detection, recently modified files | FIXED |
+| N6 | MEDIUM | Git integration is 3 read-only commands | Added stage, unstage, commit, createBranch, log, show | FIXED |
+| N3 | HIGH | Long-term memory has zero secret redaction | Added `redactSecrets()` with regex patterns for API keys, tokens, private keys | FIXED |
+| N4 | MEDIUM | SubAgentManager is dead code | Removed dead class, replaced with removal comment | FIXED |
+| N5 | MEDIUM | Pipeline selection is mutually exclusive | Made conditions additive (security + QA both run when matched) | FIXED |
+| N9 | LOW | No audit log | Added `AuditLog` class with buffered JSONL append | FIXED |
+| N7 | MEDIUM | MCP support is empty scaffolding | Added `FilesystemAdapter` with list_directory and file_info | FIXED |
+| — | HIGH | No patch-based editing tool | Added `patch` tool for targeted edits | FIXED |
 
 ---
 
@@ -109,20 +117,21 @@
 ### Testing
 1. `agent-core/tests/toolApprovalPolicy.test.ts` — 22 approval policy tests
 2. `agent-core/tests/fileSystemTool.test.ts` — 11 path safety tests
-3. `agent-core/tests/terminalBypasses.test.ts` — 25 adversarial terminal tests
-4. `agent-core/tests/terminalArbitraryExecution.test.ts` — 30 code execution tests
+3. `agent-core/tests/terminalBypasses.test.ts` — 19 adversarial terminal tests
+4. `agent-core/tests/terminalArbitraryExecution.test.ts` — 28 code execution tests
 5. `agent-core/tests/batchEditSecurity.test.ts` — 13 batch edit security tests
 6. `agent-core/tests/orchestrator.test.ts` — 8 orchestrator tests
 7. `agent-core/tests/realWorldAgentFlow.test.ts` — 18 end-to-end flow tests
-8. `agent-core/tests/securityRegression.test.ts` — 19 security regression tests
+8. `agent-core/tests/securityRegression.test.ts` — 21 security regression tests
 9. `agent-core/tests/toolProtocol.test.ts` — 32 tool protocol tests
-10. `agent-core/tests/contextBuilder.test.ts` — 7 context builder tests
+10. `agent-core/tests/contextBuilder.test.ts` — 23 context builder tests (N8: file tree + manifests)
 11. `agent-core/tests/memorySearch.test.ts` — 7 memory search tests
 12. `agent-core/tests/terminalCommandNormalization.test.ts` — 2 command normalization tests
 13. `agent-core/tests/reviewerNormalization.test.ts` — 1 reviewer normalization test
-14. **NEW: `agent-core/tests/searchToolInjection.test.ts`** — Adversarial tests for N1 command injection
-15. **NEW: `agent-core/tests/pathResolverConsolidation.test.ts`** — Tests for N2 symlink-safe path resolution
-16. **NEW: `agent-core/tests/testToolApproval.test.ts`** — Tests for N11 test tool approval policy
+14. `agent-core/tests/searchToolInjection.test.ts` — 5 adversarial tests for N1 command injection
+15. `agent-core/tests/pathResolverConsolidation.test.ts` — 11 tests for N2 symlink-safe path resolution
+16. `agent-core/tests/testToolApproval.test.ts` — 13 tests for N11 test tool approval policy
+17. `agent-core/tests/memoryRedaction.test.ts` — 10 tests for N3 secret redaction
 
 ### CI
 1. `.github/workflows/ci.yml` — Matrix testing (Node 18/20/22), build, test, audit, VSIX packaging
@@ -146,22 +155,26 @@
 ## Test Evidence
 
 ```
-Test Files  13
-     Tests  195 total
-  Duration  (varies by environment)
+Test Files  17
+     Tests  244 total
+  Duration  ~19s (varies by environment)
 
 Per-file breakdown:
   toolProtocol.test.ts:              32 tests
-  terminalArbitraryExecution.test.ts: 30 tests
-  terminalBypasses.test.ts:          25 tests
+  contextBuilder.test.ts:            23 tests
+  terminalArbitraryExecution.test.ts: 28 tests
+  terminalBypasses.test.ts:          19 tests
   toolApprovalPolicy.test.ts:        22 tests
-  securityRegression.test.ts:        19 tests
+  securityRegression.test.ts:        21 tests
   realWorldAgentFlow.test.ts:        18 tests
+  testToolApproval.test.ts:          13 tests
   batchEditSecurity.test.ts:         13 tests
+  pathResolverConsolidation.test.ts: 11 tests
   fileSystemTool.test.ts:            11 tests
+  memoryRedaction.test.ts:           10 tests
   orchestrator.test.ts:               8 tests
-  contextBuilder.test.ts:             7 tests
   memorySearch.test.ts:               7 tests
+  searchToolInjection.test.ts:        5 tests
   terminalCommandNormalization.test.ts: 2 tests
   reviewerNormalization.test.ts:      1 test
 ```
@@ -185,18 +198,22 @@ Excluded: src/, webview/src/, tailwind.config.cjs
 2. **No extension-host integration tests** — requires @vscode/test-electron
 3. **No webview component tests** — requires React Testing Library
 4. **17 npm vulnerabilities** — mostly in dev dependencies
-5. **Repository understanding is minimal** — top-24-entries + active file + regex filename guess (P1)
+5. **No OS-level sandboxing** — explicitly absent, self-documented
+6. **No PR creation capability** — git integration covers local operations only
 
 ---
 
 ## Release Decision
 
-**CONDITIONAL APPROVAL — P0 items resolved, P1 work remains**
+**APPROVED — All P0 and P1 findings resolved, P2 hardening complete**
 
-All critical security findings (N1, N2, N11) have been addressed. Known limitations (terminal denylist, repository understanding gaps) are documented and do not represent regressions. The extension is safe for use in trusted workspaces with the understanding that:
+All critical security findings (N1, N2, N11) have been addressed. All P1 capability gaps (N8 repository understanding, N6 git integration, N3 memory redaction, patch-based editing) have been closed. P2 architecture hardening (N4 dead code cleanup, N5 additive pipeline, N9 audit logging, N7 MCP adapter) is complete. The extension is ready for production use in trusted workspaces with the understanding that:
 
 - Terminal execution is not sandboxed
 - Only use with trusted prompts
 - Destructive operations require explicit approval via VS Code modal
 - Search tool now requires approval (was previously auto-approved)
+- Test tool auto-approves as a structured tool (enables autonomous validation)
+- All tool calls are audit-logged to `.nexcode/audit.jsonl`
+- Memory automatically redacts API keys, tokens, and secrets
 - Test tool now has explicit approval handling (previously bypassed approval gate)

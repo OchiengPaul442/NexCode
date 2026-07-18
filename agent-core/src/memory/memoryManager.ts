@@ -3,6 +3,27 @@ import { ChatMessage } from "../types";
 import { LongTermMemoryEntry, LongTermMemoryStore } from "./longTermMemory";
 import { ShortTermMemory } from "./shortTermMemory";
 
+export function redactSecrets(text: string): string {
+  return text
+    .replace(/\b(sk-[a-zA-Z0-9]{20,})\b/g, "[REDACTED_API_KEY]")
+    .replace(/\b(AKIA[0-9A-Z]{16})\b/g, "[REDACTED_AWS_KEY]")
+    .replace(/\b(ghp_[a-zA-Z0-9]{36})\b/g, "[REDACTED_GITHUB_TOKEN]")
+    .replace(/\b(github_pat_[a-zA-Z0-9_]{82})\b/g, "[REDACTED_GITHUB_PAT]")
+    .replace(/Bearer\s+[a-zA-Z0-9._\-]{20,}/g, "Bearer [REDACTED_TOKEN]")
+    .replace(
+      /(SECRET|TOKEN|PASSWORD|API_KEY|API_SECRET|ACCESS_KEY|PRIVATE_KEY)\s*[:=]\s*(?!\[REDACTED)\S+/gi,
+      "$1=[REDACTED]",
+    )
+    .replace(
+      /-----BEGIN\s+(RSA\s+)?PRIVATE\s+KEY-----[\s\S]*?-----END\s+(RSA\s+)?PRIVATE\s+KEY-----/g,
+      "[REDACTED_PRIVATE_KEY]",
+    )
+    .replace(
+      /(mongodb|postgres|mysql|redis):\/\/[^\s]+/g,
+      "[REDACTED_CONNECTION_STRING]",
+    );
+}
+
 export class MemoryManager {
   public readonly shortTerm: ShortTermMemory;
   public readonly longTerm: LongTermMemoryStore;
@@ -41,8 +62,8 @@ export class MemoryManager {
       attachmentsUsed?: string[];
     },
   ): Promise<void> {
-    const normalizedPrompt = prompt.trim();
-    const normalizedResponse = response.replace(/\s+/g, " ").trim();
+    const normalizedPrompt = redactSecrets(prompt.trim());
+    const normalizedResponse = redactSecrets(response.replace(/\s+/g, " ").trim());
     const responseExcerpt =
       normalizedResponse.length > 400
         ? `${normalizedResponse.slice(0, 400)}...`
@@ -54,21 +75,23 @@ export class MemoryManager {
       id: randomUUID(),
       timestamp: new Date().toISOString(),
       type: "interaction",
-      text: [
-        `Prompt: ${normalizedPrompt}`,
-        `Response excerpt: ${responseExcerpt}`,
-        metadata?.filesEdited?.length
-          ? `Files edited: ${metadata.filesEdited.join(", ")}`
-          : "",
-        metadata?.toolUsed?.length
-          ? `Tools used: ${metadata.toolUsed.join(", ")}`
-          : "",
-        metadata?.attachmentsUsed?.length
-          ? `Attachments: ${metadata.attachmentsUsed.join(", ")}`
-          : "",
-      ]
-        .filter(Boolean)
-        .join("\n"),
+      text: redactSecrets(
+        [
+          `Prompt: ${normalizedPrompt}`,
+          `Response excerpt: ${responseExcerpt}`,
+          metadata?.filesEdited?.length
+            ? `Files edited: ${metadata.filesEdited.join(", ")}`
+            : "",
+          metadata?.toolUsed?.length
+            ? `Tools used: ${metadata.toolUsed.join(", ")}`
+            : "",
+          metadata?.attachmentsUsed?.length
+            ? `Attachments: ${metadata.attachmentsUsed.join(", ")}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      ),
       tags: enrichedTags,
       metadata: {
         prompt: normalizedPrompt,
@@ -90,7 +113,7 @@ export class MemoryManager {
     tags: string[] = [],
     metadata?: Record<string, unknown>,
   ): Promise<void> {
-    const normalizedText = text.trim();
+    const normalizedText = redactSecrets(text.trim());
     if (!normalizedText) {
       return;
     }

@@ -13,7 +13,7 @@ export type ApprovalCallback = (
 
 const SAFE_TOOLS = ["read", "git-status", "git-diff", "git-branch"];
 const LOW_RISK_WRITE_TOOLS = ["write", "append"];
-const DESTRUCTIVE_TOOLS = ["delete", "delete-contents", "move", "terminal", "mcp", "batch_edit", "web-search", "search-web", "online-search", "search"];
+const DESTRUCTIVE_TOOLS = ["delete", "delete-contents", "move", "terminal", "mcp", "batch_edit", "web-search", "search-web", "online-search", "search", "git-stage", "git-commit", "git-create-branch"];
 const STRUCTURED_TOOLS = ["test"];
 
 export class DefaultToolApprovalPolicy implements ToolApprovalPolicy {

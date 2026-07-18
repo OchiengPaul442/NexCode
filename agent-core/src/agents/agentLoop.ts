@@ -39,6 +39,12 @@ function formatToolArgs(
       const dst = args.destination ?? args.to ?? args.dest ?? "";
       return `${src} :: ${dst}`;
     }
+    case "patch": {
+      const p = args.path ?? args.file ?? args.filePath ?? "";
+      const oldText = args.oldText ?? args.old ?? args.oldText ?? "";
+      const newText = args.newText ?? args.new ?? args.newText ?? "";
+      return `${p} :: ${oldText} :: ${newText}`;
+    }
     case "delete":
     case "delete-contents": {
       const p = args.path ?? args.file ?? args.filePath ?? "";
@@ -314,7 +320,7 @@ export async function* runAgentLoop(
       }
 
       const toolDurationMs = Date.now() - toolStartTime;
-      const filesChanged = toolCall.function.name === "write" || toolCall.function.name === "append"
+      const filesChanged = toolCall.function.name === "write" || toolCall.function.name === "append" || toolCall.function.name === "patch"
         ? [argString.split("::")[0]?.trim() ?? ""]
         : toolCall.function.name === "delete"
           ? [argString.trim()]

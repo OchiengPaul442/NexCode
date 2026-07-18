@@ -355,15 +355,9 @@ export async function* runAgentLoop(
             };
           }
         } else {
-          yield {
-            type: "toolApprovalRequired",
-            toolName,
-            pendingArg,
-          };
-          result = {
-            ok: false,
-            output: "AWAITING_APPROVAL",
-          };
+          throw new Error(
+            "Tool requires approval but no approvalCallback was provided — this is a wiring bug, not a user decision.",
+          );
         }
       }
 
@@ -384,12 +378,8 @@ export async function* runAgentLoop(
         type: "toolExecuted",
         toolName: toolCall.function.name,
         command: argString,
-        status: result.output === "AWAITING_APPROVAL"
-          ? "error"
-          : result.ok ? "success" : "error",
-        message: result.output === "AWAITING_APPROVAL"
-          ? "Waiting for user approval"
-          : result.output.slice(0, 200),
+        status: result.ok ? "success" : "error",
+        message: result.output.slice(0, 200),
         durationMs: toolDurationMs,
         filesChanged,
       };

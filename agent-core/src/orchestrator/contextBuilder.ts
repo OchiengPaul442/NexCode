@@ -3,6 +3,7 @@ import path from "path";
 import { RequestAttachment, OrchestratorRequest } from "../types";
 import { ContextCache } from "../utils/contextCache";
 import { checkPathWithinWorkspace } from "../utils/pathContainment";
+import { TokenCounter } from "../utils/tokenCounter";
 
 const workspaceContextCache = new ContextCache(30000);
 const fileTreeCache = new ContextCache(30_000);
@@ -17,6 +18,8 @@ const MAX_REFERENCED_FILE_SNIPPET_CHARS = 1_600;
 const MAX_ATTACHMENT_TEXT_CHARS = 3_000;
 const MAX_FILE_TREE_FILES = 500;
 const MAX_ABBREVIATED_TREE_FILES = 100;
+const MAX_WORKSPACE_TOKEN_BUDGET = 3000;
+const workspaceTokenCounter = new TokenCounter();
 
 interface WorkspaceSnapshotCache {
   workspaceRoot: string;
@@ -137,9 +140,20 @@ export async function buildWorkspaceContext(
     sections.push(buildAttachmentContext(request.attachments ?? []));
   }
 
-  const result = sections.join("\n\n");
-  workspaceContextCache.set(cacheKey, result);
-  return result;
+  const joined = sections.join("\n\n");
+  const estimatedTokens = workspaceTokenCounter.estimateTokens(joined);
+  if (estimatedTokens > MAX_WORKSPACE_TOKEN_BUDGET) {
+    const result = truncateToFitTokenBudget(
+      joined,
+      MAX_WORKSPACE_TOKEN_BUDGET,
+      workspaceTokenCounter,
+      "Workspace context truncated to fit token budget",
+    );
+    workspaceContextCache.set(cacheKey, result);
+    return result;
+  }
+  workspaceContextCache.set(cacheKey, joined);
+  return joined;
 }
 
 function extractRelevantSnippet(
@@ -512,6 +526,20 @@ function clampText(
 
   const omittedChars = text.length - maxChars;
   return `${text.slice(0, maxChars)}\n\n[${noticeLabel}; ${omittedChars} characters omitted]`;
+}
+
+function truncateToFitTokenBudget(
+  text: string,
+  maxTokens: number,
+  tokenCounter: TokenCounter,
+  noticeLabel: string,
+): string {
+  if (!text) return "";
+  const estimatedTokens = tokenCounter.estimateTokens(text);
+  if (estimatedTokens <= maxTokens) return text;
+
+  const maxChars = maxTokens * 4;
+  return clampText(text, maxChars, noticeLabel);
 }
 
 function buildAttachmentContext(attachments: RequestAttachment[]): string {

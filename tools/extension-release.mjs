@@ -408,6 +408,19 @@ async function main() {
     return;
   }
 
+  // Write build info before building
+  const pkgRaw = await fs.readFile(extensionPackageJsonPath, "utf8");
+  const pkgParsed = JSON.parse(pkgRaw);
+  const buildInfo = {
+    version: pkgParsed.version || "unknown",
+    buildTime: new Date().toISOString(),
+    node: process.version,
+  };
+  await fs.writeFile(
+    path.join(extensionDir, "out", "build-info.json"),
+    JSON.stringify(buildInfo, null, 2),
+  );
+
   run("npm", ["run", "build"]);
   await prepareStageDirectory();
 

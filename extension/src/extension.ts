@@ -122,6 +122,26 @@ export async function activate(
   );
 
   context.subscriptions.push(
+    vscode.commands.registerCommand("nexcodeKiboko.showVersionInfo", async () => {
+      const pkg = require("../package.json");
+      let buildInfo = "Build info not available (dev mode).";
+      try {
+        const fs = require("fs");
+        const path = require("path");
+        const infoPath = path.join(__dirname, "build-info.json");
+        if (fs.existsSync(infoPath)) {
+          const info = JSON.parse(fs.readFileSync(infoPath, "utf8"));
+          buildInfo = `Version: ${info.version}\nBuilt: ${info.buildTime}\nNode: ${info.node}`;
+        }
+      } catch {}
+      vscode.window.showInformationMessage(
+        `NexCode Kiboko ${pkg.version}\n${buildInfo}`,
+        { modal: true },
+      );
+    }),
+  );
+
+  context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((event: vscode.ConfigurationChangeEvent) => {
       if (event.affectsConfiguration("nexcodeKiboko")) {
         void provider.notifyConfigChanged();

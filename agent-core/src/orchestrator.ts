@@ -1638,28 +1638,9 @@ export class NexcodeOrchestrator {
         };
       }
 
-      yield {
-        type: "toolExecuted",
-        toolName: result.toolName ?? "",
-        command: result.pendingArg ?? "",
-        status: "awaiting-approval",
-        message: "Waiting for user approval",
-      };
-      return {
-        text: [
-          "## Tool Execution",
-          `Command: ${toolCommand}`,
-          "",
-          "```text",
-          "AWAITING_APPROVAL",
-          "```",
-        ].join("\n"),
-        modeUsed: mode,
-        providerUsed: provider,
-        modelUsed: model,
-        proposedEdits: [],
-        diagnostics,
-      };
+      throw new Error(
+        "Tool requires approval but no approvalCallback was provided — this is a wiring bug, not a user decision.",
+      );
     }
 
     const boundedOutput = clampText(
@@ -1744,33 +1725,9 @@ export class NexcodeOrchestrator {
           }
           this.tools.markApproved("terminal", terminalArg);
         } else {
-          yield {
-            type: "toolExecuted",
-            toolName: "terminal",
-            command: terminalArg,
-            status: "awaiting-approval",
-            message: "Waiting for user approval",
-          };
-          yield {
-            type: "toolApprovalRequired",
-            toolName: "terminal",
-            pendingArg: terminalArg,
-          };
-          return {
-            text: [
-              "## Tool Execution",
-              `Command: ${toolCommand}`,
-              "",
-              "```text",
-              "AWAITING_APPROVAL",
-              "```",
-            ].join("\n"),
-            modeUsed: mode,
-            providerUsed: provider,
-            modelUsed: model,
-            proposedEdits: [],
-            diagnostics,
-          };
+          throw new Error(
+            "Tool requires approval but no approvalCallback was provided — this is a wiring bug, not a user decision.",
+          );
         }
       }
       return yield* this.streamCommandToolResult(
@@ -1829,33 +1786,9 @@ export class NexcodeOrchestrator {
           }
           this.tools.markApproved("batch_edit", batchEditMatch[1]?.trim() ?? "");
         } else {
-          yield {
-            type: "toolExecuted",
-            toolName: "batch_edit",
-            command: batchEditMatch[1]?.trim() ?? "",
-            status: "awaiting-approval",
-            message: "Waiting for user approval",
-          };
-          yield {
-            type: "toolApprovalRequired",
-            toolName: "batch_edit",
-            pendingArg: batchEditMatch[1]?.trim() ?? "",
-          };
-          return {
-            text: [
-              "## Tool Execution",
-              `Command: ${toolCommand}`,
-              "",
-              "```text",
-              "AWAITING_APPROVAL",
-              "```",
-            ].join("\n"),
-            modeUsed: mode,
-            providerUsed: provider,
-            modelUsed: model,
-            proposedEdits: [],
-            diagnostics,
-          };
+          throw new Error(
+            "Tool requires approval but no approvalCallback was provided — this is a wiring bug, not a user decision.",
+          );
         }
       }
 

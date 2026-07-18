@@ -65,6 +65,10 @@
       {
         "command": "nexcodeKiboko.explainSelection",
         "title": "NEXCODE: Explain Selection"
+      },
+      {
+        "command": "nexcodeKiboko.showVersionInfo",
+        "title": "NexCode: Show Version Info"
       }
     ],
     "configuration": {

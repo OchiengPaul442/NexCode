@@ -368,6 +368,12 @@ export class OllamaProvider implements ModelProvider {
           errorMsg = `Ollama: ${body}`;
         }
       }
+
+      if (errorMsg.includes("can't find closing") || errorMsg.includes("Value looks like object")) {
+        errorMsg = `Context window overflow: The request was too large for the model's context window (${this.resolveNumCtx(request.model)} tokens). Try a shorter prompt, a smaller file, or increase NEXCODE_OLLAMA_MAX_CONTEXT. Original error: ${errorMsg}`;
+      }
+
+      console.error(`[ollama] generateWithoutTools failed: ${request.messages?.length ?? 0} messages, ${JSON.stringify(textPayload).length} chars, 0 tools, num_ctx=${this.resolveNumCtx(request.model)}`);
       throw new Error(errorMsg);
     }
 
@@ -420,7 +426,12 @@ export class OllamaProvider implements ModelProvider {
         } catch {
           // Use status-based message
         }
-        console.error(`[ollama] request failed: ${request.messages?.length ?? 0} messages, ${JSON.stringify(payload).length} chars, ${request.tools?.length ?? 0} tools, num_ctx=${this.resolveNumCtx(request.model)}`);
+
+        if (errorMsg.includes("can't find closing") || errorMsg.includes("Value looks like object")) {
+          errorMsg = `Context window overflow: The request was too large for the model's context window (${this.resolveNumCtx(request.model)} tokens). Try a shorter prompt, a smaller file, or increase NEXCODE_OLLAMA_MAX_CONTEXT. Original error: ${errorMsg}`;
+        }
+
+        console.error(`[ollama] stream failed: ${request.messages?.length ?? 0} messages, ${JSON.stringify(payload).length} chars, ${request.tools?.length ?? 0} tools, num_ctx=${this.resolveNumCtx(request.model)}`);
         throw new Error(errorMsg);
       }
 

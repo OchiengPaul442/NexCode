@@ -1300,7 +1300,7 @@ html, body {
   gap: 4px;
 }
 
-/* ── Changed Files Summary ──────────────────────────────────────────────── */
+/* ── Changed Files Summary (legacy, kept for compatibility) ────────────── */
 .nk-changed-files-summary {
   background: var(--vscode-editorWidget-background);
   border: 1px solid var(--vscode-widget-border);
@@ -1397,6 +1397,279 @@ html, body {
   color: var(--vscode-terminal-ansiRed, #f48771);
   font-size: 10px;
   font-weight: 500;
+}
+
+/* ── ChangeSet (GitHub-style file summary) ─────────────────────────────── */
+.nk-changeset {
+  background: var(--vscode-editorWidget-background);
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: var(--nk-radius-md);
+  margin-top: 8px;
+  overflow: hidden;
+}
+
+.nk-changeset-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--vscode-widget-border);
+}
+
+.nk-changeset-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nk-changeset-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+
+.nk-changeset-add {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--vscode-terminal-ansiGreen, #4ec9b0);
+}
+
+.nk-changeset-del {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--vscode-terminal-ansiRed, #f48771);
+}
+
+.nk-changeset-toggle {
+  background: none;
+  border: none;
+  color: var(--vscode-textLinkForeground, #3794ff);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.nk-changeset-toggle:hover {
+  background: rgba(55, 148, 255, 0.1);
+}
+
+.nk-changeset-files {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.nk-changeset-file {
+  border-bottom: 1px solid var(--vscode-widget-border);
+}
+
+.nk-changeset-file:last-child {
+  border-bottom: none;
+}
+
+.nk-changeset-file-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.nk-changeset-file-row:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.nk-changeset-file-icon {
+  color: var(--vscode-descriptionForeground);
+  display: flex;
+  flex-shrink: 0;
+}
+
+.nk-changeset-file-path {
+  font-size: 11px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  color: var(--vscode-foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+.nk-changeset-file-stats {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.nk-changeset-file-add {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--vscode-terminal-ansiGreen, #4ec9b0);
+}
+
+.nk-changeset-file-del {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--vscode-terminal-ansiRed, #f48771);
+}
+
+.nk-changeset-file-chevron {
+  color: var(--vscode-descriptionForeground);
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.nk-changeset-overflow {
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  background: none;
+  border: none;
+  border-top: 1px solid var(--vscode-widget-border);
+  color: var(--vscode-textLinkForeground, #3794ff);
+  font-size: 11px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.nk-changeset-overflow:hover {
+  background: rgba(55, 148, 255, 0.08);
+}
+
+/* ── Inline Diff ───────────────────────────────────────────────────────── */
+.nk-changeset-diff {
+  border-top: 1px solid var(--vscode-widget-border);
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 11px;
+  line-height: 1.5;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.nk-changeset-diff-line {
+  display: flex;
+  white-space: pre;
+}
+
+.nk-changeset-diff-line--add {
+  background: rgba(78, 201, 176, 0.08);
+  border-left: 3px solid rgba(78, 201, 176, 0.4);
+}
+
+.nk-changeset-diff-line--del {
+  background: rgba(244, 71, 113, 0.08);
+  border-left: 3px solid rgba(244, 71, 113, 0.4);
+}
+
+.nk-changeset-diff-line--ctx {
+  background: transparent;
+  border-left: 3px solid transparent;
+}
+
+.nk-changeset-diff-gutter {
+  display: flex;
+  gap: 0;
+  min-width: 64px;
+  flex-shrink: 0;
+  padding: 0 8px;
+  color: var(--vscode-descriptionForeground);
+  user-select: none;
+  text-align: right;
+}
+
+.nk-changeset-diff-oldnum,
+.nk-changeset-diff-newnum {
+  width: 28px;
+  display: inline-block;
+}
+
+.nk-changeset-diff-prefix {
+  width: 16px;
+  flex-shrink: 0;
+  text-align: center;
+  font-weight: 500;
+}
+
+.nk-changeset-diff-line--add .nk-changeset-diff-prefix {
+  color: var(--vscode-terminal-ansiGreen, #4ec9b0);
+}
+
+.nk-changeset-diff-line--del .nk-changeset-diff-prefix {
+  color: var(--vscode-terminal-ansiRed, #f48771);
+}
+
+.nk-changeset-diff-text {
+  flex: 1;
+  min-width: 0;
+  padding-right: 12px;
+}
+
+/* ── Activity Section ──────────────────────────────────────────────────── */
+.nk-activity-section {
+  margin-top: 8px;
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: var(--nk-radius-sm);
+  overflow: hidden;
+}
+
+.nk-activity-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  cursor: pointer;
+  user-select: none;
+  background: var(--vscode-editorWidget-background);
+}
+
+.nk-activity-header:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.nk-activity-header-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.nk-activity-icon {
+  color: var(--vscode-descriptionForeground);
+}
+
+.nk-activity-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+
+.nk-activity-meta {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.nk-activity-ok {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--vscode-terminal-ansiGreen, #4ec9b0);
+}
+
+.nk-activity-fail {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--vscode-terminal-ansiRed, #f48771);
+}
+
+.nk-activity-chevron {
+  color: var(--vscode-descriptionForeground);
+  transition: transform 0.15s ease;
+}
+
+.nk-activity-body {
+  border-top: 1px solid var(--vscode-widget-border);
+  padding: 4px;
 }
 
 .nk-summary-card {

@@ -959,16 +959,17 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
           }
 
           if (currentApproval === "auto") {
-            const safeTools = ["read", "search", "git-status", "git-diff", "git-branch"];
-            if (safeTools.includes(toolName)) {
-              return true;
-            }
-            const safeTerminalPatterns = ["ls", "pwd", "echo", "cat", "head", "tail", "wc", "git status", "git diff", "git log", "git branch", "git show"];
-            if (toolName === "terminal" && safeTerminalPatterns.some(p => arg.trim().startsWith(p))) {
+            // Low-risk write tools are safe enough to auto-approve.
+            // Note: read-only tools (read, search, git-*) and safe terminal commands
+            // never reach this callback because DefaultToolApprovalPolicy.requiresApproval()
+            // already returns false for them.
+            const autoApproveInAutoMode = ["write", "append", "patch"];
+            if (autoApproveInAutoMode.includes(toolName)) {
               return true;
             }
           }
 
+          // Ask mode (or auto mode for destructive tools): prompt the user
           return await this.requestToolApproval(toolName, arg);
         },
       });
@@ -1103,6 +1104,10 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     showReasoning: boolean;
     autoApplyChanges: boolean;
     allowWebSearch: boolean;
+    searchProvider: string;
+    searchApiKey: string;
+    searchBaseUrl: string;
+    tavilyApiKey: string;
   }> {
     const config = vscode.workspace.getConfiguration("nexcodeKiboko");
     const secrets = await this.secretService.getAllSecrets();
@@ -1143,6 +1148,10 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       showReasoning: config.get<boolean>("showReasoning", true),
       autoApplyChanges: config.get<boolean>("autoApplyChanges", false),
       allowWebSearch: config.get<boolean>("allowWebSearch", true),
+      searchProvider: config.get<string>("searchProvider", "tavily"),
+      searchApiKey: secrets.searchApiKey,
+      searchBaseUrl: config.get<string>("searchBaseUrl", ""),
+      tavilyApiKey: secrets.tavilyApiKey,
     };
   }
 

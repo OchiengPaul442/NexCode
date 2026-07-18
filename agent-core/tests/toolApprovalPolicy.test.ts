@@ -193,12 +193,12 @@ describe("Tool risk level and approval consistency (catches patch-class bugs)", 
 
   it("all tools are classified in exactly one of the risk lists", () => {
     const allToolNames = TOOL_DEFINITIONS.map((d) => d.name);
-    const safeList = ["read", "git-status", "git-diff", "git-branch", "git-log", "git-show", "workspace-stats"];
+    const safeList = ["read", "search", "git-status", "git-diff", "git-branch", "git-log", "git-show", "workspace-stats"];
     const lowRiskList = ["write", "append", "patch"];
     const structuredList = ["test"];
     const destructiveList = [
       "delete", "delete-contents", "move", "terminal", "mcp",
-      "batch_edit", "web-search", "search-web", "online-search", "search",
+      "batch_edit", "web-search", "search-web", "online-search",
       "git-stage", "git-unstage", "git-commit", "git-create-branch",
     ];
     const knownLists = [...safeList, ...lowRiskList, ...structuredList, ...destructiveList];
@@ -207,5 +207,146 @@ describe("Tool risk level and approval consistency (catches patch-class bugs)", 
       const count = knownLists.filter((n) => n === name).length;
       expect(count).toBe(1);
     }
+  });
+});
+
+describe("Permission mode behavior (simulates extension callback logic)", () => {
+  const workspaceRoot = process.cwd();
+  const policy = new DefaultToolApprovalPolicy();
+  const registry = new ToolRegistry(workspaceRoot, { approvalPolicy: policy });
+
+  const AUTO_APPROVE_TOOLS = ["write", "append", "patch"];
+
+  function simulateApprovalCallback(
+    toolName: string,
+    arg: string,
+    mode: "auto" | "ask" | "bypass",
+  ): boolean {
+    if (mode === "bypass") return true;
+
+    if (mode === "auto") {
+      if (AUTO_APPROVE_TOOLS.includes(toolName)) return true;
+    }
+
+    if (registry.requiresApproval(toolName, arg)) {
+      return false;
+    }
+
+    return true;
+  }
+
+  describe("bypass mode", () => {
+    it("auto-approves delete", () => {
+      expect(simulateApprovalCallback("delete", "file.ts", "bypass")).toBe(true);
+    });
+
+    it("auto-approves write", () => {
+      expect(simulateApprovalCallback("write", "f.ts :: content", "bypass")).toBe(true);
+    });
+
+    it("auto-approves terminal with unsafe command", () => {
+      expect(simulateApprovalCallback("terminal", "rm -rf /", "bypass")).toBe(true);
+    });
+
+    it("auto-approves batch_edit", () => {
+      expect(simulateApprovalCallback("batch_edit", "{}", "bypass")).toBe(true);
+    });
+
+    it("auto-approves git-commit", () => {
+      expect(simulateApprovalCallback("git-commit", "msg", "bypass")).toBe(true);
+    });
+  });
+
+  describe("auto mode", () => {
+    it("auto-approves write (low-risk write)", () => {
+      expect(simulateApprovalCallback("write", "f.ts :: content", "auto")).toBe(true);
+    });
+
+    it("auto-approves append (low-risk write)", () => {
+      expect(simulateApprovalCallback("append", "f.ts :: content", "auto")).toBe(true);
+    });
+
+    it("auto-approves patch (low-risk write)", () => {
+      expect(simulateApprovalCallback("patch", "f.ts :: old :: new", "auto")).toBe(true);
+    });
+
+    it("does NOT auto-approve delete (destructive)", () => {
+      expect(simulateApprovalCallback("delete", "file.ts", "auto")).toBe(false);
+    });
+
+    it("does NOT auto-approve move (destructive)", () => {
+      expect(simulateApprovalCallback("move", "a.ts :: b.ts", "auto")).toBe(false);
+    });
+
+    it("does NOT auto-approve terminal with unsafe command", () => {
+      expect(simulateApprovalCallback("terminal", "rm -rf /", "auto")).toBe(false);
+    });
+
+    it("does NOT auto-approve batch_edit (destructive)", () => {
+      expect(simulateApprovalCallback("batch_edit", "{}", "auto")).toBe(false);
+    });
+
+    it("does NOT auto-approve git-commit (destructive)", () => {
+      expect(simulateApprovalCallback("git-commit", "msg", "auto")).toBe(false);
+    });
+
+    it("does NOT auto-approve mcp (destructive)", () => {
+      expect(simulateApprovalCallback("mcp", "server:tool :: input", "auto")).toBe(false);
+    });
+
+    it("auto-approves read (safe, no approval needed)", () => {
+      expect(simulateApprovalCallback("read", "file.ts", "auto")).toBe(true);
+    });
+
+    it("auto-approves search (safe, no approval needed)", () => {
+      expect(simulateApprovalCallback("search", "TODO", "auto")).toBe(true);
+    });
+
+    it("auto-approves git-status (safe, no approval needed)", () => {
+      expect(simulateApprovalCallback("git-status", "", "auto")).toBe(true);
+    });
+
+    it("auto-approves safe terminal commands (no approval needed)", () => {
+      expect(simulateApprovalCallback("terminal", "ls -la", "auto")).toBe(true);
+      expect(simulateApprovalCallback("terminal", "git status", "auto")).toBe(true);
+      expect(simulateApprovalCallback("terminal", "npm test", "auto")).toBe(true);
+      expect(simulateApprovalCallback("terminal", "Get-ChildItem", "auto")).toBe(true);
+    });
+  });
+
+  describe("ask mode", () => {
+    it("does NOT auto-approve write (requires user approval)", () => {
+      expect(simulateApprovalCallback("write", "f.ts :: content", "ask")).toBe(false);
+    });
+
+    it("does NOT auto-approve append (requires user approval)", () => {
+      expect(simulateApprovalCallback("append", "f.ts :: content", "ask")).toBe(false);
+    });
+
+    it("does NOT auto-approve patch (requires user approval)", () => {
+      expect(simulateApprovalCallback("patch", "f.ts :: old :: new", "ask")).toBe(false);
+    });
+
+    it("does NOT auto-approve delete (requires user approval)", () => {
+      expect(simulateApprovalCallback("delete", "file.ts", "ask")).toBe(false);
+    });
+
+    it("does NOT auto-approve terminal with unsafe command", () => {
+      expect(simulateApprovalCallback("terminal", "rm -rf /", "ask")).toBe(false);
+    });
+
+    it("auto-approves read (safe, no approval needed)", () => {
+      expect(simulateApprovalCallback("read", "file.ts", "ask")).toBe(true);
+    });
+
+    it("auto-approves search (safe, no approval needed)", () => {
+      expect(simulateApprovalCallback("search", "TODO", "ask")).toBe(true);
+    });
+
+    it("auto-approves safe terminal commands (no approval needed)", () => {
+      expect(simulateApprovalCallback("terminal", "ls -la", "ask")).toBe(true);
+      expect(simulateApprovalCallback("terminal", "git status", "ask")).toBe(true);
+      expect(simulateApprovalCallback("terminal", "npm test", "ask")).toBe(true);
+    });
   });
 });

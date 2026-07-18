@@ -3,7 +3,7 @@ export class SessionCompressor {
   private maxCharsPerMessage: number;
 
   constructor(maxMessages: number = 20, maxCharsPerMessage: number = 2000) {
-    this.maxMessages = maxMessages;
+    this.maxMessages = Math.max(3, maxMessages);
     this.maxCharsPerMessage = maxCharsPerMessage;
   }
 
@@ -14,7 +14,7 @@ export class SessionCompressor {
       return messages;
     }
 
-    const recentCount = this.maxMessages - 2;
+    const recentCount = this.maxMessages - 3;
     const firstTwo = messages.slice(0, 2);
     const recent = messages.slice(-recentCount);
     const middle = messages.slice(2, -recentCount);

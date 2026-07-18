@@ -97,21 +97,21 @@ describe("SearchTool command injection prevention (N1)", () => {
     expect(result.output).toContain("cannot be empty");
   });
 
-  it("uses search tool via ToolRegistry with approval check", async () => {
+  it("uses search tool via ToolRegistry without approval (read-only)", async () => {
     const { ToolRegistry } = await import("../src/tools/toolRegistry");
     const registry = new ToolRegistry(tmpDir);
 
-    expect(registry.requiresApproval("search", "hello")).toBe(true);
+    expect(registry.requiresApproval("search", "hello")).toBe(false);
   });
 });
 
-describe("SearchTool is not in SAFE_TOOLS (N1)", () => {
-  it("search requires approval like other command-executing tools", async () => {
+describe("SearchTool is in SAFE_TOOLS (N1)", () => {
+  it("search is safe and auto-executable (read-only tool)", async () => {
     const { DefaultToolApprovalPolicy } = await import("../src/tools/toolApprovalPolicy");
     const policy = new DefaultToolApprovalPolicy();
 
-    expect(policy.isAutoExecutable("search", "test query")).toBe(false);
-    expect(policy.requiresApproval("search", "test query")).toBe(true);
-    expect(policy.getToolRiskLevel("search", "test query")).toBe("destructive");
+    expect(policy.isAutoExecutable("search", "test query")).toBe(true);
+    expect(policy.requiresApproval("search", "test query")).toBe(false);
+    expect(policy.getToolRiskLevel("search", "test query")).toBe("safe");
   });
 });

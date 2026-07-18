@@ -5,15 +5,15 @@ export class GitTool {
   public constructor(private readonly terminal: TerminalTool) {}
 
   public status(): Promise<ToolResult> {
-    return this.terminal.run("git status --short");
+    return this.terminal.runSafe("git", ["status", "--short"]);
   }
 
   public diff(): Promise<ToolResult> {
-    return this.terminal.run("git --no-pager diff");
+    return this.terminal.runSafe("git", ["--no-pager", "diff"]);
   }
 
   public branch(): Promise<ToolResult> {
-    return this.terminal.run("git branch --show-current");
+    return this.terminal.runSafe("git", ["branch", "--show-current"]);
   }
 
   public stage(paths: string[]): Promise<ToolResult> {
@@ -44,17 +44,18 @@ export class GitTool {
     if (!/^[a-zA-Z0-9._\-/]+$/.test(name)) {
       return Promise.resolve({ ok: false, output: "Invalid branch name. Use only letters, digits, hyphens, underscores, dots, and slashes." });
     }
-    return this.terminal.run(`git checkout -b ${name}`);
+    return this.terminal.runSafe("git", ["checkout", "-b", name]);
   }
 
   public log(count: number = 10): Promise<ToolResult> {
-    return this.terminal.run(`git log --oneline -n ${count}`);
+    const safeCount = Math.min(Math.max(1, count), 100);
+    return this.terminal.runSafe("git", ["log", "--oneline", "-n", String(safeCount)]);
   }
 
   public show(ref: string): Promise<ToolResult> {
     if (!ref || !ref.trim()) {
       return Promise.resolve({ ok: false, output: "Ref cannot be empty." });
     }
-    return this.terminal.run(`git show ${ref}`);
+    return this.terminal.runSafe("git", ["show", ref]);
   }
 }

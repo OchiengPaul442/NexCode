@@ -29,16 +29,16 @@ describe("Test tool approval policy (N11)", () => {
     expect(policy.requiresApproval("batch_edit", "{}")).toBe(true);
   });
 
-  it("search now requires approval (was previously safe)", () => {
-    expect(policy.requiresApproval("search", "test query")).toBe(true);
+  it("search is now safe (read-only tool, no approval needed)", () => {
+    expect(policy.requiresApproval("search", "test query")).toBe(false);
   });
 
-  it("search is classified as destructive", () => {
-    expect(policy.getToolRiskLevel("search", "test query")).toBe("destructive");
+  it("search is classified as safe", () => {
+    expect(policy.getToolRiskLevel("search", "test query")).toBe("safe");
   });
 
-  it("search is NOT auto-executable", () => {
-    expect(policy.isAutoExecutable("search", "test query")).toBe(false);
+  it("search is auto-executable", () => {
+    expect(policy.isAutoExecutable("search", "test query")).toBe(true);
   });
 
   it("safe tools remain safe", () => {

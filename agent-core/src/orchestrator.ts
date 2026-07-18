@@ -170,10 +170,15 @@ export class NexcodeOrchestrator {
       },
     );
 
-    this.providerCheckPromise = this.router.checkProviders().catch(() => ({}));
+    this.providerCheckPromise = this.router.checkProviders().catch((err) => {
+      console.error("[nexcode] Provider check failed:", err);
+      return {};
+    });
     this.prompts = new PromptStore(this.config.promptsDir);
     this.memory = new MemoryManager(this.config.memoryDir);
-    this.memory.initialize().catch(() => {});
+    this.memory.initialize().catch((err) => {
+      console.error("[nexcode] Memory initialization failed:", err);
+    });
     this.mcpRegistry = new McpRegistry();
     this.tools = new ToolRegistry(this.config.workspaceRoot, {
       tavilyApiKey: this.config.toolDefaults.tavilyApiKey,
@@ -806,10 +811,8 @@ export class NexcodeOrchestrator {
       response.diagnostics = diagnostics;
 
       this.tokenCounter.trackRequest(
-        JSON.stringify(
-          request.prompt +
+        request.prompt +
             (response.text ? response.text.slice(0, 200) : ""),
-        ),
         response.text,
       );
       const stats = this.tokenCounter.getStats();
@@ -1281,7 +1284,7 @@ export class NexcodeOrchestrator {
 
       return {
         text: responseText.trim() || "Agent loop completed with no output.",
-        modeUsed: mode,
+        modeUsed: resolvedMode,
         providerUsed: provider,
         modelUsed: model,
         proposedEdits: [],
@@ -2809,8 +2812,7 @@ export class NexcodeOrchestrator {
       return error.name === "AbortError";
     }
 
-    const message = String(error ?? "").toLowerCase();
-    return message.includes("abort") || message.includes("cancelled");
+    return false;
   }
 
   private getSessionId(workspaceRoot?: string): string {

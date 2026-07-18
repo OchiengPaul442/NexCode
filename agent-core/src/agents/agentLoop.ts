@@ -149,9 +149,13 @@ export async function* runAgentLoop(
     description: def.description,
     inputSchema: def.inputSchema,
   }));
+  let consecutiveNudges = 0;
+  const MAX_NUDGES = 2;
 
+  let timedOut = false;
   for (let turn = 0; turn < config.maxTurns; turn++) {
     if (Date.now() - startedAt > config.timeoutMs) {
+      timedOut = true;
       yield {
         type: "stopped",
         message: "Agent loop stopped: time budget exceeded",
@@ -182,9 +186,9 @@ export async function* runAgentLoop(
         // Degrade on the last retry: drop tools and trim messages to reduce context
         const shouldDegrade = retry === maxProviderRetries;
         const retryTools = shouldDegrade ? undefined : toolSchemas;
-        const retryMessages = shouldDegrade
-          ? (messages.length > 0 ? [messages[0], ...messages.slice(-4)] : messages)
-          : messages;
+    const retryMessages = shouldDegrade
+      ? (messages.length > 1 ? [messages[0], messages[1], ...messages.slice(-3)] : messages)
+      : messages;
 
         response = await router.generate(retryMessages, {
           tools: retryTools,
@@ -249,10 +253,12 @@ export async function* runAgentLoop(
       const textToolCalls = tryParseTextAsToolCall(response.text);
       if (textToolCalls && textToolCalls.length > 0) {
         response.toolCalls = textToolCalls;
-      } else if (response.text && turn < config.maxTurns - 1) {
+        consecutiveNudges = 0;
+      } else if (response.text && turn < config.maxTurns - 1 && consecutiveNudges < MAX_NUDGES) {
         // Model returned text without tool calls — it may be describing what it
         // would do instead of doing it. Send a follow-up to nudge it toward using
         // the actual tool.
+        consecutiveNudges++;
         messages.push({ role: "assistant", content: response.text });
         messages.push({
           role: "user",
@@ -264,6 +270,8 @@ export async function* runAgentLoop(
         messages.push({ role: "assistant", content: response.text });
         return messages;
       }
+    } else {
+      consecutiveNudges = 0;
     }
 
     messages.push({
@@ -298,7 +306,9 @@ export async function* runAgentLoop(
       // Schema validation (§4 B2)
       const toolDef = toolDefinitions.find((d) => d.name === toolCall.function.name);
       let validationError: string | null = parseError;
-      if (!validationError && toolDef) {
+      if (!toolDef) {
+        validationError = `Unknown tool: ${toolCall.function.name}. Available tools: ${toolDefinitions.map((d) => d.name).join(", ")}`;
+      } else if (!validationError) {
         const errors = validateInput(args, toolDef.inputSchema);
         if (errors.length > 0) {
           validationError = errors.map((e) => `${e.field}: ${e.message}`).join("; ");
@@ -307,7 +317,7 @@ export async function* runAgentLoop(
 
       // If validation failed, return error to model instead of executing
       if (validationError) {
-        const toolDurationMs = Date.now() - Date.now();
+        const toolDurationMs = 0;
         messages.push({
           role: "tool",
           content: JSON.stringify({
@@ -389,7 +399,7 @@ export async function* runAgentLoop(
     }
   }
 
-  if (messages[messages.length - 1]?.role === "tool") {
+  if (!timedOut && messages[messages.length - 1]?.role === "tool") {
     messages.push({
       role: "user",
       content:

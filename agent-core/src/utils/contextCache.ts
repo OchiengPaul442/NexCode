@@ -23,10 +23,14 @@ export class ContextCache {
   }
 
   invalidate(pattern: string): void {
+    const keysToDelete: string[] = [];
     for (const key of this.cache.keys()) {
       if (key.includes(pattern)) {
-        this.cache.delete(key);
+        keysToDelete.push(key);
       }
+    }
+    for (const key of keysToDelete) {
+      this.cache.delete(key);
     }
   }
 

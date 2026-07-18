@@ -36,8 +36,8 @@ describe("DefaultToolApprovalPolicy", () => {
     expect(policy.requiresApproval("read", "src/file.ts")).toBe(false);
   });
 
-  it("requires approval for search (executes rg/grep commands)", () => {
-    expect(policy.requiresApproval("search", "TODO")).toBe(true);
+  it("does NOT require approval for search (read-only tool)", () => {
+    expect(policy.requiresApproval("search", "TODO")).toBe(false);
   });
 
   it("requires approval for write", () => {

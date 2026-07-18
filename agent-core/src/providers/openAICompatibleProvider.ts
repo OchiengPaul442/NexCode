@@ -169,6 +169,8 @@ export class OpenAICompatibleProvider implements ModelProvider {
       }
 
       lastResponse = response;
+      // Consume the response body before retrying to prevent resource leaks
+      await response.body?.cancel().catch(() => {});
       await this.wait(this.resolveRetryDelayMs(response, attempt), signal);
     }
 

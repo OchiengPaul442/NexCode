@@ -34,12 +34,12 @@ describe("Security Regression Tests", () => {
       expect(policy.getToolRiskLevel("delete", "src/index.ts")).toBe("destructive");
     });
 
-    it("should require approval for search tool (executes commands)", () => {
-      expect(policy.requiresApproval("search", "test query")).toBe(true);
+    it("should NOT require approval for search tool (read-only)", () => {
+      expect(policy.requiresApproval("search", "test query")).toBe(false);
     });
 
-    it("should classify search as destructive", () => {
-      expect(policy.getToolRiskLevel("search", "test query")).toBe("destructive");
+    it("should classify search as safe", () => {
+      expect(policy.getToolRiskLevel("search", "test query")).toBe("safe");
     });
   });
 

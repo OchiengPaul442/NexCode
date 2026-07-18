@@ -84,7 +84,7 @@ export class FileSystemTool {
         };
       }
 
-      const newContent = content.replace(oldText, newText);
+      const newContent = content.replace(oldText, () => newText);
       await fs.writeFile(absolutePath, newContent, "utf8");
 
       return {

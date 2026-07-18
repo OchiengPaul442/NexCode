@@ -37,10 +37,6 @@ export const SAFE_PATTERNS = [
   /^Set-Location\b/,
   /^Select-String\b/,
   /^Test-Path\b/,
-  /^New-Item\b/,
-  /^Remove-Item\b/,
-  /^Copy-Item\b/,
-  /^Move-Item\b/,
   /^Write-Output\b/,
   /^Get-Command\b/,
   /^Compare-Object\b/,
@@ -48,12 +44,6 @@ export const SAFE_PATTERNS = [
   /^Get-PSDrive\b/,
   /^Get-Date\b/,
   /^Expand-Archive\b/,
-  /^git\s+status\b/,
-  /^git\s+diff\b/,
-  /^git\s+log\b/,
-  /^git\s+branch\b/,
-  /^git\s+show\b/,
-  /^npm\s+test\b/,
   // Windows commands
   /^dir\b/i,
   /^cd\b/i,
@@ -67,8 +57,8 @@ const SHELL_EXPANSION_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /`[^`]+`/, reason: 'Backtick command substitution is blocked.' },
   { pattern: /\$\{/, reason: 'Parameter expansion ${} is blocked.' },
   { pattern: /;\s*(?:rm|del|format|mkfs|shutdown|reboot)/i, reason: 'Chained destructive command blocked.' },
-  { pattern: /(?:^|(?<=\s))&&\s*\w/, reason: 'Chained command (&&) is blocked.' },
-  { pattern: /(?:^|(?<=\s))\|\s*\w/, reason: 'Piped command (|) is blocked.' },
+  { pattern: /&&\s*\w/, reason: 'Chained command (&&) is blocked.' },
+  { pattern: /\|\s*\w/, reason: 'Piped command (|) is blocked.' },
   { pattern: /;\s*\w/, reason: 'Chained command (;) is blocked.' },
   { pattern: /\bnode\s+-e\b/i, reason: 'Inline node execution (node -e) is blocked.' },
   { pattern: /\bpython\s+-c\b/i, reason: 'Inline python execution (python -c) is blocked.' },
@@ -78,12 +68,16 @@ const SHELL_EXPANSION_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
 // BLOCKED_COMMANDS - always blocked regardless of approval
 const BLOCKED_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   {
-    pattern: /\brm\s+-rf\s+\//,
+    pattern: /\brm\s+-(?:[a-z]*r[a-z]*f[a-z]*|f[a-z]*r[a-z]*)\b\s+\//,
     reason: "rm -rf on root is blocked.",
   },
   {
     pattern: /\brm\s+--recursive\s+--force\s+\//,
     reason: "rm --recursive --force on root is blocked.",
+  },
+  {
+    pattern: /\brm\s+--force\s+--recursive\s+\//,
+    reason: "rm --force --recursive on root is blocked.",
   },
   {
     pattern: /\bmkfs\b/,
@@ -514,6 +508,10 @@ export class TerminalTool {
       while (!settled || queue.length > 0) {
         if (queue.length === 0) {
           await new Promise<void>((resolve) => {
+            if (settled) {
+              resolve();
+              return;
+            }
             resolveNext = resolve;
           });
         }

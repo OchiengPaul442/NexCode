@@ -34,9 +34,9 @@ export class ShortTermMemory {
     }
 
     if (this.persistDir) {
-      this.persistQueue = this.persistQueue.then(() =>
-        this.persistSession(sessionId),
-      );
+      this.persistQueue = this.persistQueue
+        .then(() => this.persistSession(sessionId))
+        .catch(() => {});
     }
   }
 
@@ -53,9 +53,9 @@ export class ShortTermMemory {
     }
 
     if (this.persistDir) {
-      this.persistQueue = this.persistQueue.then(() =>
-        this.removePersistedSession(sessionId),
-      );
+      this.persistQueue = this.persistQueue
+        .then(() => this.removePersistedSession(sessionId))
+        .catch(() => {});
     }
   }
 
@@ -145,6 +145,12 @@ export class ShortTermMemory {
     while (this.sessions.size > MAX_SESSIONS && this.accessOrder.length > 0) {
       const oldest = this.accessOrder.shift()!;
       this.sessions.delete(oldest);
+      // Clean up persisted file
+      if (this.persistDir) {
+        this.persistQueue = this.persistQueue
+          .then(() => this.removePersistedSession(oldest))
+          .catch(() => {});
+      }
     }
   }
 

@@ -49,7 +49,7 @@ export class LongTermMemoryStore {
         this.cacheMtimeMs = Date.now();
 
         if (this.cache.length > MAX_ENTRIES) {
-          this.evictOldest();
+          await this.evictOldest();
         }
       }
     });
@@ -128,7 +128,7 @@ export class LongTermMemoryStore {
     return ranked.slice(0, limit).map((item) => item.entry);
   }
 
-  private evictOldest(): void {
+  private async evictOldest(): Promise<void> {
     if (!this.cache || this.cache.length <= MAX_ENTRIES) {
       return;
     }
@@ -142,13 +142,26 @@ export class LongTermMemoryStore {
     const recovered = this.cache
       .map((e) => JSON.stringify(e))
       .join("\n");
-    fs.writeFile(
-      this.filePath,
-      `${recovered}${recovered ? "\n" : ""}`,
-      "utf8",
-    ).then(() => {
+    try {
+      await fs.writeFile(
+        this.filePath,
+        `${recovered}${recovered ? "\n" : ""}`,
+        "utf8",
+      );
       this.cacheMtimeMs = Date.now();
-    });
+    } catch {
+      // On write failure, reload cache from disk to stay consistent
+      try {
+        const raw = await fs.readFile(this.filePath, "utf8");
+        const lines = raw.split(/\r?\n/).filter((l) => l.trim());
+        this.cache = lines.map((l) => JSON.parse(l) as LongTermMemoryEntry).filter(
+          (e) => e && e.id && e.timestamp && e.type,
+        );
+      } catch {
+        // File doesn't exist or is corrupt, start fresh
+        this.cache = [];
+      }
+    }
   }
 
   private async readAll(): Promise<LongTermMemoryEntry[]> {

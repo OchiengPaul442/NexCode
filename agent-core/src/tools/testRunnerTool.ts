@@ -6,15 +6,26 @@ interface TestToolInput {
   filter?: string;
 }
 
+const SHELL_METACHARACTER_RE = /["'`$\\|;&(){}[\]!#~]/;
+
+function sanitizeFilter(filter: string): string {
+  if (SHELL_METACHARACTER_RE.test(filter)) {
+    throw new Error(
+      `Test filter contains disallowed shell metacharacters. Only alphanumeric, spaces, hyphens, underscores, dots, and slashes are allowed.`
+    );
+  }
+  return filter;
+}
+
 const RUNNER_COMMANDS: Record<string, (filter?: string) => string> = {
-  npm: (filter) => filter ? `npm test -- --grep "${filter}"` : "npm test",
-  vitest: (filter) => filter ? `npx vitest run "${filter}"` : "npx vitest run",
-  jest: (filter) => filter ? `npx jest "${filter}"` : "npx jest",
-  pytest: (filter) => filter ? `pytest -k "${filter}"` : "pytest",
-  go: (filter) => filter ? `go test -run "${filter}" ./...` : "go test ./...",
-  maven: (filter) => filter ? `mvn test -Dtest="${filter}"` : "mvn test",
-  gradle: (filter) => filter ? `gradle test --tests "${filter}"` : "gradle test",
-  cargo: (filter) => filter ? `cargo test "${filter}"` : "cargo test",
+  npm: (filter) => filter ? `npm test -- --grep "${sanitizeFilter(filter)}"` : "npm test",
+  vitest: (filter) => filter ? `npx vitest run "${sanitizeFilter(filter)}"` : "npx vitest run",
+  jest: (filter) => filter ? `npx jest "${sanitizeFilter(filter)}"` : "npx jest",
+  pytest: (filter) => filter ? `pytest -k "${sanitizeFilter(filter)}"` : "pytest",
+  go: (filter) => filter ? `go test -run "${sanitizeFilter(filter)}" ./...` : "go test ./...",
+  maven: (filter) => filter ? `mvn test -Dtest="${sanitizeFilter(filter)}"` : "mvn test",
+  gradle: (filter) => filter ? `gradle test --tests "${sanitizeFilter(filter)}"` : "gradle test",
+  cargo: (filter) => filter ? `cargo test "${sanitizeFilter(filter)}"` : "cargo test",
 };
 
 export class TestRunnerTool {

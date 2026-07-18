@@ -19,7 +19,6 @@ const MAX_ATTACHMENT_TEXT_CHARS = 3_000;
 const MAX_FILE_TREE_FILES = 500;
 const MAX_ABBREVIATED_TREE_FILES = 100;
 const MAX_WORKSPACE_TOKEN_BUDGET = 3000;
-const workspaceTokenCounter = new TokenCounter();
 
 interface WorkspaceSnapshotCache {
   workspaceRoot: string;
@@ -141,12 +140,13 @@ export async function buildWorkspaceContext(
   }
 
   const joined = sections.join("\n\n");
-  const estimatedTokens = workspaceTokenCounter.estimateTokens(joined);
+  const localTokenCounter = new TokenCounter();
+  const estimatedTokens = localTokenCounter.estimateTokens(joined);
   if (estimatedTokens > MAX_WORKSPACE_TOKEN_BUDGET) {
     const result = truncateToFitTokenBudget(
       joined,
       MAX_WORKSPACE_TOKEN_BUDGET,
-      workspaceTokenCounter,
+      localTokenCounter,
       "Workspace context truncated to fit token budget",
     );
     workspaceContextCache.set(cacheKey, result);

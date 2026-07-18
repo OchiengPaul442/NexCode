@@ -174,6 +174,7 @@ export class ToolRegistry {
     }
 
     let result: ToolResult;
+    try {
     switch (toolName) {
       case "search":
         result = await this.search.search(arg);
@@ -354,6 +355,12 @@ export class ToolRegistry {
           output:
             "Unknown tool command. Use one of: search, web-search, terminal, git-status, git-diff, git-branch, git-stage, git-unstage, git-commit, git-create-branch, git-log, git-show, test, read, write, append, patch, move, delete, delete-contents, mcp, batch_edit",
         };
+    }
+    } catch (error) {
+      result = {
+        ok: false,
+        output: `Tool execution failed: ${String(error)}`,
+      };
     }
 
     this.emitAudit(toolName, arg, true, false, result.ok, result.output, auditStart);

@@ -294,3 +294,34 @@ export function getToolDefinition(name: string): ToolDefinition | undefined {
 export function getAllToolDefinitions(): ToolDefinition[] {
   return [...TOOL_DEFINITIONS];
 }
+
+export function getToolDefinitionsForMode(mode: string): ToolDefinition[] {
+  const modeToolMap: Record<string, string[]> = {
+    coder: [
+      "read", "write", "append", "patch", "move", "delete", "delete-contents",
+      "terminal", "test", "search", "web-search",
+      "git-status", "git-diff", "git-branch", "git-stage", "git-unstage", "git-commit", "git-create-branch", "git-log", "git-show",
+      "batch_edit", "mcp",
+    ],
+    planner: [
+      "read", "search", "web-search",
+      "git-status", "git-diff", "git-log",
+    ],
+    reviewer: [
+      "read", "search",
+      "git-status", "git-diff", "git-log", "git-show",
+    ],
+    qa: [
+      "read", "write", "append", "patch",
+      "terminal", "test", "search",
+      "git-status", "git-diff",
+    ],
+    security: [
+      "read", "search",
+      "git-status", "git-diff", "git-log", "git-show",
+    ],
+  };
+
+  const toolNames = modeToolMap[mode] ?? modeToolMap["coder"];
+  return TOOL_DEFINITIONS.filter((def) => toolNames.includes(def.name));
+}

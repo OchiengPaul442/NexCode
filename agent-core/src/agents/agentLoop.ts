@@ -166,14 +166,26 @@ export async function* runAgentLoop(
       yield { type: "status", message: "Analyzing request..." };
     }
 
-    // Retry logic for provider errors (§4 B4)
+    // Retry logic for provider errors with degradation on last attempt (§4 B4)
     let response;
     let lastError: unknown;
     const maxProviderRetries = process.env.NODE_ENV === "test" ? 0 : 2;
     for (let retry = 0; retry <= maxProviderRetries; retry++) {
+      if (signal?.aborted) {
+        yield { type: "stopped", message: "Agent loop cancelled" };
+        return messages;
+      }
+
       try {
-        response = await router.generate(messages, {
-          tools: toolSchemas,
+        // Degrade on the last retry: drop tools and trim messages to reduce context
+        const shouldDegrade = retry === maxProviderRetries;
+        const retryTools = shouldDegrade ? undefined : toolSchemas;
+        const retryMessages = shouldDegrade
+          ? (messages.length > 0 ? [messages[0], ...messages.slice(-4)] : messages)
+          : messages;
+
+        response = await router.generate(retryMessages, {
+          tools: retryTools,
           maxTokens: config.maxTokensPerTurn,
           signal,
         });
@@ -181,25 +193,49 @@ export async function* runAgentLoop(
       } catch (error) {
         lastError = error;
         const errorStr = String(error ?? "").toLowerCase();
+        const isAbort = signal?.aborted || errorStr.includes("abort") || errorStr.includes("cancelled");
+        if (isAbort) {
+          yield { type: "stopped", message: "Agent loop cancelled" };
+          return messages;
+        }
         const isRecoverable = errorStr.includes("timeout") ||
           errorStr.includes("econnrefused") ||
           errorStr.includes("fetch failed") ||
           errorStr.includes("upstream") ||
           errorStr.includes("malformed") ||
-          errorStr.includes("json");
+          errorStr.includes("json") ||
+          errorStr.includes("context length") ||
+          errorStr.includes("context window");
 
         if (isRecoverable && retry < maxProviderRetries) {
-          yield {
-            type: "status",
-            message: `Provider error (attempt ${retry + 1}/${maxProviderRetries + 1}): ${String(error).slice(0, 100)}. Retrying...`,
-          };
-          // Wait before retry with exponential backoff
-          await new Promise((resolve) => setTimeout(resolve, 1000 * (retry + 1)));
+          const nextIsLast = retry + 1 === maxProviderRetries;
+          if (nextIsLast) {
+            yield {
+              type: "status",
+              message: `Retrying with reduced context (dropping tools and older messages)...`,
+            };
+          } else {
+            yield {
+              type: "status",
+              message: `Provider error (attempt ${retry + 1}/${maxProviderRetries + 1}): ${String(error).slice(0, 100)}. Retrying...`,
+            };
+          }
+          // Exponential backoff with jitter to avoid thundering herd (AWS best practice)
+          const baseDelay = 500;
+          const backoff = baseDelay * Math.pow(2, retry);
+          const jitter = backoff * Math.random();
+          await new Promise((resolve) => setTimeout(resolve, backoff + jitter));
           continue;
         }
         // Non-recoverable or max retries exceeded
         throw error;
       }
+    }
+
+    // Check abort after retry loop — signal may have fired during response processing
+    if (signal?.aborted) {
+      yield { type: "stopped", message: "Agent loop cancelled" };
+      return messages;
     }
 
     if (!response) {

@@ -454,8 +454,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       const orchestrator = await this.getOrchestrator(workspaceRoot);
       const activeEditor = vscode.window.activeTextEditor;
 
-      const abortController = new AbortController();
-      this.currentAbortController = abortController;
+      this.currentAbortController = task.abortController;
 
       const fullRequest: OrchestratorRequest = {
         ...request,
@@ -463,7 +462,6 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         activeFilePath: activeEditor?.document.uri.fsPath,
         selectedText: activeEditor?.document.getText(activeEditor.selection),
         attachments: this.taskController.resolveAttachmentsForPrompt(selectedAttachmentIds),
-        abortSignal: abortController.signal,
       };
 
       this.postMessage({
@@ -476,6 +474,16 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       });
 
       for await (const event of orchestrator.stream(fullRequest)) {
+        if (fullRequest.abortSignal?.aborted) {
+          // Send stopped event so the webview clears "Working..." state
+          this.postMessage({
+            type: "stopped",
+            taskId: task.id,
+            message: "Request stopped by user.",
+          });
+          break;
+        }
+
         if (event.type === "toolApprovalRequired") {
           // Check workspace trust first
           if (!this.workspaceTrustService.canRunTool(event.toolName)) {
@@ -717,15 +725,22 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
 
   private cancelPrompt(): void {
     const taskManager = this.taskController.getTaskManager();
-    const activeTasks = taskManager.getActiveTasks();
-    if (activeTasks.length > 0) {
-      for (const task of activeTasks) {
-        taskManager.cancelTask(task.id);
-      }
-    }
 
+    // Abort the currently running task
     if (this.currentAbortController) {
       this.currentAbortController.abort("cancelled-by-user");
+    }
+
+    // Cancel all queued tasks so they don't auto-start after the current one stops
+    const queuedTasks = taskManager.getQueuedTasks();
+    for (const task of queuedTasks) {
+      taskManager.cancelTask(task.id);
+    }
+
+    // Also cancel any other active tasks
+    const activeTasks = taskManager.getActiveTasks();
+    for (const task of activeTasks) {
+      taskManager.cancelTask(task.id);
     }
   }
 

@@ -48,7 +48,7 @@ export function detectModelCapabilities(
     )
   ) {
     contextWindow = 128_000;
-  } else if (/qwen2\.5-coder:14b|qwen2\.5-coder:7b|nemotron-mini/.test(lower)) {
+  } else if (/qwen2\.5-coder:(32b|14b|7b)|nemotron-mini/.test(lower)) {
     contextWindow = 32_768;
   }
 

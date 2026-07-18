@@ -51,7 +51,7 @@ import {
 import { ContextCompressor } from "./utils/contextCompressor";
 import { SessionCompressor } from "./utils/sessionCompressor";
 import { runAgentLoop, AgentLoopConfig } from "./agents/agentLoop";
-import { getAllToolDefinitions } from "./tools/toolDefinitions";
+import { getToolDefinitionsForMode } from "./tools/toolDefinitions";
 
 export interface NexcodeOrchestratorOptions {
   workspaceRoot?: string;
@@ -1224,7 +1224,7 @@ export class NexcodeOrchestrator {
     abortSignal?: AbortSignal,
   ): AsyncGenerator<OrchestratorEvent, OrchestratorResponse> {
     const resolvedMode = (mode === "auto" ? "coder" : mode) as Exclude<AgentMode, "auto">;
-    const toolDefs = getAllToolDefinitions();
+    const toolDefs = getToolDefinitionsForMode(resolvedMode);
     const systemPrompt = await this.prompts.getPrompt(resolvedMode);
     const groundingNote = buildGroundingNoteForMode(resolvedMode, prompt);
 
@@ -2836,7 +2836,10 @@ export class NexcodeOrchestrator {
 
   private ensureNotAborted(signal?: AbortSignal): void {
     if (signal?.aborted) {
-      throw new Error("Request aborted.");
+      const reason = signal.reason ?? "Request aborted.";
+      const err = new Error(typeof reason === "string" ? reason : String(reason));
+      err.name = "AbortError";
+      throw err;
     }
   }
 
@@ -2855,12 +2858,16 @@ export class NexcodeOrchestrator {
   }
 
   private isAbortError(error: unknown): boolean {
+    if (error instanceof Error && error.name === "AbortError") {
+      return true;
+    }
+
     if (typeof DOMException !== "undefined" && error instanceof DOMException) {
       return error.name === "AbortError";
     }
 
     const message = String(error ?? "").toLowerCase();
-    return message.includes("abort");
+    return message.includes("abort") || message.includes("cancelled");
   }
 
   private getSessionId(workspaceRoot?: string): string {

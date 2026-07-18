@@ -5,6 +5,7 @@ import {
   ModelResponse,
   ToolCallRequest,
 } from "../types";
+import { detectModelCapabilities } from "./modelRouter";
 
 interface OllamaToolCall {
   function: {
@@ -87,6 +88,13 @@ export class OllamaProvider implements ModelProvider {
     return kind === "stream" ? 600_000 : 300_000;
   }
 
+  private resolveNumCtx(model: string): number {
+    const detected = detectModelCapabilities(model, "ollama").contextWindow;
+    const envCap = Number(process.env.NEXCODE_OLLAMA_MAX_CONTEXT);
+    const cap = Number.isFinite(envCap) && envCap > 0 ? envCap : 8192;
+    return Math.min(detected, cap);
+  }
+
   public async generate(request: ModelRequest): Promise<ModelResponse> {
     const abort = this.createAbortController(
       request.signal,
@@ -100,6 +108,7 @@ export class OllamaProvider implements ModelProvider {
         options: {
           temperature: request.temperature ?? 0.2,
           num_predict: request.maxTokens,
+          num_ctx: this.resolveNumCtx(request.model),
         },
       };
 
@@ -137,6 +146,10 @@ export class OllamaProvider implements ModelProvider {
           }
         }
 
+        if (errorMsg.includes("can't find closing") || errorMsg.includes("Value looks like object")) {
+          errorMsg = `Context window overflow: The request was too large for the model's context window (${this.resolveNumCtx(request.model)} tokens). Try a shorter prompt, a smaller file, or increase NEXCODE_OLLAMA_MAX_CONTEXT. Original error: ${errorMsg}`;
+        }
+
         // Some models can't handle tool definitions and return a JSON parse error.
         // Retry without tools to get a text-only response.
         if (
@@ -150,6 +163,7 @@ export class OllamaProvider implements ModelProvider {
           return this.generateWithoutTools(request, abort);
         }
 
+        console.error(`[ollama] request failed: ${request.messages?.length ?? 0} messages, ${JSON.stringify(payload).length} chars, ${request.tools?.length ?? 0} tools, num_ctx=${this.resolveNumCtx(request.model)}`);
         throw new Error(errorMsg);
       }
 
@@ -330,6 +344,7 @@ export class OllamaProvider implements ModelProvider {
       options: {
         temperature: request.temperature ?? 0.2,
         num_predict: request.maxTokens,
+        num_ctx: this.resolveNumCtx(request.model),
       },
     };
 
@@ -381,6 +396,7 @@ export class OllamaProvider implements ModelProvider {
         options: {
           temperature: request.temperature ?? 0.2,
           num_predict: request.maxTokens,
+          num_ctx: this.resolveNumCtx(request.model),
         },
       };
 
@@ -404,6 +420,7 @@ export class OllamaProvider implements ModelProvider {
         } catch {
           // Use status-based message
         }
+        console.error(`[ollama] request failed: ${request.messages?.length ?? 0} messages, ${JSON.stringify(payload).length} chars, ${request.tools?.length ?? 0} tools, num_ctx=${this.resolveNumCtx(request.model)}`);
         throw new Error(errorMsg);
       }
 

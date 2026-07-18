@@ -1619,22 +1619,24 @@ html, body {
   padding-right: 12px;
 }
 
-/* ── Activity Section ──────────────────────────────────────────────────── */
-.nk-activity-section {
-  margin-top: 8px;
+/* ── Activity Section (compact, ChatGPT-style) ──────────────────────────── */
+.nk-activity {
+  margin-top: 6px;
   border: 1px solid var(--vscode-widget-border);
   border-radius: var(--nk-radius-sm);
   overflow: hidden;
+  font-size: 11px;
 }
 
 .nk-activity-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 10px;
+  padding: 5px 10px;
   cursor: pointer;
   user-select: none;
   background: var(--vscode-editorWidget-background);
+  transition: background 0.1s ease;
 }
 
 .nk-activity-header:hover {
@@ -1645,43 +1647,108 @@ html, body {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
 }
 
 .nk-activity-icon {
   color: var(--vscode-descriptionForeground);
+  flex-shrink: 0;
 }
 
 .nk-activity-title {
-  font-size: 11px;
   font-weight: 600;
   color: var(--vscode-foreground);
+  flex-shrink: 0;
 }
 
 .nk-activity-meta {
-  font-size: 11px;
   color: var(--vscode-descriptionForeground);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nk-activity-sep {
+  opacity: 0.5;
 }
 
 .nk-activity-ok {
-  font-size: 10px;
   font-weight: 500;
   color: var(--vscode-terminal-ansiGreen, #4ec9b0);
+  flex-shrink: 0;
 }
 
 .nk-activity-fail {
-  font-size: 10px;
   font-weight: 500;
   color: var(--vscode-terminal-ansiRed, #f48771);
+  flex-shrink: 0;
 }
 
 .nk-activity-chevron {
   color: var(--vscode-descriptionForeground);
   transition: transform 0.15s ease;
+  flex-shrink: 0;
 }
 
 .nk-activity-body {
   border-top: 1px solid var(--vscode-widget-border);
-  padding: 4px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.nk-activity-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-family: var(--vscode-editor-font-family, monospace);
+}
+
+.nk-activity-row:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.nk-activity-row-status {
+  width: 12px;
+  text-align: center;
+  flex-shrink: 0;
+  font-size: 10px;
+}
+
+.nk-activity-row-icon {
+  color: var(--vscode-descriptionForeground);
+  display: flex;
+  flex-shrink: 0;
+}
+
+.nk-activity-row-label {
+  font-weight: 600;
+  color: var(--vscode-descriptionForeground);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.3px;
+  width: 48px;
+  flex-shrink: 0;
+}
+
+.nk-activity-row-cmd {
+  color: var(--vscode-terminal-foreground, #cccccc);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.nk-activity-row-dur {
+  color: var(--vscode-descriptionForeground);
+  font-size: 10px;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .nk-summary-card {

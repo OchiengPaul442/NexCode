@@ -2589,6 +2589,7 @@ function ChangedFilesSummary({
   };
 
   // Build a map from file path to proposed edit (for inline diff)
+  // Use flexible matching: check if paths end with each other (handles absolute vs relative)
   const editMap = useMemo(() => {
     const map = new Map<string, ProposedEdit>();
     if (proposedEdits) {
@@ -2598,6 +2599,21 @@ function ChangedFilesSummary({
     }
     return map;
   }, [proposedEdits]);
+
+  // Helper to find an edit for a given file path (flexible matching)
+  const findEditForFile = (filePath: string): ProposedEdit | undefined => {
+    // Exact match first
+    if (editMap.has(filePath)) return editMap.get(filePath);
+    // Check if any edit path ends with this file path or vice versa
+    for (const [editPath, edit] of editMap) {
+      if (filePath.endsWith(editPath) || editPath.endsWith(filePath)) return edit;
+      // Also check just the filename
+      const editBase = editPath.split(/[/\\]/).pop() ?? "";
+      const fileBase = filePath.split(/[/\\]/).pop() ?? "";
+      if (editBase && fileBase && editBase === fileBase) return edit;
+    }
+    return undefined;
+  };
 
   return (
     <div className="nk-changeset">
@@ -2626,7 +2642,7 @@ function ChangedFilesSummary({
           <ChangedFileRow
             key={file.path}
             file={file}
-            edit={editMap.get(file.path)}
+            edit={findEditForFile(file.path)}
             isExpanded={expandedFiles.has(file.path)}
             onToggle={toggleFile}
           />
@@ -2739,8 +2755,23 @@ const ActivitySection = React.memo(function ActivitySection({
   const totalDuration = toolExecutions.reduce((sum, e) => sum + (e.durationMs ?? 0), 0);
   const durationStr = totalDuration < 1000 ? `${totalDuration}ms` : totalDuration < 60000 ? `${(totalDuration / 1000).toFixed(1)}s` : `${Math.floor(totalDuration / 60000)}m ${Math.floor((totalDuration % 60000) / 1000)}s`;
 
+  // Group tools by type for compact display
+  const grouped = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const exec of toolExecutions) {
+      const name = exec.toolName === "terminal" ? "shell" : exec.toolName;
+      counts[name] = (counts[name] ?? 0) + 1;
+    }
+    return counts;
+  }, [toolExecutions]);
+
+  const groupedParts = Object.entries(grouped)
+    .map(([name, count]) => `${count} ${name}${count !== 1 ? "s" : ""}`)
+    .join("  ");
+
   return (
-    <div className="nk-activity-section">
+    <div className="nk-activity">
+      {/* Compact header - always visible */}
       <div
         className="nk-activity-header"
         role="button"
@@ -2758,7 +2789,9 @@ const ActivitySection = React.memo(function ActivitySection({
           <Activity size={12} className="nk-activity-icon" />
           <span className="nk-activity-title">Activity</span>
           <span className="nk-activity-meta">
-            {toolExecutions.length} tool{toolExecutions.length !== 1 ? "s" : ""} &middot; {durationStr}
+            {groupedParts}
+            <span className="nk-activity-sep">&middot;</span>
+            {durationStr}
           </span>
           {successCount > 0 && (
             <span className="nk-activity-ok">{successCount} ok</span>
@@ -2773,19 +2806,45 @@ const ActivitySection = React.memo(function ActivitySection({
           style={{ transform: expanded ? "rotate(90deg)" : "rotate(0deg)" }}
         />
       </div>
+
+      {/* Expanded detail list */}
       {expanded && (
         <div className="nk-activity-body">
-          {toolExecutions.map((exec, i) => (
-            <ToolStatusIndicator
-              key={`activity-${i}`}
-              toolName={exec.toolName}
-              command={exec.command}
-              status={exec.status}
-              message={exec.message}
-              durationMs={exec.durationMs}
-              filesChanged={exec.filesChanged}
-            />
-          ))}
+          {toolExecutions.map((exec, i) => {
+            const icon = (() => {
+              switch (exec.toolName) {
+                case "terminal": return <Terminal size={11} />;
+                case "read": return <FileText size={11} />;
+                case "write": case "append": return <Pencil size={11} />;
+                case "delete": return <Trash2 size={11} />;
+                case "search": case "web-search": return <Search size={11} />;
+                case "patch": return <Code2 size={11} />;
+                default: return <Code2 size={11} />;
+              }
+            })();
+            const label = exec.toolName === "terminal" ? "Shell" : exec.toolName;
+            const dur = exec.durationMs != null
+              ? exec.durationMs < 1000 ? `${exec.durationMs}ms` : `${(exec.durationMs / 1000).toFixed(1)}s`
+              : null;
+            const statusIcon = exec.status === "success" ? "✓" : exec.status === "error" ? "✗" : "⏳";
+            const statusColor = exec.status === "success"
+              ? "var(--vscode-terminal-ansiGreen, #4ec9b0)"
+              : exec.status === "error"
+                ? "var(--vscode-terminal-ansiRed, #f48771)"
+                : "var(--vscode-terminal-ansiYellow, #dcdcaa)";
+            // Truncate command for display
+            const cmd = exec.command.length > 60 ? exec.command.slice(0, 60) + "..." : exec.command;
+
+            return (
+              <div key={i} className="nk-activity-row">
+                <span className="nk-activity-row-status" style={{ color: statusColor }}>{statusIcon}</span>
+                <span className="nk-activity-row-icon">{icon}</span>
+                <span className="nk-activity-row-label">{label}</span>
+                <span className="nk-activity-row-cmd" title={exec.command}>{cmd}</span>
+                {dur && <span className="nk-activity-row-dur">{dur}</span>}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

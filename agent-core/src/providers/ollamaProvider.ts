@@ -7,6 +7,27 @@ import {
 } from "../types";
 import { detectModelCapabilities } from "./modelRouter";
 import { getModelEffortConfig } from "../utils/modelEffortConfig";
+import {
+  TokenCounter,
+  MIN_OUTPUT_RESERVE,
+  SAFETY_MARGIN,
+} from "../utils/tokenCounter";
+
+export function isExplicitContextError(message: string): boolean {
+  return /context (window|length)|too many tokens|input.*too large|exceeds.*context|prompt.*too long/i.test(message);
+}
+
+export function isToolOrJsonParseError(message: string): boolean {
+  return /can't find closing|value looks like object|bad character|invalid character|malformed json/i.test(message);
+}
+
+export interface ContextBudgetCheck {
+  ok: boolean;
+  estimated: number;
+  budget: number;
+  contextWindow: number;
+  details: string;
+}
 
 interface OllamaToolCall {
   function: {
@@ -98,6 +119,29 @@ export class OllamaProvider implements ModelProvider {
     return detected;
   }
 
+  public checkContextBudget(request: ModelRequest): ContextBudgetCheck {
+    const contextWindow = this.resolveNumCtx(request.model);
+    const maxOutputTokens = request.maxTokens ?? MIN_OUTPUT_RESERVE;
+    const tokenCounter = new TokenCounter();
+    const estimated = tokenCounter.estimateRequestTokens(
+      request.messages,
+      request.tools,
+    );
+    const budget = tokenCounter.calculateInputBudget(contextWindow, maxOutputTokens);
+    const ok = estimated <= budget;
+    const details = [
+      `messages: ${request.messages.length}`,
+      `tools: ${request.tools?.length ?? 0}`,
+      `estimated_tokens: ${estimated}`,
+      `budget: ${budget}`,
+      `context_window: ${contextWindow}`,
+      `output_reserve: ${maxOutputTokens}`,
+      `safety_margin: ${SAFETY_MARGIN}`,
+      `headroom: ${budget - estimated}`,
+    ].join(", ");
+    return { ok, estimated, budget, contextWindow, details };
+  }
+
   public async generate(request: ModelRequest): Promise<ModelResponse> {
     const abort = this.createAbortController(
       request.signal,
@@ -160,21 +204,20 @@ export class OllamaProvider implements ModelProvider {
           }
         }
 
-        if (errorMsg.includes("can't find closing") || errorMsg.includes("Value looks like object")) {
-          errorMsg = `Context window overflow: The request was too large for the model's context window (${this.resolveNumCtx(request.model)} tokens). Try a shorter prompt, a smaller file, or increase NEXCODE_OLLAMA_MAX_CONTEXT. Original error: ${errorMsg}`;
-        }
-
         // Some models can't handle tool definitions and return a JSON parse error.
         // Retry without tools to get a text-only response.
         if (
+          isToolOrJsonParseError(errorMsg) &&
           request.tools &&
-          request.tools.length > 0 &&
-          (errorMsg.includes("can't find closing") ||
-           errorMsg.includes("Value looks like object") ||
-           errorMsg.includes("bad character") ||
-           errorMsg.includes("invalid character"))
+          request.tools.length > 0
         ) {
           return this.generateWithoutTools(request, abort);
+        }
+
+        if (isExplicitContextError(errorMsg)) {
+          errorMsg = `Context window overflow: The request was too large for the model's context window (${this.resolveNumCtx(request.model)} tokens). Try a shorter prompt, a smaller file, or increase NEXCODE_OLLAMA_MAX_CONTEXT. Original error: ${errorMsg}`;
+        } else if (isToolOrJsonParseError(errorMsg)) {
+          errorMsg = `Ollama tool/JSON parse error: ${errorMsg}`;
         }
 
         console.error(`[ollama] request failed: ${request.messages?.length ?? 0} messages, ${JSON.stringify(payload).length} chars, ${request.tools?.length ?? 0} tools, num_ctx=${this.resolveNumCtx(request.model)}`);
@@ -383,7 +426,7 @@ export class OllamaProvider implements ModelProvider {
         }
       }
 
-      if (errorMsg.includes("can't find closing") || errorMsg.includes("Value looks like object")) {
+      if (isExplicitContextError(errorMsg)) {
         errorMsg = `Context window overflow: The request was too large for the model's context window (${this.resolveNumCtx(request.model)} tokens). Try a shorter prompt, a smaller file, or increase NEXCODE_OLLAMA_MAX_CONTEXT. Original error: ${errorMsg}`;
       }
 
@@ -452,7 +495,7 @@ export class OllamaProvider implements ModelProvider {
           // Use status-based message
         }
 
-        if (errorMsg.includes("can't find closing") || errorMsg.includes("Value looks like object")) {
+        if (isExplicitContextError(errorMsg)) {
           errorMsg = `Context window overflow: The request was too large for the model's context window (${this.resolveNumCtx(request.model)} tokens). Try a shorter prompt, a smaller file, or increase NEXCODE_OLLAMA_MAX_CONTEXT. Original error: ${errorMsg}`;
         }
 

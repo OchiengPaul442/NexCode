@@ -4,6 +4,7 @@ node_modules/
 **/out/
 **/*.vsix
 **/.next/
+**/.opencode/
 **/.pytest_cache/
 **/__pycache__/
 extension/package-lock.json

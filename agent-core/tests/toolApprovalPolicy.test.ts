@@ -193,7 +193,7 @@ describe("Tool risk level and approval consistency (catches patch-class bugs)", 
 
   it("all tools are classified in exactly one of the risk lists", () => {
     const allToolNames = TOOL_DEFINITIONS.map((d) => d.name);
-    const safeList = ["read", "git-status", "git-diff", "git-branch", "git-log", "git-show"];
+    const safeList = ["read", "git-status", "git-diff", "git-branch", "git-log", "git-show", "workspace-stats"];
     const lowRiskList = ["write", "append", "patch"];
     const structuredList = ["test"];
     const destructiveList = [

@@ -280,6 +280,15 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       required: ["edits"],
     },
   },
+  {
+    name: "workspace-stats",
+    version: "1.0.0",
+    title: "Workspace statistics",
+    description: "Get file and directory counts, extensions breakdown, and skipped directories for the workspace.",
+    risk: "read-only",
+    timeoutMs: 30_000,
+    inputSchema: stringSchema(),
+  },
 ];
 
 const _byName = new Map<string, ToolDefinition>();
@@ -301,24 +310,28 @@ export function getToolDefinitionsForMode(mode: string): ToolDefinition[] {
       "read", "write", "append", "patch", "move", "delete", "delete-contents",
       "terminal", "test", "search", "web-search",
       "git-status", "git-diff", "git-branch", "git-stage", "git-unstage", "git-commit", "git-create-branch", "git-log", "git-show",
-      "batch_edit", "mcp",
+      "batch_edit", "mcp", "workspace-stats",
     ],
     planner: [
       "read", "search", "web-search",
       "git-status", "git-diff", "git-log",
+      "workspace-stats",
     ],
     reviewer: [
       "read", "search",
       "git-status", "git-diff", "git-log", "git-show",
+      "workspace-stats",
     ],
     qa: [
       "read", "write", "append", "patch",
       "terminal", "test", "search",
       "git-status", "git-diff",
+      "workspace-stats",
     ],
     security: [
       "read", "search",
       "git-status", "git-diff", "git-log", "git-show",
+      "workspace-stats",
     ],
   };
 

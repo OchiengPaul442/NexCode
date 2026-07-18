@@ -10,12 +10,12 @@ describe("Security Regression Tests", () => {
   describe("Tool Approval Policy", () => {
     const policy: ToolApprovalPolicy = new DefaultToolApprovalPolicy();
 
-    it("should classify test as low-risk (structured tool, auto-approved)", () => {
-      expect(policy.getToolRiskLevel("test", "npm test")).toBe("low-risk");
+    it("should classify test as destructive (executes repository code)", () => {
+      expect(policy.getToolRiskLevel("test", "npm test")).toBe("destructive");
     });
 
-    it("should NOT require approval for test tool (structured, auto-approved)", () => {
-      expect(policy.requiresApproval("test", "npm test")).toBe(false);
+    it("should require approval for test tool (runs arbitrary commands)", () => {
+      expect(policy.requiresApproval("test", "npm test")).toBe(true);
     });
 
     it("should classify read as safe", () => {

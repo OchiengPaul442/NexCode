@@ -119,6 +119,7 @@ interface ChatMessage {
   stopped?: boolean;
   startTime?: number;
   endTime?: number;
+  tokenUsage?: { input: number; output: number; total: number };
   reasoning: string[];
   debug: string[];
   proposedEdits: ProposedEdit[];
@@ -367,7 +368,6 @@ interface StoreState {
   ) => void;
   setProviderStatus: (status: ProviderStatus) => void;
   setModelSuggestions: (provider: ProviderId, models: string[]) => void;
-  updateSetting: (key: string, value: unknown) => void;
   setDraft: (sessionId: string, value: string) => void;
   addBackgroundAgent: (agent: SubAgentTask) => void;
   updateBackgroundAgent: (id: string, updates: Partial<SubAgentTask>) => void;
@@ -982,6 +982,7 @@ const useStore = create<StoreState>((set, get) => {
 
   const defaultSidebarSettings: SidebarSettings = {
     temperature: 0.2,
+    autoApprove: false,
     autoApplyChanges: false,
     requireTerminalApproval: true,
     showDebugPanel: false,
@@ -1551,8 +1552,8 @@ const useStore = create<StoreState>((set, get) => {
         setTimeout(() => {
           useStore.getState().setTaskQueue(
             useStore.getState().taskQueue.filter((t) => t.id !== taskId),
-            Math.max(0, useStore.getState().taskQueuePendingCount - (status === "queued" ? 1 : 0)),
-            useStore.getState().taskQueueActiveCount - (status === "running" || status === "planning" || status === "verifying" ? 1 : 0),
+            useStore.getState().taskQueuePendingCount,
+            Math.max(0, useStore.getState().taskQueueActiveCount - 1),
           );
         }, 3000);
       }
@@ -1717,6 +1718,93 @@ function formatTime(seconds: number): string {
   return `${mins}m ${secs}s`;
 }
 
+function ActivityTodosSection({ todos }: { todos: ActivityTodo[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const completed = todos.filter((t) => t.status === "completed").length;
+  const total = todos.length;
+  const inProgress = todos.find((t) => t.status === "in-progress");
+
+  return (
+    <div style={{
+      marginTop: "8px",
+      border: "1px solid var(--vscode-widget-border, #454545)",
+      borderRadius: "4px",
+      overflow: "hidden",
+      fontSize: "12px",
+    }}>
+      {/* Header - clickable to expand/collapse */}
+      <div
+        onClick={() => setExpanded(!expanded)}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "6px 10px",
+          background: "var(--vscode-sideBar-background, #252526)",
+          borderBottom: expanded ? "1px solid var(--vscode-widget-border, #454545)" : "none",
+          cursor: "pointer",
+          userSelect: "none",
+        }}
+      >
+        <span style={{ fontWeight: 600, color: "var(--vscode-foreground, #cccccc)" }}>
+          {completed} of {total} todos completed
+        </span>
+        <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+          {inProgress && (
+            <span style={{ color: "var(--vscode-descriptionForeground, #8b8b9a)", fontSize: "11px" }}>
+              {inProgress.title}
+            </span>
+          )}
+          <ChevronRight
+            size={12}
+            style={{
+              color: "var(--vscode-descriptionForeground, #8b8b9a)",
+              transform: expanded ? "rotate(90deg)" : "rotate(0deg)",
+              transition: "transform 0.15s ease",
+            }}
+          />
+        </span>
+      </div>
+      {/* Expanded todo list */}
+      {expanded && (
+        <div style={{ padding: "4px 0" }}>
+          {todos.map((todo) => (
+            <div
+              key={todo.id}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "4px 10px",
+                color: todo.status === "completed"
+                  ? "var(--vscode-descriptionForeground, #8b8b9a)"
+                  : "var(--vscode-foreground, #cccccc)",
+              }}
+            >
+              <span style={{ flexShrink: 0, width: "14px", textAlign: "center" }}>
+                {todo.status === "completed" && <CheckCircle2 size={12} style={{ color: "var(--vscode-terminal-ansiGreen, #4ec9b0)" }} />}
+                {todo.status === "in-progress" && <Radio size={12} style={{ color: "var(--vscode-terminal-ansiYellow, #dcdcaa)" }} />}
+                {todo.status === "not-started" && <Square size={10} style={{ color: "var(--vscode-descriptionForeground, #8b8b9a)" }} />}
+              </span>
+              <span style={{
+                textDecoration: todo.status === "completed" ? "line-through" : "none",
+                opacity: todo.status === "completed" ? 0.7 : 1,
+              }}>
+                {todo.title}
+              </span>
+              {todo.detail && (
+                <span style={{ color: "var(--vscode-descriptionForeground, #8b8b9a)", fontSize: "10px", marginLeft: "auto" }}>
+                  {todo.detail}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ResponseSummary({ message }: { message: ChatMessage }) {
   if (message.streaming || message.thinking) return null;
   if (!message.text) return null;
@@ -1856,7 +1944,7 @@ function MessageBubble({
                 markdown
                 className="markdown-body text-[13px] leading-relaxed"
                 showCursor
-                thinkingLabel={message.reasoning.at(-1) ?? "Working..."}
+                thinkingLabel={message.reasoning.length > 0 ? message.reasoning[message.reasoning.length - 1] : "Working..."}
                 onFrame={onAnimatedFrame}
               />
             )}
@@ -1914,93 +2002,9 @@ function MessageBubble({
         )}
 
         {/* Activity Todos - OpenCode-style task list */}
-        {!isUser && (message.activityTodos ?? []).length > 0 && (() => {
-          const todos = message.activityTodos!;
-          const completed = todos.filter((t) => t.status === "completed").length;
-          const total = todos.length;
-          const inProgress = todos.find((t) => t.status === "in-progress");
-          const [expanded, setExpanded] = useState(false);
-
-          return (
-            <div style={{
-              marginTop: "8px",
-              border: "1px solid var(--vscode-widget-border, #454545)",
-              borderRadius: "4px",
-              overflow: "hidden",
-              fontSize: "12px",
-            }}>
-              {/* Header - clickable to expand/collapse */}
-              <div
-                onClick={() => setExpanded(!expanded)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  padding: "6px 10px",
-                  background: "var(--vscode-sideBar-background, #252526)",
-                  borderBottom: expanded ? "1px solid var(--vscode-widget-border, #454545)" : "none",
-                  cursor: "pointer",
-                  userSelect: "none",
-                }}
-              >
-                <span style={{ fontWeight: 600, color: "var(--vscode-foreground, #cccccc)" }}>
-                  {completed} of {total} todos completed
-                </span>
-                <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                  {inProgress && (
-                    <span style={{ color: "var(--vscode-descriptionForeground, #8b8b9a)", fontSize: "11px" }}>
-                      {inProgress.title}
-                    </span>
-                  )}
-                  <ChevronRight
-                    size={12}
-                    style={{
-                      color: "var(--vscode-descriptionForeground, #8b8b9a)",
-                      transform: expanded ? "rotate(90deg)" : "rotate(0deg)",
-                      transition: "transform 0.15s ease",
-                    }}
-                  />
-                </span>
-              </div>
-              {/* Expanded todo list */}
-              {expanded && (
-                <div style={{ padding: "4px 0" }}>
-                  {todos.map((todo) => (
-                    <div
-                      key={todo.id}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "8px",
-                        padding: "4px 10px",
-                        color: todo.status === "completed"
-                          ? "var(--vscode-descriptionForeground, #8b8b9a)"
-                          : "var(--vscode-foreground, #cccccc)",
-                      }}
-                    >
-                      <span style={{ flexShrink: 0, width: "14px", textAlign: "center" }}>
-                        {todo.status === "completed" && <CheckCircle2 size={12} style={{ color: "var(--vscode-terminal-ansiGreen, #4ec9b0)" }} />}
-                        {todo.status === "in-progress" && <Radio size={12} style={{ color: "var(--vscode-terminal-ansiYellow, #dcdcaa)" }} />}
-                        {todo.status === "not-started" && <Square size={10} style={{ color: "var(--vscode-descriptionForeground, #8b8b9a)" }} />}
-                      </span>
-                      <span style={{
-                        textDecoration: todo.status === "completed" ? "line-through" : "none",
-                        opacity: todo.status === "completed" ? 0.7 : 1,
-                      }}>
-                        {todo.title}
-                      </span>
-                      {todo.detail && (
-                        <span style={{ color: "var(--vscode-descriptionForeground, #8b8b9a)", fontSize: "10px", marginLeft: "auto" }}>
-                          {todo.detail}
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })()}
+        {!isUser && (message.activityTodos ?? []).length > 0 && (
+          <ActivityTodosSection todos={message.activityTodos!} />
+        )}
 
         {/* Debug */}
         {!isUser && showDebug && message.debug.length > 0 && (
@@ -3978,7 +3982,7 @@ function App() {
                         vscode.postMessage({ type: "updateSetting", key: "toolApproval", value: "bypass" });
                       } else if (mode === "auto") {
                         useStore.getState().updateSetting("autoApprove", false);
-                        useStore.getState().updateSetting("requireTerminalApproval", true);
+                        useStore.getState().updateSetting("requireTerminalApproval", false);
                         vscode.postMessage({ type: "updateSetting", key: "toolApproval", value: "auto" });
                       } else {
                         useStore.getState().updateSetting("autoApprove", false);

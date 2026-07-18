@@ -8,6 +8,7 @@ import { FilesystemAdapter } from "../mcp/adapters/filesystemAdapter";
 import { SearchTool } from "./searchTool";
 import { TerminalTool } from "./terminalTool";
 import { TestRunnerTool } from "./testRunnerTool";
+import { getWorkspaceStats } from "./workspaceStatsTool";
 import { DefaultToolApprovalPolicy, ToolApprovalPolicy } from "./toolApprovalPolicy";
 import {
   StructuredToolResult,
@@ -316,6 +317,10 @@ export class ToolRegistry {
         }
         break;
       }
+      case "workspace-stats": {
+        result = await getWorkspaceStats(this.filesystem.workspaceRoot);
+        break;
+      }
       case "mcp": {
         if (!this.mcpRegistry) {
           result = {
@@ -353,7 +358,7 @@ export class ToolRegistry {
         result = {
           ok: false,
           output:
-            "Unknown tool command. Use one of: search, web-search, terminal, git-status, git-diff, git-branch, git-stage, git-unstage, git-commit, git-create-branch, git-log, git-show, test, read, write, append, patch, move, delete, delete-contents, mcp, batch_edit",
+            "Unknown tool command. Use one of: search, web-search, terminal, git-status, git-diff, git-branch, git-stage, git-unstage, git-commit, git-create-branch, git-log, git-show, test, read, write, append, patch, move, delete, delete-contents, mcp, batch_edit, workspace-stats",
         };
     }
     } catch (error) {

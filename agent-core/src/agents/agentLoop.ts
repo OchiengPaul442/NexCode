@@ -9,6 +9,7 @@ import { ModelRouter } from "../providers/modelRouter";
 import { ToolRegistry } from "../tools/toolRegistry";
 import { ToolDefinition, validateInput } from "../tools/toolProtocol";
 import { ApprovalCallback } from "../tools/toolApprovalPolicy";
+import { EvidenceStore } from "../tools/evidenceStore";
 
 export interface AgentLoopConfig {
   maxTurns: number;
@@ -133,6 +134,27 @@ function tryParseTextAsToolCall(text: string): ToolCallRequest[] | null {
   }
 }
 
+function buildReducedRetryMessages(messages: ChatMessage[]): ChatMessage[] {
+  let system: ChatMessage | undefined;
+  let latestUser: ChatMessage | undefined;
+  const nonSystemUser: ChatMessage[] = [];
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.role === "system" && !system) {
+      system = m;
+    } else if (m.role === "user" && !latestUser) {
+      latestUser = m;
+    } else if (m.role !== "system" && m.role !== "user") {
+      nonSystemUser.unshift(m);
+    }
+  }
+
+  const recentResults = nonSystemUser.slice(-2);
+
+  return [system, latestUser, ...recentResults].filter(Boolean) as ChatMessage[];
+}
+
 export async function* runAgentLoop(
   messages: ChatMessage[],
   router: ModelRouter,
@@ -142,6 +164,7 @@ export async function* runAgentLoop(
   signal?: AbortSignal,
   approvalCallback?: ApprovalCallback,
   reasoningEffort?: ReasoningEffort,
+  steeringProvider?: () => string | undefined,
 ): AsyncGenerator<OrchestratorEvent, ChatMessage[]> {
   const startedAt = Date.now();
   const toolSchemas: ToolCallRequestTool[] = toolDefinitions.map((def) => ({
@@ -156,6 +179,7 @@ export async function* runAgentLoop(
   const MAX_RECENT_FAILURES = 10;
 
   const MAX_TOOL_OUTPUT_TOKENS = 2000;
+  const evidenceStore = new EvidenceStore();
   let timedOut = false;
   for (let turn = 0; turn < config.maxTurns; turn++) {
     if (Date.now() - startedAt > config.timeoutMs) {
@@ -176,6 +200,15 @@ export async function* runAgentLoop(
       yield { type: "status", message: "Analyzing request..." };
     }
 
+    // Consume steering messages at turn boundaries
+    if (steeringProvider && turn > 0) {
+      let steeringMsg: string | undefined;
+      while ((steeringMsg = steeringProvider()) !== undefined) {
+        messages.push({ role: "user", content: `[Steering] ${steeringMsg}` });
+        yield { type: "status", message: "Steering message applied" };
+      }
+    }
+
     // Retry logic for provider errors with degradation on last attempt (§4 B4)
     let response;
     let lastError: unknown;
@@ -190,8 +223,8 @@ export async function* runAgentLoop(
         // Degrade on the last retry: drop tools and trim messages to reduce context
         const shouldDegrade = retry === maxProviderRetries;
         const retryTools = shouldDegrade ? undefined : toolSchemas;
-    const retryMessages = shouldDegrade
-      ? (messages.length > 1 ? [messages[0], messages[1], ...messages.slice(-3)] : messages)
+        const retryMessages = shouldDegrade
+      ? buildReducedRetryMessages(messages)
       : messages;
 
         response = await router.generate(retryMessages, {
@@ -386,9 +419,30 @@ export async function* runAgentLoop(
           : undefined;
 
       const MAX_TOOL_OUTPUT_CHARS = MAX_TOOL_OUTPUT_TOKENS * 4;
-      const truncatedOutput = result.output.length > MAX_TOOL_OUTPUT_CHARS
-        ? result.output.slice(0, MAX_TOOL_OUTPUT_CHARS) + "\n\n[Output truncated to ~" + MAX_TOOL_OUTPUT_TOKENS + " tokens]"
-        : result.output;
+      let truncatedOutput: string;
+      if (result.output.length > MAX_TOOL_OUTPUT_CHARS) {
+        const evidenceId = evidenceStore.add({
+          type: "tool_output",
+          content: result.output,
+          truncated: true,
+          metadata: {
+            source: `${toolCall.function.name} ${argString.slice(0, 100)}`,
+            timestamp: new Date().toISOString(),
+            sizeBytes: result.output.length,
+          },
+        });
+        const head = result.output.slice(0, MAX_TOOL_OUTPUT_CHARS);
+        const tailChars = 500;
+        const tail = result.output.slice(-tailChars);
+        truncatedOutput = [
+          head,
+          `\n\n[EVIDENCE: ${evidenceId}] Output truncated from ${result.output.length} chars to ~${MAX_TOOL_OUTPUT_TOKENS} tokens.`,
+          `Full output stored. Last ${tailChars} chars:`,
+          tail,
+        ].join("\n");
+      } else {
+        truncatedOutput = result.output;
+      }
       messages.push({
         role: "tool",
         content: truncatedOutput,

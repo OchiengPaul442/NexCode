@@ -65,6 +65,7 @@ export class TaskQueue {
       model: options.model ?? "qwen2.5-coder:14b",
       createdAt: Date.now(),
       steeringMessages: [],
+      attachments: options.attachments ?? [],
     };
 
     this.tasks.set(taskId, task);

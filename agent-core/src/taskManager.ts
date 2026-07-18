@@ -182,6 +182,7 @@ export class TaskQueueManager {
       reasoningEffort: item.reasoningEffort,
       allowWebSearch: item.allowWebSearch,
       abortSignal: controller.signal,
+      attachments: task.attachments ?? [],
     };
 
     return { task, request };

@@ -4,22 +4,22 @@ import { DefaultToolApprovalPolicy } from "../src/tools/toolApprovalPolicy";
 describe("Test tool approval policy (N11)", () => {
   const policy = new DefaultToolApprovalPolicy();
 
-  it("test tool does NOT require approval (structured tool, auto-approved)", () => {
-    expect(policy.requiresApproval("test", "npm test")).toBe(false);
+  it("test tool REQUIRES approval (executes repository code)", () => {
+    expect(policy.requiresApproval("test", "npm test")).toBe(true);
   });
 
-  it("test tool IS auto-executable (structured tool with fixed runners)", () => {
-    expect(policy.isAutoExecutable("test", "npm test")).toBe(true);
+  it("test tool is NOT auto-executable (runs arbitrary test commands)", () => {
+    expect(policy.isAutoExecutable("test", "npm test")).toBe(false);
   });
 
-  it("test tool is classified as low-risk (not safe, not destructive)", () => {
-    expect(policy.getToolRiskLevel("test", "npm test")).toBe("low-risk");
+  it("test tool is classified as destructive (executes untrusted code)", () => {
+    expect(policy.getToolRiskLevel("test", "npm test")).toBe("destructive");
   });
 
-  it("test tool auto-approves regardless of filter argument", () => {
-    expect(policy.requiresApproval("test", "")).toBe(false);
-    expect(policy.requiresApproval("test", "myTest")).toBe(false);
-    expect(policy.requiresApproval("test", "complex --filter expression")).toBe(false);
+  it("test tool requires approval regardless of filter argument", () => {
+    expect(policy.requiresApproval("test", "")).toBe(true);
+    expect(policy.requiresApproval("test", "myTest")).toBe(true);
+    expect(policy.requiresApproval("test", "complex --filter expression")).toBe(true);
   });
 
   it("other destructive tools still require approval", () => {

@@ -78,6 +78,7 @@ export interface OrchestratorRequest {
   allowTools?: boolean;
   allowWebSearch?: boolean;
   abortSignal?: AbortSignal;
+  steeringProvider?: () => string | undefined;
 }
 
 export interface EfficiencyMetrics {
@@ -273,6 +274,7 @@ export interface Task {
   completedAt?: number;
   abortController?: AbortController;
   steeringMessages: string[];
+  attachments?: RequestAttachment[];
   result?: string;
   error?: string;
   activityNote?: string;

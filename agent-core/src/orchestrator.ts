@@ -69,6 +69,7 @@ export interface NexcodeOrchestratorOptions {
   approvalCallback?: ApprovalCallback;
   modeTemperatures?: Partial<Record<AgentMode, number>>;
   agentModels?: import("./config").AgentModels;
+  steeringProvider?: () => string | undefined;
 }
 
 type AutoRoutingStrategy =
@@ -131,11 +132,13 @@ export class NexcodeOrchestrator {
   private readonly sessionCompressor = new SessionCompressor();
   private readonly ephemeralSessionId = randomUUID();
   private readonly approvalCallback?: ApprovalCallback;
+  private readonly steeringProvider?: () => string | undefined;
   private readonly tokenCounter = new TokenCounter();
   private readonly efficiencyTracker = new EfficiencyTracker();
 
   public constructor(options: NexcodeOrchestratorOptions = {}) {
     this.approvalCallback = options.approvalCallback;
+    this.steeringProvider = options.steeringProvider;
     this.config = createRuntimeConfig({
       workspaceRoot: options.workspaceRoot,
       promptsDir: options.promptsDir,
@@ -429,12 +432,22 @@ export class NexcodeOrchestrator {
           : attachmentContext;
       }
 
-      const contextTokenEstimate = this.tokenCounter.estimateTokens(
-        JSON.stringify({ prompt: request.prompt, sessionContext, workspaceContext, memoryContext }),
+      const toolDefs = getToolDefinitionsForMode(
+        (mode === "auto" ? "coder" : mode) as Exclude<AgentMode, "auto">,
       );
       const modelContextWindow = detectModelCapabilities(model, provider).contextWindow;
-      const compressionThreshold = Math.floor(modelContextWindow * 0.7);
+      const inputBudget = this.tokenCounter.calculateInputBudget(modelContextWindow);
+      const contextTokenEstimate = this.tokenCounter.estimateRequestTokens(
+        [
+          { role: "system", content: JSON.stringify({ prompt: request.prompt, sessionContext, workspaceContext, memoryContext }) },
+        ],
+        toolDefs,
+      );
+      const compressionThreshold = inputBudget;
       if (contextTokenEstimate > compressionThreshold) {
+        diagnostics.push(
+          `[context-budget] approaching limit: estimated ${contextTokenEstimate} tokens, budget ${compressionThreshold} tokens, model context ${modelContextWindow} tokens`,
+        );
         const compressedSession = this.sessionCompressor.compressSession(
           rawSessionMessages.map((m) => ({ role: m.role, text: m.content })),
         );
@@ -506,6 +519,10 @@ export class NexcodeOrchestrator {
         request.workspaceRoot,
         request.activeFilePath,
       );
+      const workspaceStatsCommand =
+        request.allowTools !== false
+          ? this.extractWorkspaceStatsRequest(request.prompt)
+          : null;
 
       let response: OrchestratorResponse | null = null;
       if (
@@ -588,6 +605,51 @@ export class NexcodeOrchestrator {
 
           yield step.value;
         }
+
+      } else if (workspaceStatsCommand) {
+        executedToolCommand = workspaceStatsCommand;
+        latestActivityFiles = [
+          { path: "workspace", status: "viewed", summary: "Collecting workspace stats" },
+        ];
+
+        yield {
+          type: "status",
+          message: "Collecting workspace statistics...",
+        };
+
+        const result = await this.tools.runToolCall(workspaceStatsCommand);
+        const boundedOutput = clampText(
+          result.output,
+          MAX_TOOL_OUTPUT_CHARS,
+          "Tool output truncated",
+        );
+
+        if (!result.ok) {
+          diagnostics.push(boundedOutput);
+        }
+
+        const finalText = `## Workspace Statistics\n\n\`\`\`\n${boundedOutput}\n\`\`\``;
+
+        for (const token of chunkText(finalText, 32)) {
+          yield { type: "token", token };
+        }
+
+        response = {
+          text: finalText,
+          modeUsed: mode,
+          providerUsed: provider,
+          modelUsed: model,
+          proposedEdits: [],
+          diagnostics,
+        };
+
+        this.memory.appendSessionMessage(sessionId, {
+          role: "assistant",
+          content: finalText,
+        });
+
+        yield { type: "final", response };
+        return;
 
       } else if (request.prompt.trimStart().startsWith("/edit ")) {
         const parsedEdit = this.parseEditCommand(request.prompt);
@@ -694,6 +756,7 @@ export class NexcodeOrchestrator {
             strategy.pipeline,
             request.abortSignal,
             request.reasoningEffort,
+            request.steeringProvider,
           );
 
           while (true) {
@@ -740,6 +803,7 @@ export class NexcodeOrchestrator {
             diagnostics,
             request.abortSignal,
             request.reasoningEffort,
+            request.steeringProvider,
           );
 
           while (true) {
@@ -781,6 +845,7 @@ export class NexcodeOrchestrator {
           diagnostics,
           request.abortSignal,
           request.reasoningEffort,
+          request.steeringProvider,
         );
 
         while (true) {
@@ -1067,6 +1132,7 @@ export class NexcodeOrchestrator {
     pipeline: Exclude<AgentMode, "auto">[],
     abortSignal?: AbortSignal,
     reasoningEffort?: ReasoningEffort,
+    steeringProvider?: () => string | undefined,
   ): AsyncGenerator<OrchestratorEvent, OrchestratorResponse> {
     const composedChunks: string[] = [];
     let planContent: string | undefined;
@@ -1106,20 +1172,20 @@ export class NexcodeOrchestrator {
       let stageText = "";
 
       try {
-        // Build stage-specific context
+        // Build stage-specific context (only stage additions, no duplication of workspace/memory/session)
         const stageContextParts = [
-          `User request:\n${prompt}`,
-          workspaceContext ? `Workspace context:\n${workspaceContext}` : "",
-          memoryContext ? `Memory context:\n${memoryContext}` : "",
-          sessionContext ? `Conversation history:\n${sessionContext}` : "",
           planContent && stage !== "planner" ? `Plan:\n${planContent}` : "",
           implementationDraft && stage === "reviewer" ? `Implementation draft:\n${implementationDraft}` : "",
         ].filter((part) => part.length > 0);
 
+        const stagePrompt = stageContextParts.length > 0
+          ? `${prompt}\n\n${stageContextParts.join("\n\n")}`
+          : prompt;
+
         // Use agent loop for each pipeline stage
         for await (const event of this.runAgentLoopStreaming(
           stage,
-          stageContextParts.join("\n\n"),
+          stagePrompt,
           provider,
           model,
           temperature,
@@ -1129,6 +1195,7 @@ export class NexcodeOrchestrator {
           diagnostics,
           abortSignal,
           reasoningEffort,
+          steeringProvider,
         )) {
           this.ensureNotAborted(abortSignal);
           if (event.type === "token") {
@@ -1234,6 +1301,7 @@ export class NexcodeOrchestrator {
     diagnostics: string[],
     abortSignal?: AbortSignal,
     reasoningEffort?: ReasoningEffort,
+    steeringProvider?: () => string | undefined,
   ): AsyncGenerator<OrchestratorEvent, OrchestratorResponse> {
     const resolvedMode = (mode === "auto" ? "coder" : mode) as Exclude<AgentMode, "auto">;
     const toolDefs = getToolDefinitionsForMode(resolvedMode);
@@ -1274,6 +1342,7 @@ export class NexcodeOrchestrator {
         abortSignal,
         this.approvalCallback,
         reasoningEffort,
+        steeringProvider ?? this.steeringProvider,
       )) {
         yield event;
       }
@@ -2424,6 +2493,27 @@ export class NexcodeOrchestrator {
         if (candidate) {
           return candidate;
         }
+      }
+    }
+
+    return null;
+  }
+
+  private extractWorkspaceStatsRequest(prompt: string): string | null {
+    const normalized = prompt.toLowerCase().trim();
+    if (!normalized) return null;
+
+    const patterns = [
+      /\b(?:how many|count|number of)\s+(?:files?|folders?|directories?|dirs?)\b/i,
+      /\b(?:file|folder|directory|dir)\s+(?:count|stats?|statistics|breakdown)\b/i,
+      /\bworkspace\s+(?:stats?|statistics|summary|overview)\b/i,
+      /\b(?:what|show)\s+(?:is|are)\s+the\s+(?:file|folder|directory)\s+(?:count|stats?|breakdown)\b/i,
+      /\b(?:list|give|show)\s+(?:me\s+)?(?:workspace\s+)?(?:file|folder|directory)\s+(?:count|stats?|statistics|breakdown)\b/i,
+    ];
+
+    for (const pattern of patterns) {
+      if (pattern.test(normalized)) {
+        return "workspace-stats";
       }
     }
 

@@ -192,7 +192,6 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
   private currentWorkspaceRoot?: string;
   private readonly taskController: TaskController;
   private readonly editReviewService: EditReviewService;
-  private currentAbortController?: AbortController;
   private readonly pendingApprovals = new Map<string, { resolve: (approved: boolean) => void; timer: ReturnType<typeof setTimeout> }>();
 
   public constructor(
@@ -450,7 +449,8 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     }
 
     const { task, request } = nextTask;
-    const selectedAttachmentIds = request.attachments?.map((a: RequestAttachment) => a.id) ?? [];
+    const selectedAttachments = (request.attachments ?? []) as RequestAttachment[];
+    const selectedAttachmentIds = selectedAttachments.map((a) => a.id);
 
     this.postMessage({
       type: "taskStarted",
@@ -468,14 +468,13 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       const orchestrator = await this.getOrchestrator(workspaceRoot);
       const activeEditor = vscode.window.activeTextEditor;
 
-      this.currentAbortController = task.abortController;
-
       const fullRequest: OrchestratorRequest = {
         ...request,
         workspaceRoot,
         activeFilePath: activeEditor?.document.uri.fsPath,
         selectedText: activeEditor?.document.getText(activeEditor.selection),
         attachments: this.taskController.resolveAttachmentsForPrompt(selectedAttachmentIds),
+        steeringProvider: () => this.taskController.getTaskManager().popSteeringMessage(task.id),
       };
 
       this.postMessage({
@@ -511,7 +510,6 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       const messageText = this.formatErrorForUi(error);
       taskManager.failTask(task.id, messageText);
     } finally {
-      this.currentAbortController = undefined;
       this.taskController.clearResolvedAttachments(selectedAttachmentIds);
       this.taskController.postAttachments();
       this.postMessage({ type: "end", taskId: task.id });
@@ -688,18 +686,13 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
   private cancelPrompt(): void {
     const taskManager = this.taskController.getTaskManager();
 
-    // Abort the currently running task
-    if (this.currentAbortController) {
-      this.currentAbortController.abort("cancelled-by-user");
-    }
-
-    // Cancel all queued tasks so they don't auto-start after the current one stops
+    // Cancel all queued tasks
     const queuedTasks = taskManager.getQueuedTasks();
     for (const task of queuedTasks) {
       taskManager.cancelTask(task.id);
     }
 
-    // Also cancel any other active tasks
+    // Cancel all active tasks (each has its own abort controller)
     const activeTasks = taskManager.getActiveTasks();
     for (const task of activeTasks) {
       taskManager.cancelTask(task.id);
@@ -967,7 +960,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
             if (safeTools.includes(toolName)) {
               return true;
             }
-            const safeTerminalPatterns = ["ls", "pwd", "echo", "cat", "head", "tail", "wc", "git status", "git diff", "git log", "git branch", "git show", "npm test", "cargo", "go build", "go test"];
+            const safeTerminalPatterns = ["ls", "pwd", "echo", "cat", "head", "tail", "wc", "git status", "git diff", "git log", "git branch", "git show"];
             if (toolName === "terminal" && safeTerminalPatterns.some(p => arg.trim().startsWith(p))) {
               return true;
             }

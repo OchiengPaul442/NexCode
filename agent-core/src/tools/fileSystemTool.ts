@@ -29,7 +29,7 @@ function enhanceFileSystemError(error: unknown, operation: string, targetPath: s
 export class FileSystemTool {
   private readonly compressor = new ContextCompressor(8000);
 
-  public constructor(private readonly workspaceRoot: string) {}
+  public constructor(public readonly workspaceRoot: string) {}
 
   public async readFile(targetPath: string): Promise<ToolResult> {
     try {

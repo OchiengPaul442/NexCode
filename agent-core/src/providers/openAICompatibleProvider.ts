@@ -5,6 +5,20 @@ import {
   ToolCallRequest,
 } from "../types";
 import { getModelEffortConfig } from "../utils/modelEffortConfig";
+import { detectModelCapabilities } from "./modelRouter";
+import {
+  TokenCounter,
+  MIN_OUTPUT_RESERVE,
+  SAFETY_MARGIN,
+} from "../utils/tokenCounter";
+
+export interface ContextBudgetCheck {
+  ok: boolean;
+  estimated: number;
+  budget: number;
+  contextWindow: number;
+  details: string;
+}
 
 interface OpenAIMessage {
   role: string;
@@ -96,6 +110,32 @@ export class OpenAICompatibleProvider implements ModelProvider {
         `Model "${model}" is not available on OpenCode Go. Use one of: ${validModels.join(", ")}`,
       );
     }
+  }
+
+  public checkContextBudget(request: ModelRequest): ContextBudgetCheck {
+    const contextWindow = detectModelCapabilities(
+      request.model,
+      "openai-compatible",
+    ).contextWindow;
+    const maxOutputTokens = request.maxTokens ?? MIN_OUTPUT_RESERVE;
+    const tokenCounter = new TokenCounter();
+    const estimated = tokenCounter.estimateRequestTokens(
+      request.messages,
+      request.tools,
+    );
+    const budget = tokenCounter.calculateInputBudget(contextWindow, maxOutputTokens);
+    const ok = estimated <= budget;
+    const details = [
+      `messages: ${request.messages.length}`,
+      `tools: ${request.tools?.length ?? 0}`,
+      `estimated_tokens: ${estimated}`,
+      `budget: ${budget}`,
+      `context_window: ${contextWindow}`,
+      `output_reserve: ${maxOutputTokens}`,
+      `safety_margin: ${SAFETY_MARGIN}`,
+      `headroom: ${budget - estimated}`,
+    ].join(", ");
+    return { ok, estimated, budget, contextWindow, details };
   }
 
   private shouldRetryStatus(status: number): boolean {

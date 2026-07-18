@@ -11,7 +11,7 @@
     "node": ">=18"
   },
   "scripts": {
-    "build": "npm run -w agent-core build && npm run -w extension build",
+    "build": "npm run -w agent-core build && npm run -w extension build && npm run typecheck:webview",
     "test": "npm run -w agent-core test",
     "lint": "npm run -w agent-core build && npm run -w agent-core lint && npm run -w extension lint",
     "typecheck:webview": "tsc -p extension/webview/tsconfig.json",

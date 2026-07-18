@@ -73,13 +73,13 @@ async function testRealRequestWithContext(model, contextSize) {
 }
 
 // Run budget tests for each model
-for (const model of ['qwen3:8b', 'qwen2.5-coder:14b']) {
+for (const model of ['gpt-oss:120b-cloud']) {
   await testBudgetWithModel(model);
 }
 
 // Run real requests with increasing context sizes
 for (const size of [1000, 5000, 10000, 20000]) {
-  await testRealRequestWithContext('qwen2.5-coder:14b', size);
+  await testRealRequestWithContext('gpt-oss:120b-cloud', size);
 }
 
 console.log('\n=== Context Budget Stress Test Complete ===');

@@ -231,6 +231,8 @@ interface SidebarSettings {
   showDebugPanel: boolean;
   enableWebSearch: boolean;
   permissionLevel: PermissionLevel;
+  openAIBaseUrl?: string;
+  openAIApiKey?: string;
 }
 
 interface PersistedState {
@@ -988,6 +990,8 @@ const useStore = create<StoreState>((set, get) => {
     showDebugPanel: false,
     enableWebSearch: true,
     permissionLevel: "default" as PermissionLevel,
+    openAIBaseUrl: "",
+    openAIApiKey: "",
   };
 
   const initialSessions = persisted?.sessions?.length
@@ -3967,6 +3971,38 @@ function App() {
                     )}
                   </select>
                 </div>
+
+                {/* OpenAI Compatible Settings - only show when provider is openai-compatible */}
+                {activeSession.provider === 'openai-compatible' && (
+                  <>
+                    <div className="nk-settings-section">
+                      <div className="nk-settings-label">API Base URL</div>
+                      <input
+                        className="nk-settings-input"
+                        type="text"
+                        placeholder="https://api.openai.com/v1"
+                        value={settings.openAIBaseUrl ?? ''}
+                        onChange={(e) => {
+                          useStore.getState().updateSetting('openAIBaseUrl', e.target.value);
+                          vscode.postMessage({ type: 'updateSetting', key: 'openAIBaseUrl', value: e.target.value });
+                        }}
+                      />
+                    </div>
+                    <div className="nk-settings-section">
+                      <div className="nk-settings-label">API Key</div>
+                      <input
+                        className="nk-settings-input"
+                        type="password"
+                        placeholder="sk-..."
+                        value={settings.openAIApiKey ?? ''}
+                        onChange={(e) => {
+                          useStore.getState().updateSetting('openAIApiKey', e.target.value);
+                          vscode.postMessage({ type: 'updateSetting', key: 'openAIApiKey', value: e.target.value });
+                        }}
+                      />
+                    </div>
+                  </>
+                )}
 
                 {/* Permission Mode */}
                 <div className="nk-settings-section">

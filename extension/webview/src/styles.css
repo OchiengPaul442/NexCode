@@ -1734,6 +1734,25 @@ html, body {
   outline: none;
 }
 
+.nk-settings-input {
+  width: 100%;
+  padding: 4px 8px;
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-widget-border);
+  color: var(--vscode-foreground);
+  border-radius: var(--nk-radius-sm);
+  font-size: 12px;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+.nk-settings-input:focus {
+  border-color: var(--vscode-focusBorder);
+  outline: none;
+}
+.nk-settings-input::placeholder {
+  color: var(--vscode-descriptionForeground);
+}
+
 .nk-settings-toggle-row {
   display: flex;
   justify-content: space-between;

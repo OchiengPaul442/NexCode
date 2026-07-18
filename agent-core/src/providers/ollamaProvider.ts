@@ -109,7 +109,7 @@ export class OllamaProvider implements ModelProvider {
           function: {
             name: tool.name,
             description: tool.description,
-            parameters: tool.inputSchema,
+            parameters: this.sanitizeSchema(tool.inputSchema),
           },
         }));
       }
@@ -136,6 +136,20 @@ export class OllamaProvider implements ModelProvider {
             errorMsg = `Ollama: ${body}`;
           }
         }
+
+        // Some models can't handle tool definitions and return a JSON parse error.
+        // Retry without tools to get a text-only response.
+        if (
+          request.tools &&
+          request.tools.length > 0 &&
+          (errorMsg.includes("can't find closing") ||
+           errorMsg.includes("Value looks like object") ||
+           errorMsg.includes("bad character") ||
+           errorMsg.includes("invalid character"))
+        ) {
+          return this.generateWithoutTools(request, abort);
+        }
+
         throw new Error(errorMsg);
       }
 
@@ -180,7 +194,7 @@ export class OllamaProvider implements ModelProvider {
         const extractedCalls = this.extractToolCallsFromText(text);
         if (extractedCalls.length > 0) {
           return {
-            text: "",
+            text,
             toolCalls: extractedCalls,
             raw: json,
           };
@@ -274,6 +288,84 @@ export class OllamaProvider implements ModelProvider {
     }
 
     return calls;
+  }
+
+  /**
+   * Remove empty required arrays from a JSON Schema — some Ollama versions
+   * choke on `"required": []` (valid JSON Schema but triggers model parsing bugs).
+   */
+  private sanitizeSchema(schema: Record<string, unknown>): Record<string, unknown> {
+    const cleaned: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(schema)) {
+      if (key === "required" && Array.isArray(value) && value.length === 0) {
+        continue; // omit empty required array
+      }
+      if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+        cleaned[key] = this.sanitizeSchema(value as Record<string, unknown>);
+      } else if (Array.isArray(value)) {
+        cleaned[key] = value.map((item) =>
+          typeof item === "object" && item !== null
+            ? this.sanitizeSchema(item as Record<string, unknown>)
+            : item,
+        );
+      } else {
+        cleaned[key] = value;
+      }
+    }
+    return cleaned;
+  }
+
+  /**
+   * Retry request without tool definitions when the model can't handle them.
+   * The model's text response will later be parsed for embedded tool calls.
+   */
+  private async generateWithoutTools(
+    request: ModelRequest,
+    abort: { controller: AbortController; clear: () => void },
+  ): Promise<ModelResponse> {
+    const textPayload = {
+      model: request.model,
+      messages: request.messages,
+      stream: false,
+      options: {
+        temperature: request.temperature ?? 0.2,
+        num_predict: request.maxTokens,
+      },
+    };
+
+    const response = await fetch(`${this.baseUrl}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(textPayload),
+      signal: abort.controller.signal,
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      let errorMsg = `Ollama returned status ${response.status}`;
+      try {
+        const errorJson = JSON.parse(body);
+        if (errorJson.error) {
+          errorMsg = `Ollama: ${errorJson.error}`;
+        }
+      } catch {
+        if (body && body.length < 300) {
+          errorMsg = `Ollama: ${body}`;
+        }
+      }
+      throw new Error(errorMsg);
+    }
+
+    const json = (await response.json()) as OllamaChatResponse;
+    const text = json.message?.content ?? json.response ?? "";
+
+    // Try to extract tool calls from the text response
+    const extractedCalls = this.extractToolCallsFromText(text);
+    if (extractedCalls.length > 0) {
+      return { text, toolCalls: extractedCalls, raw: json };
+    }
+
+    return { text, raw: json };
   }
 
   public async *stream(request: ModelRequest): AsyncGenerator<string> {

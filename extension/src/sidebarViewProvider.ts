@@ -454,12 +454,16 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       const orchestrator = await this.getOrchestrator(workspaceRoot);
       const activeEditor = vscode.window.activeTextEditor;
 
+      const abortController = new AbortController();
+      this.currentAbortController = abortController;
+
       const fullRequest: OrchestratorRequest = {
         ...request,
         workspaceRoot,
         activeFilePath: activeEditor?.document.uri.fsPath,
         selectedText: activeEditor?.document.getText(activeEditor.selection),
         attachments: this.taskController.resolveAttachmentsForPrompt(selectedAttachmentIds),
+        abortSignal: abortController.signal,
       };
 
       this.postMessage({
@@ -565,6 +569,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       const messageText = this.formatErrorForUi(error);
       taskManager.failTask(task.id, messageText);
     } finally {
+      this.currentAbortController = undefined;
       this.taskController.clearResolvedAttachments(selectedAttachmentIds);
       this.taskController.postAttachments();
       this.postMessage({ type: "end", taskId: task.id });

@@ -912,9 +912,493 @@ html, body {
   color: var(--vscode-descriptionForeground);
 }
 
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+/* ── Enhanced Background Agents Panel ────────────────────────────────────── */
+.nk-bg-agents--enhanced {
+  background: var(--vscode-editorWidget-background);
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: var(--nk-radius-md);
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+
+.nk-bg-agents-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nk-bg-agents-count-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(0, 122, 204, 0.15);
+  color: var(--vscode-focusBorder);
+  font-weight: 500;
+}
+
+.nk-bg-agents-wave-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.nk-bg-agents-wave-label {
+  font-size: 10px;
+  color: var(--vscode-descriptionForeground);
+  font-weight: 500;
+}
+
+.nk-bg-agents-wave-progress {
+  width: 60px;
+  height: 4px;
+  background: var(--vscode-input-background);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.nk-bg-agents-wave-progress-fill {
+  height: 100%;
+  background: var(--vscode-focusBorder);
+  transition: width 0.3s ease;
+}
+
+.nk-bg-agents-stats {
+  display: flex;
+  gap: 12px;
+  margin: 8px 0;
+  padding: 6px 0;
+  border-top: 1px solid var(--vscode-widget-border);
+  border-bottom: 1px solid var(--vscode-widget-border);
+}
+
+.nk-bg-agents-stat {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.nk-bg-agents-stat-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.nk-bg-agents-stat-dot--running {
+  background: var(--vscode-focusBorder);
+  animation: pulse 1.2s infinite;
+}
+
+.nk-bg-agents-stat-dot--completed {
+  background: var(--vscode-terminal-ansiGreen, #4ec9b0);
+}
+
+.nk-bg-agents-stat-dot--failed {
+  background: var(--vscode-terminal-ansiRed, #f48771);
+}
+
+.nk-bg-agents-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.nk-bg-agent-card {
+  background: var(--vscode-editor-background);
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: var(--nk-radius-sm);
+  padding: 8px 10px;
+  transition: border-color 0.2s ease;
+}
+
+.nk-bg-agent-card:hover {
+  border-color: var(--vscode-focusBorder);
+}
+
+.nk-bg-agent-card--running {
+  border-left: 3px solid var(--vscode-focusBorder);
+}
+
+.nk-bg-agent-card--completed {
+  border-left: 3px solid var(--vscode-terminal-ansiGreen, #4ec9b0);
+}
+
+.nk-bg-agent-card--failed {
+  border-left: 3px solid var(--vscode-terminal-ansiRed, #f48771);
+}
+
+.nk-bg-agent-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nk-bg-agent-card-icon {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background: var(--vscode-input-background);
+  flex-shrink: 0;
+}
+
+.nk-bg-agent-card-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--vscode-descriptionForeground);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: nk-spin 0.8s linear infinite;
+}
+
+.nk-bg-agent-card-check {
+  color: var(--vscode-terminal-ansiGreen, #4ec9b0);
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.nk-bg-agent-card-x {
+  color: var(--vscode-terminal-ansiRed, #f48771);
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.nk-bg-agent-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.nk-bg-agent-card-type {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--vscode-descriptionForeground);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.nk-bg-agent-card-desc {
+  font-size: 12px;
+  color: var(--vscode-foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nk-bg-agent-card-progress {
+  margin-top: 6px;
+}
+
+.nk-bg-agent-card-progress-bar {
+  height: 2px;
+  background: var(--vscode-input-background);
+  border-radius: 1px;
+  overflow: hidden;
+}
+
+.nk-bg-agent-card-progress-fill {
+  height: 100%;
+  background: var(--vscode-focusBorder);
+  animation: nk-progress-indeterminate 1.5s ease-in-out infinite;
+}
+
+@keyframes nk-progress-indeterminate {
+  0% { width: 0%; margin-left: 0; }
+  50% { width: 60%; margin-left: 20%; }
+  100% { width: 0%; margin-left: 100%; }
+}
+
+/* ── Streaming Status Container ─────────────────────────────────────────── */
+.nk-streaming-status-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.nk-streaming-status-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(117, 152, 188, 0.1);
+}
+
+.nk-streaming-status-icon {
+  font-size: 12px;
+}
+
+.nk-streaming-status-text {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 10px;
+}
+
+/* ── Tool Card ────────────────────────────────────────────────────────────── */
+.nk-tool-card {
+  background: var(--vscode-editorWidget-background);
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: var(--nk-radius-sm);
+  margin-bottom: 4px;
+  font-family: var(--vscode-editor-font-family, monospace);
+}
+
+.nk-tool-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.nk-tool-card-icon {
+  color: var(--vscode-descriptionForeground, #8b8b9a);
+  display: flex;
+  flex-shrink: 0;
+}
+
+.nk-tool-card-label {
+  font-weight: 600;
+  color: var(--vscode-descriptionForeground, #8b8b9a);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+}
+
+.nk-tool-card-command {
+  color: var(--vscode-terminal-foreground, #cccccc);
+  font-size: 11px;
+  background: var(--vscode-textCodeBlock-background, #1a1a2e);
+  padding: 2px 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.nk-tool-card-changes {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.nk-tool-card-additions {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--vscode-terminal-ansiGreen, #4ec9b0);
+}
+
+.nk-tool-card-deletions {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--vscode-terminal-ansiRed, #f48771);
+}
+
+.nk-tool-card-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.nk-tool-card-duration {
+  color: var(--vscode-descriptionForeground, #8b8b9a);
+  font-size: 10px;
+}
+
+.nk-tool-card-spinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--vscode-descriptionForeground, #8b8b9a);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: nk-spin 0.8s linear infinite;
+}
+
+.nk-tool-card-done {
+  color: var(--vscode-terminal-ansiGreen, #4ec9b0);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.nk-tool-card-failed {
+  color: var(--vscode-terminal-ansiRed, #f48771);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.nk-tool-card-chevron {
+  color: var(--vscode-descriptionForeground, #8b8b9a);
+  transition: transform 0.15s ease;
+}
+
+.nk-tool-card-output {
+  padding: 0 10px 8px;
+  border-top: 1px solid var(--vscode-widget-border, #454545);
+}
+
+.nk-tool-card-pre {
+  margin: 0;
+  padding: 8px;
+  background: var(--vscode-textCodeBlock-background, #1a1a2e);
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--vscode-terminal-foreground, #cccccc);
+  overflow: auto;
+  max-height: 300px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.nk-tool-card-files {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.nk-tool-card-file-chip {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(0,122,204,0.15);
+  color: var(--vscode-textLinkForeground, #3794ff);
+}
+
+/* ── Tool Call Summary ──────────────────────────────────────────────────── */
+.nk-tool-call-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  margin-bottom: 4px;
+}
+
+.nk-tool-call-summary-icon {
+  font-size: 12px;
+}
+
+.nk-tool-call-summary-text {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ── Changed Files Summary ──────────────────────────────────────────────── */
+.nk-changed-files-summary {
+  background: var(--vscode-editorWidget-background);
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: var(--nk-radius-sm);
+  padding: 8px 10px;
+  margin-top: 8px;
+}
+
+.nk-changed-files-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.nk-changed-files-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+
+.nk-changed-files-count {
+  color: var(--vscode-foreground);
+}
+
+.nk-changed-files-additions {
+  color: var(--vscode-terminal-ansiGreen, #4ec9b0);
+  font-size: 10px;
+}
+
+.nk-changed-files-deletions {
+  color: var(--vscode-terminal-ansiRed, #f48771);
+  font-size: 10px;
+}
+
+.nk-changed-files-toggle {
+  background: none;
+  border: none;
+  color: var(--vscode-textLinkForeground, #3794ff);
+  font-size: 10px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.nk-changed-files-toggle:hover {
+  text-decoration: underline;
+}
+
+.nk-changed-files-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nk-changed-file-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-size: 11px;
+}
+
+.nk-changed-file-item:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.nk-changed-file-path {
+  color: var(--vscode-foreground);
+  font-family: var(--vscode-editor-font-family, monospace);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nk-changed-file-changes {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+
+.nk-changed-file-add {
+  color: var(--vscode-terminal-ansiGreen, #4ec9b0);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.nk-changed-file-del {
+  color: var(--vscode-terminal-ansiRed, #f48771);
+  font-size: 10px;
+  font-weight: 500;
 }
 
 .nk-summary-card {
@@ -2714,3 +3198,29 @@ html, body {
 .nk-effort-value[data-effort="medium"] { color: #dcdcaa; }
 .nk-effort-value[data-effort="high"] { color: #ce9178; }
 .nk-effort-value[data-effort="max"] { color: #f48771; }
+
+/* ── Reduced Motion ──────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .nk-spin,
+  .animate-spin,
+  .nk-thinking-label--shimmer,
+  .nk-streaming-cursor,
+  .nk-reasoning-dot,
+  .nk-activity-dot,
+  .nk-subagent-dot,
+  .nk-bg-agent-card-spinner,
+  .nk-bg-agent-card-progress-fill,
+  .nk-tool-card-spinner,
+  .nk-bg-agents-stat-dot--running {
+    animation: none !important;
+  }
+  
+  .nk-thinking-label--shimmer {
+    background-image: none;
+    color: var(--vscode-descriptionForeground);
+  }
+  
+  .nk-streaming-cursor {
+    opacity: 1;
+  }
+}

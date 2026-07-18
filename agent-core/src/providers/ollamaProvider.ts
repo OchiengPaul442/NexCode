@@ -211,13 +211,20 @@ export class OllamaProvider implements ModelProvider {
           request.tools &&
           request.tools.length > 0
         ) {
-          return this.generateWithoutTools(request, abort);
+          console.warn(`[ollama] tool/JSON parse error, retrying without tools: ${errorMsg}`);
+          try {
+            return await this.generateWithoutTools(request, abort);
+          } catch (fallbackError) {
+            // If fallback also fails, throw the original error with context
+            const fallbackMsg = String(fallbackError);
+            throw new Error(`Model returned malformed tool call. Retry without tools also failed: ${fallbackMsg}. Original error: ${errorMsg}`);
+          }
         }
 
         if (isExplicitContextError(errorMsg)) {
           errorMsg = `Context window overflow: The request was too large for the model's context window (${this.resolveNumCtx(request.model)} tokens). Try a shorter prompt, a smaller file, or increase NEXCODE_OLLAMA_MAX_CONTEXT. Original error: ${errorMsg}`;
         } else if (isToolOrJsonParseError(errorMsg)) {
-          errorMsg = `Ollama tool/JSON parse error: ${errorMsg}`;
+          errorMsg = `Ollama returned malformed JSON (likely the model generated invalid tool call arguments). Try a different prompt or model. Error: ${errorMsg}`;
         }
 
         console.error(`[ollama] request failed: ${request.messages?.length ?? 0} messages, ${JSON.stringify(payload).length} chars, ${request.tools?.length ?? 0} tools, num_ctx=${this.resolveNumCtx(request.model)}`);

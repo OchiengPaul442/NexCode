@@ -1343,6 +1343,8 @@ export class NexcodeOrchestrator {
         this.approvalCallback,
         reasoningEffort,
         steeringProvider ?? this.steeringProvider,
+        model,
+        provider,
       )) {
         yield event;
       }

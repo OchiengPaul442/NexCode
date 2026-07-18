@@ -260,6 +260,7 @@ interface StoreState {
   isBusy: boolean;
   settingsPanelOpen: boolean;
   backgroundAgents: SubAgentTask[];
+  waveInfo: { current: number; total: number } | null;
   taskQueue: QueuedTask[];
   taskQueuePendingCount: number;
   taskQueueActiveCount: number;
@@ -374,6 +375,7 @@ interface StoreState {
   addBackgroundAgent: (agent: SubAgentTask) => void;
   updateBackgroundAgent: (id: string, updates: Partial<SubAgentTask>) => void;
   removeBackgroundAgent: (id: string) => void;
+  setWaveInfo: (waveInfo: { current: number; total: number } | null) => void;
   parallelCount: number;
   incrementParallel: () => void;
   decrementParallel: () => void;
@@ -1007,6 +1009,7 @@ const useStore = create<StoreState>((set, get) => {
     isBusy: false,
     settingsPanelOpen: false,
     backgroundAgents: [],
+    waveInfo: null,
     taskQueue: [],
     taskQueuePendingCount: 0,
     taskQueueActiveCount: 0,
@@ -1530,6 +1533,9 @@ const useStore = create<StoreState>((set, get) => {
         backgroundAgents: state.backgroundAgents.filter((a) => a.id !== id),
       }));
     },
+    setWaveInfo: (waveInfo) => {
+      set({ waveInfo });
+    },
     setTaskQueue: (tasks, pending, active) => {
       // Only show tasks that are actually queued (pending), not running/completed
       const pendingTasks = tasks.filter((t) => t.status === "queued" || t.status === "planning");
@@ -2025,6 +2031,11 @@ function MessageBubble({
           </details>
         )}
 
+        {/* Compact Tool Call Summary */}
+        {!isUser && (message.toolExecutions ?? []).length > 0 && (
+          <ToolCallSummary toolExecutions={message.toolExecutions!} />
+        )}
+
         {/* Work Summary */}
         {!isUser && (message.toolExecutions ?? []).length > 0 && (() => {
           const toolExecs = message.toolExecutions!;
@@ -2209,33 +2220,89 @@ function SubagentIndicator({
   );
 }
 
-function BackgroundAgents({ agents }: { agents: SubAgentTask[] }) {
+function BackgroundAgents({ agents, waveInfo }: { agents: SubAgentTask[]; waveInfo?: { current: number; total: number } | null }) {
   if (agents.length === 0) return null;
 
   const running = agents.filter((a) => a.status === "running");
+  const completed = agents.filter((a) => a.status === "completed");
+  const failed = agents.filter((a) => a.status === "failed");
 
   return (
-    <div className="nk-bg-agents">
+    <div className="nk-bg-agents nk-bg-agents--enhanced">
       <div className="nk-bg-agents-header">
-        <span className="nk-bg-agents-title">Background Agents</span>
-        <span className="nk-bg-agents-count">
-          {running.length} running
-        </span>
-      </div>
-      {agents.map((agent) => (
-        <div
-          key={agent.id}
-          className={`nk-bg-agent nk-bg-agent--${agent.status}`}
-        >
-          <span className="nk-bg-agent-dot" />
-          <span className="nk-bg-agent-desc">{agent.description}</span>
-          <span className="nk-bg-agent-status">
-            {agent.status === "running" && "Running..."}
-            {agent.status === "completed" && "Done"}
-            {agent.status === "failed" && "Failed"}
+        <div className="nk-bg-agents-title-row">
+          <span className="nk-bg-agents-title">Agents</span>
+          <span className="nk-bg-agents-count-badge">
+            {agents.length} total
           </span>
         </div>
-      ))}
+        {waveInfo && (
+          <div className="nk-bg-agents-wave-info">
+            <span className="nk-bg-agents-wave-label">Wave {waveInfo.current}/{waveInfo.total}</span>
+            <div className="nk-bg-agents-wave-progress">
+              <div 
+                className="nk-bg-agents-wave-progress-fill"
+                style={{ width: `${(completed.length / agents.length) * 100}%` }}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+      
+      <div className="nk-bg-agents-stats">
+        {running.length > 0 && (
+          <span className="nk-bg-agents-stat nk-bg-agents-stat--running">
+            <span className="nk-bg-agents-stat-dot nk-bg-agents-stat-dot--running" />
+            {running.length} running
+          </span>
+        )}
+        {completed.length > 0 && (
+          <span className="nk-bg-agents-stat nk-bg-agents-stat--completed">
+            <span className="nk-bg-agents-stat-dot nk-bg-agents-stat-dot--completed" />
+            {completed.length} completed
+          </span>
+        )}
+        {failed.length > 0 && (
+          <span className="nk-bg-agents-stat nk-bg-agents-stat--failed">
+            <span className="nk-bg-agents-stat-dot nk-bg-agents-stat-dot--failed" />
+            {failed.length} failed
+          </span>
+        )}
+      </div>
+
+      <div className="nk-bg-agents-list">
+        {agents.map((agent) => (
+          <div
+            key={agent.id}
+            className={`nk-bg-agent-card nk-bg-agent-card--${agent.status}`}
+          >
+            <div className="nk-bg-agent-card-header">
+              <div className="nk-bg-agent-card-icon">
+                {agent.status === "running" && (
+                  <span className="nk-bg-agent-card-spinner" />
+                )}
+                {agent.status === "completed" && (
+                  <span className="nk-bg-agent-card-check">✓</span>
+                )}
+                {agent.status === "failed" && (
+                  <span className="nk-bg-agent-card-x">✗</span>
+                )}
+              </div>
+              <div className="nk-bg-agent-card-info">
+                <span className="nk-bg-agent-card-type">General</span>
+                <span className="nk-bg-agent-card-desc">{agent.description}</span>
+              </div>
+            </div>
+            {agent.status === "running" && (
+              <div className="nk-bg-agent-card-progress">
+                <div className="nk-bg-agent-card-progress-bar">
+                  <div className="nk-bg-agent-card-progress-fill" />
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -2281,63 +2348,56 @@ function ToolStatusIndicator({
   const hasOutput = message && message.trim().length > 0;
   const truncatedCmd = command.length > 100 ? command.slice(0, 100) + "..." : command;
 
+  // Parse file changes from command for write/append operations
+  const fileChangeInfo = (() => {
+    if (filesChanged && filesChanged.length > 0) {
+      return { additions: filesChanged.length, deletions: 0 };
+    }
+    return null;
+  })();
+
   return (
-    <div style={{
-      borderRadius: "4px",
-      marginBottom: "6px",
-      fontSize: "12px",
-      fontFamily: "var(--vscode-editor-font-family, monospace)",
-      background: "var(--vscodesideBar-background, #1e1e1e)",
-    }}>
+    <div className="nk-tool-card">
       {/* Header - always visible, clickable to expand */}
       <div
+        className="nk-tool-card-header"
         onClick={() => hasOutput && setExpanded(!expanded)}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "8px",
-          padding: "6px 10px",
-          cursor: hasOutput ? "pointer" : "default",
-          userSelect: "none",
-        }}
       >
         {/* Icon + Tool name */}
-        <span style={{ color: "var(--vscode-descriptionForeground, #8b8b9a)", display: "flex", flexShrink: 0 }}>{toolIcon}</span>
-        <span style={{ fontWeight: 600, color: "var(--vscode-descriptionForeground, #8b8b9a)", fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px", flexShrink: 0 }}>
-          {toolLabel}
-        </span>
+        <span className="nk-tool-card-icon">{toolIcon}</span>
+        <span className="nk-tool-card-label">{toolLabel}</span>
 
         {/* Command preview */}
-        <code style={{
-          color: "var(--vscode-terminal-foreground, #cccccc)",
-          fontSize: "11px",
-          background: "var(--vscode-textCodeBlock-background, #1a1a2e)",
-          padding: "2px 6px",
-          borderRadius: "3px",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-          flex: 1,
-          minWidth: 0,
-        }}>
+        <code className="nk-tool-card-command">
           {truncatedCmd}
         </code>
 
+        {/* File change indicators */}
+        {fileChangeInfo && (fileChangeInfo.additions > 0 || fileChangeInfo.deletions > 0) && (
+          <span className="nk-tool-card-changes">
+            {fileChangeInfo.additions > 0 && (
+              <span className="nk-tool-card-additions">+{fileChangeInfo.additions}</span>
+            )}
+            {fileChangeInfo.deletions > 0 && (
+              <span className="nk-tool-card-deletions">-{fileChangeInfo.deletions}</span>
+            )}
+          </span>
+        )}
+
         {/* Status + duration */}
-        <span style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
-          {durationStr && <span style={{ color: "var(--vscode-descriptionForeground, #8b8b9a)", fontSize: "10px" }}>{durationStr}</span>}
+        <span className="nk-tool-card-status">
+          {durationStr && <span className="nk-tool-card-duration">{durationStr}</span>}
           {isRunning && (
-            <span style={{ display: "inline-block", width: "10px", height: "10px", border: "2px solid var(--vscode-descriptionForeground, #8b8b9a)", borderTopColor: "transparent", borderRadius: "50%", animation: "nk-spin 0.8s linear infinite" }} />
+            <span className="nk-tool-card-spinner" />
           )}
-          {isSuccess && <span style={{ color: "var(--vscode-terminal-ansiGreen, #4ec9b0)", fontSize: "11px", fontWeight: 500 }}>done</span>}
-          {isError && <span style={{ color: "var(--vscode-terminal-ansiRed, #f48771)", fontSize: "11px", fontWeight: 500 }}>failed</span>}
+          {isSuccess && <span className="nk-tool-card-done">done</span>}
+          {isError && <span className="nk-tool-card-failed">failed</span>}
           {hasOutput && (
             <ChevronRight
               size={12}
+              className="nk-tool-card-chevron"
               style={{
-                color: "var(--vscode-descriptionForeground, #8b8b9a)",
                 transform: expanded ? "rotate(90deg)" : "rotate(0deg)",
-                transition: "transform 0.15s ease",
               }}
             />
           )}
@@ -2346,35 +2406,14 @@ function ToolStatusIndicator({
 
       {/* Expanded output */}
       {expanded && hasOutput && (
-        <div style={{
-          padding: "0 10px 8px",
-          borderTop: "1px solid var(--vscode-widget-border, #454545)",
-        }}>
-          <pre style={{
-            margin: 0,
-            padding: "8px",
-            background: "var(--vscode-textCodeBlock-background, #1a1a2e)",
-            borderRadius: "4px",
-            fontSize: "11px",
-            lineHeight: "1.5",
-            color: isError ? "var(--vscode-terminal-ansiRed, #f48771)" : "var(--vscode-terminal-foreground, #cccccc)",
-            overflow: "auto",
-            maxHeight: "300px",
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-word",
-          }}>
+        <div className="nk-tool-card-output">
+          <pre className="nk-tool-card-pre">
             {message!.length > 2000 ? message!.slice(0, 2000) + "\n... (truncated)" : message}
           </pre>
           {filesChanged && filesChanged.length > 0 && (
-            <div style={{ marginTop: "6px", display: "flex", flexWrap: "wrap", gap: "4px" }}>
+            <div className="nk-tool-card-files">
               {filesChanged.map((f, i) => (
-                <span key={i} style={{
-                  fontSize: "10px",
-                  padding: "1px 6px",
-                  borderRadius: "3px",
-                  background: "rgba(0,122,204,0.15)",
-                  color: "var(--vscode-textLinkForeground, #3794ff)",
-                }}>
+                <span key={i} className="nk-tool-card-file-chip">
                   {f}
                 </span>
               ))}
@@ -2382,6 +2421,144 @@ function ToolStatusIndicator({
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+function ChangedFilesSummary({ 
+  files, 
+  totalAdditions, 
+  totalDeletions 
+}: { 
+  files: Array<{ path: string; additions?: number; deletions?: number }>;
+  totalAdditions?: number;
+  totalDeletions?: number;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  
+  if (files.length === 0) return null;
+
+  const additions = totalAdditions ?? files.reduce((sum, f) => sum + (f.additions ?? 0), 0);
+  const deletions = totalDeletions ?? files.reduce((sum, f) => sum + (f.deletions ?? 0), 0);
+  const showAll = files.length > 5;
+  const displayFiles = expanded ? files : files.slice(0, 5);
+
+  return (
+    <div className="nk-changed-files-summary">
+      <div className="nk-changed-files-header">
+        <span className="nk-changed-files-title">
+          <span className="nk-changed-files-count">{files.length} Changed file{files.length !== 1 ? 's' : ''}</span>
+          {additions > 0 && <span className="nk-changed-files-additions">+{additions}</span>}
+          {deletions > 0 && <span className="nk-changed-files-deletions">-{deletions}</span>}
+        </span>
+        {showAll && (
+          <button 
+            className="nk-changed-files-toggle"
+            onClick={() => setExpanded(!expanded)}
+          >
+            {expanded ? 'Show less' : `Show all`}
+          </button>
+        )}
+      </div>
+      <div className="nk-changed-files-list">
+        {displayFiles.map((file, i) => (
+          <div key={i} className="nk-changed-file-item">
+            <span className="nk-changed-file-path">{file.path}</span>
+            <span className="nk-changed-file-changes">
+              {file.additions != null && file.additions > 0 && (
+                <span className="nk-changed-file-add">+{file.additions}</span>
+              )}
+              {file.deletions != null && file.deletions > 0 && (
+                <span className="nk-changed-file-del">-{file.deletions}</span>
+              )}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ToolCallSummary({ 
+  toolExecutions 
+}: { 
+  toolExecutions: ToolExecution[];
+}) {
+  if (toolExecutions.length === 0) return null;
+
+  // Group tool calls by type
+  const grouped = toolExecutions.reduce((acc, exec) => {
+    const type = exec.toolName.toLowerCase();
+    if (!acc[type]) {
+      acc[type] = { count: 0, duration: 0 };
+    }
+    acc[type].count++;
+    if (exec.durationMs) {
+      acc[type].duration += exec.durationMs;
+    }
+    return acc;
+  }, {} as Record<string, { count: number; duration: number }>);
+
+  // Build summary items
+  const items: Array<{ label: string; icon: React.ReactNode; count: number; color: string }> = [];
+  
+  if (grouped.read) {
+    items.push({ 
+      label: 'reads', 
+      icon: <FileText size={12} />, 
+      count: grouped.read.count,
+      color: '#3794ff'
+    });
+  }
+  if (grouped.search || grouped['web-search']) {
+    const searchCount = (grouped.search?.count ?? 0) + (grouped['web-search']?.count ?? 0);
+    items.push({ 
+      label: 'searches', 
+      icon: <Search size={12} />, 
+      count: searchCount,
+      color: '#d7ba7d'
+    });
+  }
+  if (grouped.write || grouped.append) {
+    const writeCount = (grouped.write?.count ?? 0) + (grouped.append?.count ?? 0);
+    items.push({ 
+      label: 'writes', 
+      icon: <Pencil size={12} />, 
+      count: writeCount,
+      color: '#4ec9b0'
+    });
+  }
+  if (grouped.terminal) {
+    items.push({ 
+      label: 'shell commands', 
+      icon: <Terminal size={12} />, 
+      count: grouped.terminal.count,
+      color: '#c586c0'
+    });
+  }
+  if (grouped.patch) {
+    items.push({ 
+      label: 'patches', 
+      icon: <Edit size={12} />, 
+      count: grouped.patch.count,
+      color: '#4ec9b0'
+    });
+  }
+
+  if (items.length === 0) return null;
+
+  return (
+    <div className="nk-tool-call-summary">
+      <span className="nk-tool-call-summary-icon">🔍</span>
+      <span className="nk-tool-call-summary-text">
+        {items.map((item, i) => (
+          <span key={i}>
+            {i > 0 && ', '}
+            <span style={{ color: item.color }}>{item.count}</span>
+            {' '}{item.label}
+          </span>
+        ))}
+      </span>
     </div>
   );
 }
@@ -2478,6 +2655,7 @@ function App() {
   const providerStatus = useStore((s) => s.providerStatus);
   const modelSuggestions = useStore((s) => s.modelSuggestions);
   const backgroundAgents = useStore((s) => s.backgroundAgents);
+  const waveInfo = useStore((s) => s.waveInfo);
   const parallelCount = useStore((s) => s.parallelCount);
   const taskQueue = useStore((s) => s.taskQueue);
   const taskQueuePendingCount = useStore((s) => s.taskQueuePendingCount);
@@ -4154,7 +4332,7 @@ function App() {
               status={subagentInfo.status}
             />
           )}
-          <BackgroundAgents agents={backgroundAgents} />
+          <BackgroundAgents agents={backgroundAgents} waveInfo={waveInfo ?? undefined} />
           {parallelCount > 1 && (
             <ParallelIndicator count={parallelCount} />
           )}

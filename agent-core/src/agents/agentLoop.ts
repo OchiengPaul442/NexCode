@@ -165,6 +165,8 @@ export async function* runAgentLoop(
   approvalCallback?: ApprovalCallback,
   reasoningEffort?: ReasoningEffort,
   steeringProvider?: () => string | undefined,
+  model?: string,
+  provider?: string,
 ): AsyncGenerator<OrchestratorEvent, ChatMessage[]> {
   const startedAt = Date.now();
   const toolSchemas: ToolCallRequestTool[] = toolDefinitions.map((def) => ({
@@ -228,6 +230,7 @@ export async function* runAgentLoop(
       : messages;
 
         response = await router.generate(retryMessages, {
+          model: model,
           tools: retryTools,
           maxTokens: config.maxTokensPerTurn,
           signal,
@@ -291,7 +294,23 @@ export async function* runAgentLoop(
       if (textToolCalls && textToolCalls.length > 0) {
         response.toolCalls = textToolCalls;
         consecutiveNudges = 0;
-      } else if (response.text && turn < config.maxTurns - 1 && consecutiveNudges < MAX_NUDGES) {
+      } else if (!response.text || response.text.trim().length === 0) {
+        // Model returned empty response - nudge it to try again
+        if (turn < config.maxTurns - 1 && consecutiveNudges < MAX_NUDGES) {
+          consecutiveNudges++;
+          messages.push({ role: "assistant", content: "" });
+          messages.push({
+            role: "user",
+            content:
+              "Your response was empty. Please provide a response. If you need to use tools, use the available tool commands (e.g., use `read <path>` to read a file, `terminal <command>` to run a command).",
+          });
+          continue;
+        } else {
+          // Exhausted retries, return with a fallback message
+          messages.push({ role: "assistant", content: "I apologize, but I was unable to generate a response. Please try rephrasing your question." });
+          return messages;
+        }
+      } else if (turn < config.maxTurns - 1 && consecutiveNudges < MAX_NUDGES) {
         // Model returned text without tool calls — it may be describing what it
         // would do instead of doing it. Send a follow-up to nudge it toward using
         // the actual tool.
@@ -501,6 +520,7 @@ export async function* runAgentLoop(
     });
 
     const finalResponse = await router.generate(messages, {
+      model: model,
       maxTokens: config.maxTokensPerTurn,
       signal,
       reasoningEffort,

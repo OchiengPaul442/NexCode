@@ -74,3 +74,7 @@ npm run extension:package
 ## License
 
 MIT
+
+---
+
+Created by PAUL

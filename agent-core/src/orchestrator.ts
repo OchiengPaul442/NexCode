@@ -145,7 +145,7 @@ export class NexcodeOrchestrator {
       memoryDir: options.memoryDir,
       providerDefaults: {
         provider: options.defaultProvider ?? "ollama",
-        model: options.defaultModel ?? "qwen2.5-coder:14b",
+        model: options.defaultModel ?? "gpt-oss:120b-cloud",
         ollamaBaseUrl: options.ollamaBaseUrl ?? "http://localhost:11434",
         openAIBaseUrl: (options.openAIBaseUrl ?? "https://api.openai.com/v1").replace(/\/+$/, ""),
         openAIApiKey: options.openAIApiKey ?? process.env.OPENAI_API_KEY,

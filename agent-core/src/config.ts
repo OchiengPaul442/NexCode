@@ -58,10 +58,10 @@ export function getModelForMode(
   defaultModel?: string,
 ): string {
   if (mode === "auto") {
-    return agentModels?.primaryWorker ?? defaultModel ?? "qwen2.5-coder:14b";
+    return agentModels?.primaryWorker ?? defaultModel ?? "gpt-oss:120b-cloud";
   }
   const role = MODE_TO_ROLE[mode];
-  return agentModels?.[role] ?? defaultModel ?? "qwen2.5-coder:14b";
+  return agentModels?.[role] ?? defaultModel ?? "gpt-oss:120b-cloud";
 }
 
 export function createRuntimeConfig(
@@ -75,7 +75,7 @@ export function createRuntimeConfig(
     memoryDir: partial.memoryDir ?? path.join(workspaceRoot, "memory"),
     providerDefaults: {
       provider: partial.providerDefaults?.provider ?? "ollama",
-      model: partial.providerDefaults?.model ?? "qwen2.5-coder:14b",
+      model: partial.providerDefaults?.model ?? "gpt-oss:120b-cloud",
       ollamaBaseUrl:
         partial.providerDefaults?.ollamaBaseUrl ?? "http://localhost:11434",
       openAIBaseUrl:

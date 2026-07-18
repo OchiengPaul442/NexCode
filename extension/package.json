@@ -85,8 +85,8 @@
         },
         "nexcodeKiboko.defaultModel": {
           "type": "string",
-          "default": "qwen2.5-coder:14b",
-          "description": "Default model name. For Ollama: qwen2.5-coder:14b. For OpenCode Go: deepseek-v4-flash, mimo-v2.5. For HuggingFace: deepseek-ai/DeepSeek-R1:fastest."
+          "default": "gpt-oss:120b-cloud",
+          "description": "Default model name. For Ollama: gpt-oss:120b-cloud. For OpenCode Go: deepseek-v4-flash, mimo-v2.5. For HuggingFace: deepseek-ai/DeepSeek-R1:fastest."
         },
         "nexcodeKiboko.defaultMode": {
           "type": "string",

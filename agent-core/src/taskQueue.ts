@@ -62,7 +62,7 @@ export class TaskQueue {
       status: "queued",
       mode: options.mode ?? "coder",
       provider: options.provider ?? "ollama",
-      model: options.model ?? "qwen2.5-coder:14b",
+      model: options.model ?? "gpt-oss:120b-cloud",
       createdAt: Date.now(),
       steeringMessages: [],
       attachments: options.attachments ?? [],

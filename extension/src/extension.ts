@@ -37,13 +37,13 @@ export async function activate(
       const config = vscode.workspace.getConfiguration("nexcodeKiboko");
       const currentModel = config.get<string>(
         "defaultModel",
-        "qwen2.5-coder:14b",
+        "gpt-oss:120b-cloud",
       );
 
       const picked = await vscode.window.showInputBox({
         title: "NEXCODE-KIBOKO Model",
         prompt:
-          "Enter model name. Ollama: qwen2.5-coder:14b. OpenCode Go: deepseek-v4-flash, mimo-v2.5. HuggingFace: deepseek-ai/DeepSeek-R1:fastest",
+          "Enter model name. Ollama: gpt-oss:120b-cloud. OpenCode Go: deepseek-v4-flash, mimo-v2.5. HuggingFace: deepseek-ai/DeepSeek-R1:fastest",
         value: currentModel,
         ignoreFocusOut: true,
       });

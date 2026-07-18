@@ -1,6 +1,6 @@
 {
   "defaultProvider": "ollama",
-  "defaultModel": "qwen2.5-coder:14b",
+  "defaultModel": "gpt-oss:120b-cloud",
   "ollama": {
     "baseUrl": "http://localhost:11434",
     "note": "Local Ollama — models: qwen2.5-coder:14b, qwen2.5-coder:7b, glm-4.7:cloud, qwen3-coder:480b-cloud, gpt-oss:120b-cloud"

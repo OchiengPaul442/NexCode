@@ -41,6 +41,7 @@ export function setWorkspaceSnapshotCache(
 export async function buildWorkspaceContext(
   request: OrchestratorRequest,
   defaultWorkspaceRoot: string,
+  contextWindowTokens?: number,
 ): Promise<string> {
   const workspaceRoot = request.workspaceRoot ?? defaultWorkspaceRoot;
   const cacheKey = `workspace:${workspaceRoot}:${request.activeFilePath ?? ""}:${request.prompt?.slice(0, 100) ?? ""}`;
@@ -48,6 +49,8 @@ export async function buildWorkspaceContext(
   if (cached) return cached;
 
   const sections: string[] = [];
+  const osPlatform = process.platform === 'win32' ? 'Windows' : process.platform === 'darwin' ? 'macOS' : 'Linux';
+  sections.push(`OS: ${osPlatform}`);
   sections.push(`Workspace root: ${workspaceRoot}`);
 
   try {
@@ -139,13 +142,16 @@ export async function buildWorkspaceContext(
     sections.push(buildAttachmentContext(request.attachments ?? []));
   }
 
+  const workspaceTokenBudget = contextWindowTokens
+    ? Math.floor(contextWindowTokens * 0.1)
+    : MAX_WORKSPACE_TOKEN_BUDGET;
   const joined = sections.join("\n\n");
   const localTokenCounter = new TokenCounter();
   const estimatedTokens = localTokenCounter.estimateTokens(joined);
-  if (estimatedTokens > MAX_WORKSPACE_TOKEN_BUDGET) {
+  if (estimatedTokens > workspaceTokenBudget) {
     const result = truncateToFitTokenBudget(
       joined,
-      MAX_WORKSPACE_TOKEN_BUDGET,
+      workspaceTokenBudget,
       localTokenCounter,
       "Workspace context truncated to fit token budget",
     );

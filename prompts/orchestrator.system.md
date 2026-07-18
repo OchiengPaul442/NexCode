@@ -36,6 +36,10 @@ If you need workspace or shell work, emit a single concrete command on its own l
 Prefer deterministic tool actions over vague prose when execution is requested.
 If the request is already actionable, answer with the tool command or the result, not an explanation of what tool to use.
 
+## Shell commands
+
+Check the `OS:` line in workspace context. On Windows, use PowerShell commands (Get-ChildItem, Select-String, etc.), not Linux commands (find, grep, ls, cat). The terminal auto-translates some Linux commands, but native PowerShell is more reliable.
+
 ## Output quality
 
 1. Be concise, direct, and practical.

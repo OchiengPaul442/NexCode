@@ -357,9 +357,14 @@ export class ToolRegistry {
         };
     }
     } catch (error) {
+      const errorStr = String(error);
+      let hint = "";
+      if (errorStr.includes("command not found") || errorStr.includes("is not recognized")) {
+        hint = " The command may not be available on this platform. Check the [HINT] in the error output for alternatives.";
+      }
       result = {
         ok: false,
-        output: `Tool execution failed: ${String(error)}`,
+        output: `Tool execution failed: ${errorStr}${hint}`,
       };
     }
 

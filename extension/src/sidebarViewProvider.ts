@@ -132,6 +132,12 @@ interface WebviewUpdateSettingMessage {
   value: unknown;
 }
 
+interface WebviewToolApprovalResponseMessage {
+  type: "toolApprovalResponse";
+  requestId: string;
+  approved: boolean;
+}
+
 interface WebviewSteerTaskMessage {
   type: "steerTask";
   taskId: string;
@@ -170,7 +176,8 @@ type InboundWebviewMessage =
   | WebviewUpdateSettingMessage
   | WebviewSteerTaskMessage
   | WebviewCancelTaskMessage
-  | WebviewListTasksMessage;
+  | WebviewListTasksMessage
+  | WebviewToolApprovalResponseMessage;
 
 const MAX_ATTACHMENT_BYTES = 3_000_000;
 const MAX_ATTACHMENT_TEXT_CHARS = 750_000;
@@ -186,6 +193,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
   private readonly taskController: TaskController;
   private readonly editReviewService: EditReviewService;
   private currentAbortController?: AbortController;
+  private readonly pendingApprovals = new Map<string, { resolve: (approved: boolean) => void; timer: ReturnType<typeof setTimeout> }>();
 
   public constructor(
     private readonly context: vscode.ExtensionContext,
@@ -371,6 +379,9 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       case "listTasks":
         this.taskController.postTaskList();
         return;
+      case "toolApprovalResponse":
+        this.handleToolApprovalResponse(message.requestId, message.approved);
+        return;
     }
   }
 
@@ -515,6 +526,34 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
 
   private handleCancelTask(taskId: string): void {
     this.taskController.handleCancelTask(taskId);
+  }
+
+  private handleToolApprovalResponse(requestId: string, approved: boolean): void {
+    const pending = this.pendingApprovals.get(requestId);
+    if (pending) {
+      clearTimeout(pending.timer);
+      pending.resolve(approved);
+      this.pendingApprovals.delete(requestId);
+    }
+  }
+
+  private requestToolApproval(toolName: string, arg: string): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+      const requestId = `approval-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      const timer = setTimeout(() => {
+        this.pendingApprovals.delete(requestId);
+        resolve(false);
+      }, 30000);
+
+      this.pendingApprovals.set(requestId, { resolve, timer });
+
+      this.postMessage({
+        type: "toolApprovalRequired",
+        requestId,
+        toolName,
+        command: arg,
+      });
+    });
   }
 
   private async handleEnhancePrompt(
@@ -906,9 +945,12 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
           // Check workspace trust first
           if (!this.workspaceTrustService.canRunTool(toolName)) {
             const reason = this.workspaceTrustService.getToolRestrictionReason(toolName);
-            await vscode.window.showWarningMessage(
-              reason ?? `Tool "${toolName}" is restricted in untrusted workspaces.`,
-            );
+            this.postMessage({
+              type: "toolApprovalRequired",
+              requestId: "",
+              toolName,
+              command: reason ?? `Tool "${toolName}" is restricted in untrusted workspaces.`,
+            });
             return false;
           }
 
@@ -931,13 +973,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
             }
           }
 
-          const choice = await vscode.window.showWarningMessage(
-            `Approval required for ${toolName} command:\n\n${arg}\n\nContinue?`,
-            { modal: true },
-            "Run",
-            "Cancel",
-          );
-          return choice === "Run";
+          return await this.requestToolApproval(toolName, arg);
         },
       });
       this.currentWorkspaceRoot = workspaceRoot;

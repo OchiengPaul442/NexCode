@@ -30,7 +30,7 @@ import { PromptStore } from "./prompts/promptStore";
 import { FeedbackLogger } from "./self-improve/feedbackLogger";
 import { PromptVersionManager } from "./self-improve/promptVersionManager";
 import { ReflectionEngine } from "./self-improve/reflectionEngine";
-import { ModelRouter } from "./providers/modelRouter";
+import { ModelRouter, detectModelCapabilities } from "./providers/modelRouter";
 import { OllamaProvider } from "./providers/ollamaProvider";
 import { OpenAICompatibleProvider } from "./providers/openAICompatibleProvider";
 import { ToolRegistry } from "./tools/toolRegistry";
@@ -432,7 +432,9 @@ export class NexcodeOrchestrator {
       const contextTokenEstimate = this.tokenCounter.estimateTokens(
         JSON.stringify({ prompt: request.prompt, sessionContext, workspaceContext, memoryContext }),
       );
-      if (contextTokenEstimate > 80000) {
+      const modelContextWindow = detectModelCapabilities(model, provider).contextWindow;
+      const compressionThreshold = Math.floor(modelContextWindow * 0.7);
+      if (contextTokenEstimate > compressionThreshold) {
         const compressedSession = this.sessionCompressor.compressSession(
           rawSessionMessages.map((m) => ({ role: m.role, text: m.content })),
         );
@@ -2824,7 +2826,11 @@ export class NexcodeOrchestrator {
   private async buildWorkspaceContext(
     request: OrchestratorRequest,
   ): Promise<string> {
-    return buildWorkspaceContextImpl(request, this.config.workspaceRoot);
+    const modelContextWindow = detectModelCapabilities(
+      this.config.providerDefaults.model,
+      this.config.providerDefaults.provider,
+    ).contextWindow;
+    return buildWorkspaceContextImpl(request, this.config.workspaceRoot, modelContextWindow);
   }
 
   private formatUserFacingError(error: unknown): string {

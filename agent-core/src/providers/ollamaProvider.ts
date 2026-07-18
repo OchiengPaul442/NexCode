@@ -92,8 +92,10 @@ export class OllamaProvider implements ModelProvider {
   private resolveNumCtx(model: string): number {
     const detected = detectModelCapabilities(model, "ollama").contextWindow;
     const envCap = Number(process.env.NEXCODE_OLLAMA_MAX_CONTEXT);
-    const cap = Number.isFinite(envCap) && envCap > 0 ? envCap : 8192;
-    return Math.min(detected, cap);
+    if (Number.isFinite(envCap) && envCap > 0) {
+      return Math.min(detected, envCap);
+    }
+    return detected;
   }
 
   public async generate(request: ModelRequest): Promise<ModelResponse> {

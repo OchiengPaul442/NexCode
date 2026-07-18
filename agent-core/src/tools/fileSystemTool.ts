@@ -6,6 +6,26 @@ import { createPatch } from "../utils/diff";
 import { ContextCompressor } from "../utils/contextCompressor";
 import { resolveWorkspacePath } from "../utils/pathContainment";
 
+function enhanceFileSystemError(error: unknown, operation: string, targetPath: string): string {
+  const msg = String(error);
+  if (msg.includes("ENOENT") || msg.includes("no such file") || msg.includes("cannot find")) {
+    return `${operation} failed: File or directory not found: ${targetPath}. Verify the path exists and is correct.`;
+  }
+  if (msg.includes("EACCES") || msg.includes("permission denied") || msg.includes("EPERM")) {
+    return `${operation} failed: Permission denied for ${targetPath}. The file may be read-only or locked by another process.`;
+  }
+  if (msg.includes("EISDIR")) {
+    return `${operation} failed: ${targetPath} is a directory, not a file.`;
+  }
+  if (msg.includes("ENOTDIR")) {
+    return `${operation} failed: A component of ${targetPath} is not a directory.`;
+  }
+  if (msg.includes("EMFILE") || msg.includes("ENFILE")) {
+    return `${operation} failed: Too many open files. Close some files and try again.`;
+  }
+  return `${operation} failed: ${msg}`;
+}
+
 export class FileSystemTool {
   private readonly compressor = new ContextCompressor(8000);
 
@@ -23,7 +43,7 @@ export class FileSystemTool {
     } catch (error) {
       return {
         ok: false,
-        output: String(error),
+        output: enhanceFileSystemError(error, "Read", targetPath),
       };
     }
   }
@@ -43,7 +63,7 @@ export class FileSystemTool {
     } catch (error) {
       return {
         ok: false,
-        output: String(error),
+        output: enhanceFileSystemError(error, "Write", targetPath),
       };
     }
   }
@@ -63,7 +83,7 @@ export class FileSystemTool {
     } catch (error) {
       return {
         ok: false,
-        output: String(error),
+        output: enhanceFileSystemError(error, "Append", targetPath),
       };
     }
   }
@@ -94,7 +114,7 @@ export class FileSystemTool {
     } catch (error) {
       return {
         ok: false,
-        output: String(error),
+        output: enhanceFileSystemError(error, "Patch", targetPath),
       };
     }
   }
@@ -115,7 +135,7 @@ export class FileSystemTool {
     } catch (error) {
       return {
         ok: false,
-        output: String(error),
+        output: enhanceFileSystemError(error, "Move", `${sourcePath} -> ${destinationPath}`),
       };
     }
   }
@@ -132,7 +152,7 @@ export class FileSystemTool {
     } catch (error) {
       return {
         ok: false,
-        output: String(error),
+        output: enhanceFileSystemError(error, "Delete", targetPath),
       };
     }
   }
@@ -169,7 +189,7 @@ export class FileSystemTool {
     } catch (error) {
       return {
         ok: false,
-        output: String(error),
+        output: enhanceFileSystemError(error, "Clear directory", targetPath),
       };
     }
   }

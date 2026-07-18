@@ -9,6 +9,98 @@ const MAX_COMMAND_LENGTH = 2_000;
 
 const IS_WINDOWS = process.platform === "win32";
 
+// Map of common Unix commands to their Windows/PowerShell equivalents
+const UNIX_TO_WINDOWS_HINTS: Array<{ pattern: RegExp; suggestion: string }> = [
+  { pattern: /\bfind\b/, suggestion: "Use Get-ChildItem -Recurse on Windows (PowerShell)" },
+  { pattern: /\bgrep\b/, suggestion: "Use Select-String on Windows (PowerShell)" },
+  { pattern: /\bawk\b/, suggestion: "Use PowerShell filtering or ForEach-Object instead" },
+  { pattern: /\bsed\b/, suggestion: "Use PowerShell -replace operator instead" },
+  { pattern: /\bchmod\b/, suggestion: "Use icacls on Windows" },
+  { pattern: /\bchown\b/, suggestion: "Use icacls or Takeown on Windows" },
+  { pattern: /\bcat\b/, suggestion: "Use Get-Content on Windows (PowerShell)" },
+  { pattern: /\bln\b/, suggestion: "Use New-Item -ItemType SymbolicLink on Windows" },
+  { pattern: /\bwhich\b/, suggestion: "Use Get-Command on Windows (PowerShell)" },
+  { pattern: /\bcurl\b/, suggestion: "Use Invoke-WebRequest or Invoke-RestMethod on Windows (PowerShell)" },
+  { pattern: /\bwget\b/, suggestion: "Use Invoke-WebRequest on Windows (PowerShell)" },
+  { pattern: /\bsort\b/, suggestion: "Use Sort-Object on Windows (PowerShell)" },
+  { pattern: /\buniq\b/, suggestion: "Use Sort-Object -Unique or Group-Object on Windows (PowerShell)" },
+  { pattern: /\bxargs\b/, suggestion: "Use ForEach-Object or pipeline in PowerShell" },
+  { pattern: /\btar\b/, suggestion: "Use Expand-Archive (for .zip) or tar.exe (built into Windows 10+)" },
+  { pattern: /\bchmod\b/, suggestion: "Use icacls on Windows" },
+  { pattern: /\bdu\b/, suggestion: "Use Get-ChildItem -Recurse | Measure-Object on Windows (PowerShell)" },
+  { pattern: /\bdf\b/, suggestion: "Use Get-PSDrive on Windows (PowerShell)" },
+  { pattern: /\bps\b/, suggestion: "Use Get-Process on Windows (PowerShell)" },
+  { pattern: /\btop\b/, suggestion: "Use Get-Process | Sort-Object CPU -Descending on Windows (PowerShell)" },
+  { pattern: /\bkill\b/, suggestion: "Use Stop-Process on Windows (PowerShell)" },
+  { pattern: /\benv\b/, suggestion: "Use Get-ChildItem Env: on Windows (PowerShell)" },
+  { pattern: /\bdate\b/, suggestion: "Use Get-Date on Windows (PowerShell)" },
+  { pattern: /\bwhoami\b/, suggestion: "Use $env:USERNAME on Windows (PowerShell)" },
+  { pattern: /\bdiff\b/, suggestion: "Use Compare-Object on Windows (PowerShell)" },
+  { pattern: /\bmkdir\b/, suggestion: "Use New-Item -ItemType Directory on Windows (PowerShell)" },
+  { pattern: /\btouch\b/, suggestion: "Use New-Item -ItemType File on Windows (PowerShell)" },
+];
+
+function analyzeCommandFailure(command: string, stderr: string, stdout: string): string {
+  const combined = `${stderr} ${stdout}`.toLowerCase();
+  const hints: string[] = [];
+
+  // Check for "command not found" patterns
+  if (
+    combined.includes("command not found") ||
+    combined.includes("is not recognized") ||
+    combined.includes("not found as a cmdlet") ||
+    combined.includes("is not the name of a cmdlet")
+  ) {
+    // Extract the command name that failed
+    const failedCmd = command.trim().split(/\s+/)[0];
+    if (failedCmd) {
+      // Check if it's a Unix command that has a Windows equivalent
+      for (const hint of UNIX_TO_WINDOWS_HINTS) {
+        if (hint.pattern.test(failedCmd)) {
+          hints.push(hint.suggestion);
+          break;
+        }
+      }
+      // Specific guidance for common missing commands
+      if (failedCmd === "rg") {
+        hints.push("ripgrep (rg) is not installed. Install it with: scoop install ripgrep, choco install ripgrep, or use Select-String in PowerShell.");
+      } else if (failedCmd === "grep" && IS_WINDOWS) {
+        hints.push("grep is not available on Windows. Use Select-String -Pattern 'pattern' -Path 'file' in PowerShell.");
+      } else if (failedCmd === "find" && IS_WINDOWS) {
+        hints.push("find is a Linux/Unix command. Use Get-ChildItem -Recurse on Windows PowerShell.");
+      } else if (failedCmd === "ls") {
+        hints.push("Use Get-ChildItem or dir on Windows.");
+      } else if (failedCmd === "curl") {
+        hints.push("Use Invoke-WebRequest or Invoke-RestMethod on Windows PowerShell.");
+      } else if (failedCmd === "wget") {
+        hints.push("Use Invoke-WebRequest on Windows PowerShell, or install wget via scoop/choco.");
+      } else if (IS_WINDOWS) {
+        hints.push(`'${failedCmd}' is not available on Windows. Use a PowerShell equivalent or install it via scoop/choco.`);
+      }
+    }
+  }
+
+  // Check for permission errors
+  if (combined.includes("permission denied") || combined.includes("access is denied")) {
+    hints.push("The command requires elevated permissions. Try running as administrator.");
+  }
+
+  // Check for timeout
+  if (combined.includes("timed out") || combined.includes("timeout")) {
+    hints.push("The command timed out. Try a more specific command or increase the timeout.");
+  }
+
+  // Check for common path errors
+  if (combined.includes("no such file") || combined.includes("cannot find path") || combined.includes("does not exist")) {
+    hints.push("The specified path does not exist. Verify the path is correct.");
+  }
+
+  if (hints.length > 0) {
+    return `\n[HINT: ${hints.join("; ")}]`;
+  }
+  return "";
+}
+
 // SAFE_COMMANDS - always allowed without approval
 // Removed: npm run, npm install, npx, node, python, pip
 // These can execute arbitrary code (node -e, python -c, npm postinstall scripts)
@@ -49,6 +141,7 @@ export const SAFE_PATTERNS = [
   /^cd\b/i,
   /^type\b/i,
   /^where\b/i,
+  /^findstr\b/i,
 ];
 
 // SHELL_EXPANSION_PATTERNS - block command substitution and shell expansion
@@ -162,6 +255,22 @@ function translateLinuxToPowerShell(command: string): string {
 
   let cmd = command.trim();
 
+  // Handle find with -exec: strip the -exec clause entirely (can't translate complex exec)
+  // e.g. find . -name "*.ts" -exec grep -l "pattern" {} \;
+  cmd = cmd.replace(/\s+-exec\b.*$/i, '');
+
+  // Handle find with -maxdepth: convert to PowerShell depth
+  // e.g. find /path -maxdepth 1 -type f -name "*.ts"
+  const findMaxdepthMatch = cmd.match(
+    /^find\s+(\S+)\s+-maxdepth\s+(\d+)\s+-type\s+([fd])\s+-name\s+"([^"]+)"/i
+  );
+  if (findMaxdepthMatch) {
+    const [, searchPath, depth, type, filter] = findMaxdepthMatch;
+    const pathArg = searchPath === '.' ? '' : `-Path "${searchPath}"`;
+    const typeFlag = type === 'f' ? '-File' : '-Directory';
+    return `Get-ChildItem ${pathArg} -Depth ${depth} -Filter "${filter}" ${typeFlag} -ErrorAction SilentlyContinue`;
+  }
+
   // Handle complex find commands with multiple -iname and -o (OR) conditions
   // Pattern: find [path] -type f \( -iname "*.ext1" -o -iname "*.ext2" \)
   const findComplexMatch = cmd.match(
@@ -181,7 +290,7 @@ function translateLinuxToPowerShell(command: string): string {
     }
   }
 
-  // Simple find patterns
+  // Simple find patterns — -iname with quoted path
   cmd = cmd.replace(
     /^find\s+\.?\s+-type\s+f\s+-iname\s+"([^"]+)"/i,
     'Get-ChildItem -Recurse -Filter "$1" -File -ErrorAction SilentlyContinue'
@@ -210,6 +319,7 @@ function translateLinuxToPowerShell(command: string): string {
     /^find\s+\.?\s+-type\s+d$/i,
     'Get-ChildItem -Recurse -Directory -ErrorAction SilentlyContinue'
   );
+  // find with -name (not -iname)
   cmd = cmd.replace(
     /^find\s+\.?\s+-name\s+"([^"]+)"/i,
     'Get-ChildItem -Recurse -Filter "$1" -ErrorAction SilentlyContinue'
@@ -244,11 +354,15 @@ function translateLinuxToPowerShell(command: string): string {
   cmd = cmd.replace(/^wc\s+-l\s+(.+)$/i, '(Get-Content $1).Count');
   cmd = cmd.replace(/^wc\s+(.+)$/i, '(Get-Content $1).Count');
 
-  // grep
+  // grep with recursive flag (-r, -R, -rR, -rn, -Rn, etc.)
+  cmd = cmd.replace(/^grep\s+-[rR]+[niIwFls]*\s+"([^"]+)"\s+(.+)$/i, 'Select-String -Pattern "$1" -Path "$2\\*" -Recurse');
+  cmd = cmd.replace(/^grep\s+-[rR]+[niIwFls]*\s+(\S+)\s+(.+)$/i, 'Select-String -Pattern $1 -Path "$2\\*" -Recurse');
+  // grep with other flags (-i, -n, -w, etc. but not recursive)
+  cmd = cmd.replace(/^grep\s+-[niIwFls]+\s+"([^"]+)"\s+(.+)$/i, 'Select-String -Pattern "$1" -Path $2');
+  cmd = cmd.replace(/^grep\s+-[niIwFls]+\s+(\S+)\s+(.+)$/i, 'Select-String -Pattern $1 -Path $2');
+  // grep without flags
   cmd = cmd.replace(/^grep\s+"([^"]+)"\s+(.+)$/i, 'Select-String -Pattern "$1" -Path $2');
   cmd = cmd.replace(/^grep\s+(\S+)\s+(.+)$/i, 'Select-String -Pattern $1 -Path $2');
-  cmd = cmd.replace(/^grep\s+-r\s+"([^"]+)"\s+(.+)$/i, 'Select-String -Pattern "$1" -Path "$2\\*" -Recurse');
-  cmd = cmd.replace(/^grep\s+-rn\s+"([^"]+)"\s+(.+)$/i, 'Select-String -Pattern "$1" -Path $2');
 
   // mkdir
   cmd = cmd.replace(/^mkdir\s+-p\s+(.+)$/i, 'New-Item -ItemType Directory -Path "$1" -Force');
@@ -383,10 +497,14 @@ export class TerminalTool {
         stderr?: string;
         message?: string;
       };
+      const stderr = typedError.stderr ?? "";
+      const stdout = typedError.stdout ?? "";
+      const message = typedError.message ?? "";
+      const rawOutput = `${stdout}${stderr}${message}`.trim();
+      const hint = analyzeCommandFailure(normalizedCommand, stderr, stdout);
       return {
         ok: false,
-        output:
-          `${typedError.stdout ?? ""}${typedError.stderr ?? ""}${typedError.message ?? ""}`.trim(),
+        output: rawOutput + hint,
       };
     }
   }
@@ -415,10 +533,14 @@ export class TerminalTool {
         stderr?: string;
         message?: string;
       };
+      const stderr = typedError.stderr ?? "";
+      const stdout = typedError.stdout ?? "";
+      const message = typedError.message ?? "";
+      const rawOutput = `${stdout}${stderr}${message}`.trim();
+      const hint = analyzeCommandFailure(command, stderr, stdout);
       return {
         ok: false,
-        output:
-          `${typedError.stdout ?? ""}${typedError.stderr ?? ""}${typedError.message ?? ""}`.trim(),
+        output: rawOutput + hint,
       };
     }
   }
@@ -531,6 +653,13 @@ export class TerminalTool {
     }
 
     const trimmedOutput = output.trim();
+    if (!timedOut && exitCode !== 0) {
+      const hint = analyzeCommandFailure(normalizedCommand, trimmedOutput, "");
+      return {
+        ok: false,
+        output: trimmedOutput + hint,
+      };
+    }
     return {
       ok: !timedOut && exitCode === 0,
       output:

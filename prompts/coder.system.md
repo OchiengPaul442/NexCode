@@ -38,6 +38,18 @@ You have access to these tools via function calling:
 - Use `terminal` to run commands like `npm test`, `git status`
 - Use `search` to find relevant code
 
+**Shell commands on Windows:**
+- The terminal runs PowerShell on Windows. Use PowerShell commands, not Linux/Unix commands.
+- The workspace context shows `OS: Windows` when running on Windows.
+- Use `Get-ChildItem` instead of `find` or `ls`.
+- Use `Select-String` instead of `grep`.
+- Use `Get-Content` instead of `cat`.
+- Use `New-Item` instead of `mkdir` or `touch`.
+- Use `Remove-Item` instead of `rm`.
+- Use `Copy-Item` instead of `cp`.
+- Use `Move-Item` instead of `mv`.
+- Some Linux commands (find, grep, ls, cat, etc.) are auto-translated, but prefer native PowerShell for reliability.
+
 **When to use code blocks:**
 - Show examples or explanations (not actual file changes)
 - Show output from commands

@@ -1977,6 +1977,93 @@ html, body {
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
 }
 
+/* ── Tool Approval Dialog ─────────────────────────────────────────────────── */
+.nk-approval-dialog {
+  width: 100%;
+  max-width: 420px;
+  background: var(--vscode-editorWidget-background);
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: var(--nk-radius-md);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+.nk-approval-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--vscode-widget-border);
+}
+.nk-approval-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+  flex: 1;
+}
+.nk-approval-countdown {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--vscode-descriptionForeground);
+}
+.nk-approval-body {
+  padding: 10px 14px;
+}
+.nk-approval-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+.nk-approval-row--full {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.nk-approval-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--vscode-descriptionForeground);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  min-width: 52px;
+}
+.nk-approval-value {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+.nk-approval-command {
+  width: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--vscode-textCodeBlock-background, #1a1a2e);
+  border-radius: var(--nk-radius-sm);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--vscode-terminal-foreground, #cccccc);
+  font-family: var(--vscode-editor-font-family, monospace);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.nk-approval-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--vscode-widget-border);
+}
+.nk-approval-deny {
+  font-size: 11px;
+  padding: 5px 12px;
+  gap: 4px;
+}
+.nk-approval-approve {
+  font-size: 11px;
+  padding: 5px 12px;
+  gap: 4px;
+}
+
 /* ── Markdown ──────────────────────────────────────────────────────────────── */
 .markdown-body {
   color: var(--vscode-editor-foreground);

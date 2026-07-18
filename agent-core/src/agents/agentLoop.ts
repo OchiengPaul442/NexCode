@@ -151,7 +151,11 @@ export async function* runAgentLoop(
   }));
   let consecutiveNudges = 0;
   const MAX_NUDGES = 2;
+  // Track failed tool calls to detect repeated failures on the same command pattern
+  const recentFailures: Array<{ pattern: string; message: string; turn: number }> = [];
+  const MAX_RECENT_FAILURES = 10;
 
+  const MAX_TOOL_OUTPUT_TOKENS = 2000;
   let timedOut = false;
   for (let turn = 0; turn < config.maxTurns; turn++) {
     if (Date.now() - startedAt > config.timeoutMs) {
@@ -381,9 +385,13 @@ export async function* runAgentLoop(
           ? [argString.trim()]
           : undefined;
 
+      const MAX_TOOL_OUTPUT_CHARS = MAX_TOOL_OUTPUT_TOKENS * 4;
+      const truncatedOutput = result.output.length > MAX_TOOL_OUTPUT_CHARS
+        ? result.output.slice(0, MAX_TOOL_OUTPUT_CHARS) + "\n\n[Output truncated to ~" + MAX_TOOL_OUTPUT_TOKENS + " tokens]"
+        : result.output;
       messages.push({
         role: "tool",
-        content: result.output,
+        content: truncatedOutput,
         tool_call_id: toolCall.id,
       });
 
@@ -396,6 +404,38 @@ export async function* runAgentLoop(
         durationMs: toolDurationMs,
         filesChanged,
       };
+
+      // Track failures and detect repeated failures on similar commands
+      if (!result.ok) {
+        const failurePattern = `${toolCall.function.name}:${argString.split(/\s+/)[0] ?? ""}`;
+        recentFailures.push({ pattern: failurePattern, message: result.output.slice(0, 300), turn });
+        if (recentFailures.length > MAX_RECENT_FAILURES) {
+          recentFailures.shift();
+        }
+
+        // Check for repeated failures on the same command pattern (same base command)
+        const samePatternFailures = recentFailures.filter(f => f.pattern === failurePattern);
+        if (samePatternFailures.length >= 2) {
+          // Inject a warning into the tool message so the model knows it's repeating itself
+          const lastMsg = messages[messages.length - 1];
+          if (lastMsg && lastMsg.role === "tool") {
+            const repeatedWarning = [
+              "",
+              `[REPEATED FAILURE WARNING] You have tried a similar ${toolCall.function.name} command ${samePatternFailures.length} times and it keeps failing.`,
+              "DO NOT retry the same command. Read the [HINT] in the error output and use a DIFFERENT approach.",
+              "Consider: (1) Using a different command/tool, (2) Changing the command syntax, (3) Checking if the tool/dependency is installed.",
+            ].join("\n");
+            lastMsg.content = lastMsg.content + repeatedWarning;
+          }
+        }
+      } else {
+        // On success, clear failures for this pattern to allow retries after fixes
+        const failurePattern = `${toolCall.function.name}:${argString.split(/\s+/)[0] ?? ""}`;
+        const idx = recentFailures.findIndex(f => f.pattern === failurePattern);
+        if (idx !== -1) {
+          recentFailures.splice(idx, 1);
+        }
+      }
     }
   }
 

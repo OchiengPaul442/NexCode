@@ -2427,6 +2427,7 @@ function App() {
   } | null>(null);
   const [settingsDropdownOpen, setSettingsDropdownOpen] = useState(false);
   const [modePopupOpen, setModePopupOpen] = useState(false);
+  const [showAllSessions, setShowAllSessions] = useState(false);
   const modePopupRef = useRef<HTMLDivElement | null>(null);
 
   // Fixed DnD: counter-based to avoid nested element false leaves
@@ -3965,7 +3966,7 @@ function App() {
 
         {activeSession.messages.length === 0 ? (
           <div className="nk-session-list-inline">
-            {sessions.slice(0, 5).map((session) => (
+            {(showAllSessions ? sessions : sessions.slice(0, 5)).map((session) => (
               <div
                 key={session.id}
                 className={`nk-session-item-inline ${session.id === activeSessionId ? "nk-session-item-inline--active" : ""}`}
@@ -3991,8 +3992,19 @@ function App() {
               </div>
             ))}
             {sessions.length > 5 && (
-              <div className="nk-session-view-all">
-                View all ({sessions.length})
+              <div
+                className="nk-session-view-all"
+                onClick={() => setShowAllSessions((prev) => !prev)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setShowAllSessions((prev) => !prev);
+                  }
+                }}
+              >
+                {showAllSessions ? "Show less" : `View all (${sessions.length})`}
               </div>
             )}
           </div>

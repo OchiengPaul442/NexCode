@@ -11,6 +11,7 @@ import {
   MIN_OUTPUT_RESERVE,
   SAFETY_MARGIN,
 } from "../utils/tokenCounter";
+import { repairTruncatedJson } from "../utils/jsonRepair";
 
 export interface ContextBudgetCheck {
   ok: boolean;
@@ -339,14 +340,30 @@ export class OpenAICompatibleProvider implements ModelProvider {
 
       if (json.choices?.[0]?.message?.tool_calls) {
         const toolCalls: ToolCallRequest[] =
-          json.choices[0].message.tool_calls.map((tc) => ({
-            id: tc.id,
-            type: "function" as const,
-            function: {
-              name: tc.function.name,
-              arguments: tc.function.arguments,
-            },
-          }));
+          json.choices[0].message.tool_calls.map((tc) => {
+            // Repair truncated JSON in tool arguments
+            let args = tc.function.arguments;
+            try {
+              JSON.parse(args);
+            } catch {
+              // Try to repair truncated JSON
+              const repaired = repairTruncatedJson(args);
+              try {
+                JSON.parse(repaired);
+                args = repaired;
+              } catch {
+                // Keep original if repair fails, agent loop will handle it
+              }
+            }
+            return {
+              id: tc.id,
+              type: "function" as const,
+              function: {
+                name: tc.function.name,
+                arguments: args,
+              },
+            };
+          });
         return {
           text: json.choices[0].message.content || "",
           toolCalls,

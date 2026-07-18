@@ -1133,10 +1133,6 @@ html, body {
   background: rgba(117, 152, 188, 0.1);
 }
 
-.nk-streaming-status-icon {
-  font-size: 12px;
-}
-
 .nk-streaming-status-text {
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -1293,7 +1289,9 @@ html, body {
 }
 
 .nk-tool-call-summary-icon {
-  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--vscode-descriptionForeground);
 }
 
 .nk-tool-call-summary-text {

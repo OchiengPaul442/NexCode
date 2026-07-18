@@ -12,6 +12,7 @@ import {
   MIN_OUTPUT_RESERVE,
   SAFETY_MARGIN,
 } from "../utils/tokenCounter";
+import { repairTruncatedJson } from "../utils/jsonRepair";
 
 export function isExplicitContextError(message: string): boolean {
   return /context (window|length)|too many tokens|input.*too large|exceeds.*context|prompt.*too long/i.test(message);
@@ -193,6 +194,7 @@ export class OllamaProvider implements ModelProvider {
       if (!response.ok) {
         const body = await response.text();
         let errorMsg = `Ollama returned status ${response.status}`;
+        let errorBody = body;
         try {
           const errorJson = JSON.parse(body);
           if (errorJson.error) {
@@ -212,6 +214,14 @@ export class OllamaProvider implements ModelProvider {
           request.tools.length > 0
         ) {
           console.warn(`[ollama] tool/JSON parse error, retrying without tools: ${errorMsg}`);
+          
+          // First, try to extract and repair any partial tool call from the error
+          const repairedCall = this.tryRepairFromError(errorBody, request.tools);
+          if (repairedCall) {
+            console.warn(`[ollama] successfully repaired tool call from error response`);
+            return repairedCall;
+          }
+          
           try {
             return await this.generateWithoutTools(request, abort);
           } catch (fallbackError) {
@@ -289,6 +299,17 @@ export class OllamaProvider implements ModelProvider {
   }
 
   private fixMalformedToolArgs(toolName: string, rawArgs: string): string {
+    // First, try to repair truncated JSON
+    const repaired = repairTruncatedJson(rawArgs);
+    try {
+      const parsed = JSON.parse(repaired);
+      if (typeof parsed === "object" && parsed !== null) {
+        return JSON.stringify(parsed);
+      }
+    } catch {
+      // Continue with regex-based extraction
+    }
+
     const fixedArgs: Record<string, unknown> = {};
 
     // Generic field extractors - covers all tool argument patterns
@@ -326,6 +347,60 @@ export class OllamaProvider implements ModelProvider {
     }
 
     return JSON.stringify(fixedArgs);
+  }
+
+  /**
+   * Try to repair and extract a tool call from an error response.
+   * Some models generate truncated JSON that Ollama can't serialize,
+   * but we might be able to repair it.
+   */
+  private tryRepairFromError(
+    errorBody: string,
+    tools: Array<{ name: string }> | undefined,
+  ): ModelResponse | null {
+    if (!errorBody || !tools || tools.length === 0) {
+      return null;
+    }
+
+    // Try to extract JSON-like content from the error message
+    // The error might contain the partial tool call in the message
+    const jsonMatch = errorBody.match(/(\{[\s\S]*$)/);
+    if (!jsonMatch) {
+      return null;
+    }
+
+    const partialJson = jsonMatch[1];
+    const repaired = repairTruncatedJson(partialJson);
+    
+    try {
+      const parsed = JSON.parse(repaired);
+      
+      // Check if it looks like a tool call
+      if (parsed.name && typeof parsed.name === "string") {
+        const toolName = parsed.name;
+        const args = parsed.arguments || parsed.params || {};
+        
+        // Validate the tool name exists in available tools
+        const validTool = tools.find(t => t.name === toolName);
+        if (validTool) {
+          return {
+            text: "",
+            toolCalls: [{
+              id: `call_repaired_${Date.now()}`,
+              type: "function",
+              function: {
+                name: toolName,
+                arguments: typeof args === "string" ? args : JSON.stringify(args),
+              },
+            }],
+          };
+        }
+      }
+    } catch {
+      // Repair failed
+    }
+
+    return null;
   }
 
   private extractToolCallsFromText(text: string): ToolCallRequest[] {

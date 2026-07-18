@@ -45,6 +45,7 @@ import {
   Radio,
   Shield,
   Paperclip,
+  Activity,
 } from "lucide-react";
 import { StreamingMessage } from "./components/StreamingMessage";
 
@@ -2549,10 +2550,12 @@ function ToolCallSummary({
 
   return (
     <div className="nk-tool-call-summary">
-      <span className="nk-tool-call-summary-icon">🔍</span>
+      <span className="nk-tool-call-summary-icon">
+        <Activity size={12} />
+      </span>
       <span className="nk-tool-call-summary-text">
         {items.map((item, i) => (
-          <span key={i}>
+          <span key={item.label}>
             {i > 0 && ', '}
             <span style={{ color: item.color }}>{item.count}</span>
             {' '}{item.label}

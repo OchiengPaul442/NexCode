@@ -10,6 +10,7 @@ import { ToolRegistry } from "../tools/toolRegistry";
 import { ToolDefinition, validateInput } from "../tools/toolProtocol";
 import { ApprovalCallback } from "../tools/toolApprovalPolicy";
 import { EvidenceStore } from "../tools/evidenceStore";
+import { repairTruncatedJson } from "../utils/jsonRepair";
 
 export interface AgentLoopConfig {
   maxTurns: number;
@@ -342,9 +343,11 @@ export async function* runAgentLoop(
       let args: Record<string, unknown>;
       let parseError: string | null = null;
       try {
-        args = JSON.parse(toolCall.function.arguments);
+        // First try to repair truncated JSON
+        const repaired = repairTruncatedJson(toolCall.function.arguments);
+        args = JSON.parse(repaired);
       } catch {
-        // Malformed tool call args from model - try to recover
+        // Malformed tool call args from model - try to recover with regex extraction
         args = {};
         parseError = `Invalid JSON in tool arguments: ${toolCall.function.arguments.slice(0, 200)}`;
         // Try to extract path from raw arguments string
@@ -356,6 +359,14 @@ export async function* runAgentLoop(
         if (contentMatch) {
           args.content = contentMatch[1];
           args.command = contentMatch[1];
+        }
+        const commandMatch = toolCall.function.arguments.match(/["'](?:cmd)["']?\s*[:=]\s*["']([\s\S]*?)["']/i);
+        if (commandMatch) {
+          args.command = commandMatch[1];
+        }
+        const queryMatch = toolCall.function.arguments.match(/["'](?:query|search)["']?\s*[:=]\s*["']([\s\S]*?)["']/i);
+        if (queryMatch) {
+          args.query = queryMatch[1];
         }
       }
 

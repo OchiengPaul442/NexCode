@@ -18,13 +18,13 @@ interface StreamingMessageProps {
   onFrame?: () => void;
 }
 
-const statusLabelConfig: Record<StatusLabel, { icon: string; color: string; defaultText: string }> = {
-  thinking: { icon: "💭", color: "#7598bc", defaultText: "Thinking" },
-  exploring: { icon: "🔍", color: "#3794ff", defaultText: "Exploring" },
-  editing: { icon: "✏️", color: "#4ec9b0", defaultText: "Edit" },
-  searching: { icon: "🔎", color: "#d7ba7d", defaultText: "Searching" },
-  shell: { icon: "⚡", color: "#c586c0", defaultText: "Shell" },
-  reviewing: { icon: "👁️", color: "#94a3b8", defaultText: "Reviewing" },
+const statusLabelConfig: Record<StatusLabel, { color: string; defaultText: string }> = {
+  thinking: { color: "#7598bc", defaultText: "Thinking" },
+  exploring: { color: "#3794ff", defaultText: "Exploring" },
+  editing: { color: "#4ec9b0", defaultText: "Edit" },
+  searching: { color: "#d7ba7d", defaultText: "Searching" },
+  shell: { color: "#c586c0", defaultText: "Shell" },
+  reviewing: { color: "#94a3b8", defaultText: "Reviewing" },
 };
 
 export function StreamingMessage({
@@ -60,7 +60,6 @@ export function StreamingMessage({
         <div className="nk-streaming-status-container">
           {config && (
             <span className="nk-streaming-status-label" style={{ color: config.color }}>
-              <span className="nk-streaming-status-icon">{config.icon}</span>
               <span className="nk-streaming-status-text">{config.defaultText}</span>
             </span>
           )}

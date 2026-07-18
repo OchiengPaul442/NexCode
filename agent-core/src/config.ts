@@ -38,6 +38,9 @@ export interface RuntimeConfig {
     openAIApiKey?: string;
   };
   toolDefaults: {
+    searchProvider?: string;
+    searchApiKey?: string;
+    searchBaseUrl?: string;
     tavilyApiKey?: string;
     tavilyBaseUrl: string;
   };
@@ -84,6 +87,10 @@ export function createRuntimeConfig(
         partial.providerDefaults?.openAIApiKey ?? process.env.OPENAI_API_KEY,
     },
     toolDefaults: {
+      searchProvider: partial.toolDefaults?.searchProvider ?? "tavily",
+      searchApiKey:
+        partial.toolDefaults?.searchApiKey ?? process.env.SEARCH_API_KEY,
+      searchBaseUrl: partial.toolDefaults?.searchBaseUrl ?? "",
       tavilyApiKey:
         partial.toolDefaults?.tavilyApiKey ?? process.env.TAVILY_API_KEY,
       tavilyBaseUrl:

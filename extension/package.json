@@ -101,16 +101,6 @@
           "default": "auto",
           "description": "Default agent mode for orchestration."
         },
-        "nexcodeKiboko.ollamaBaseUrl": {
-          "type": "string",
-          "default": "http://localhost:11434",
-          "description": "Base URL for local Ollama API."
-        },
-        "nexcodeKiboko.openAIBaseUrl": {
-          "type": "string",
-          "default": "https://opencode.ai/zen/go/v1",
-          "description": "Base URL for OpenAI-compatible API. OpenCode Go: https://opencode.ai/zen/go/v1. HuggingFace: https://router.huggingface.co/v1. OpenAI: https://api.openai.com/v1"
-        },
         "nexcodeKiboko.allowToolCommands": {
           "type": "boolean",
           "default": true,

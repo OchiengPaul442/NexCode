@@ -344,10 +344,10 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         return;
       case "updateSetting":
         if (message.key && message.value !== undefined) {
-          const secretKeys = ["openAIApiKey", "tavilyApiKey"];
+          const secretKeys = ["openAIApiKey", "searchApiKey", "tavilyApiKey"];
           if (secretKeys.includes(message.key)) {
             await this.secretService.setSecret(
-              message.key as "openAIApiKey" | "tavilyApiKey",
+              message.key as "openAIApiKey" | "searchApiKey" | "tavilyApiKey",
               String(message.value),
             );
           } else {
@@ -931,6 +931,9 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         ollamaBaseUrl: settings.ollamaBaseUrl,
         openAIBaseUrl: settings.openAIBaseUrl,
         openAIApiKey: rawKeys.openAIApiKey,
+        searchProvider: settings.searchProvider,
+        searchApiKey: rawKeys.searchApiKey,
+        searchBaseUrl: settings.searchBaseUrl,
         tavilyApiKey: rawKeys.tavilyApiKey,
         modeTemperatures: settings.modeTemperatures as any,
         agentModels: settings.agentModels,
@@ -1145,6 +1148,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
 
   private async getRawApiKeys(): Promise<{
     openAIApiKey: string;
+    searchApiKey: string;
     tavilyApiKey: string;
   }> {
     return this.secretService.getAllSecrets();

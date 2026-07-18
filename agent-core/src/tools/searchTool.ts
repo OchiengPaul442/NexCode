@@ -1,12 +1,17 @@
 import { TerminalTool } from "./terminalTool";
 import { ToolResult } from "../types";
 
+type SearchProviderId = "tavily" | "serpapi" | "serper" | "bing" | "custom";
+
 interface SearchToolOptions {
+  searchProvider?: SearchProviderId;
+  searchApiKey?: string;
+  searchBaseUrl?: string;
   tavilyApiKey?: string;
   tavilyBaseUrl?: string;
 }
 
-interface TavilyResultItem {
+interface SearchResultItem {
   title?: string;
   url?: string;
   content?: string;
@@ -14,7 +19,48 @@ interface TavilyResultItem {
 
 interface TavilyResponse {
   answer?: string;
-  results?: TavilyResultItem[];
+  results?: SearchResultItem[];
+}
+
+interface SerpApiResponse {
+  organic_results?: Array<{
+    title?: string;
+    link?: string;
+    snippet?: string;
+  }>;
+  answer_box?: {
+    answer?: string;
+    title?: string;
+  };
+}
+
+interface SerperResponse {
+  organic?: Array<{
+    title?: string;
+    link?: string;
+    snippet?: string;
+  }>;
+  answer_box?: {
+    answer?: string;
+    title?: string;
+  };
+}
+
+interface BingResponse {
+  webPages?: {
+    value?: Array<{
+      name?: string;
+      url?: string;
+      snippet?: string;
+    }>;
+  };
+  results?: {
+    news?: Array<{
+      name?: string;
+      url?: string;
+      description?: string;
+    }>;
+  };
 }
 
 interface DuckDuckGoTopic {
@@ -31,6 +77,9 @@ interface DuckDuckGoResponse {
 }
 
 export class SearchTool {
+  private readonly searchProvider: SearchProviderId;
+  private readonly searchApiKey?: string;
+  private readonly searchBaseUrl?: string;
   private readonly tavilyApiKey?: string;
   private readonly tavilyBaseUrl: string;
 
@@ -38,6 +87,9 @@ export class SearchTool {
     private readonly terminal: TerminalTool,
     options: SearchToolOptions = {},
   ) {
+    this.searchProvider = options.searchProvider ?? "tavily";
+    this.searchApiKey = options.searchApiKey;
+    this.searchBaseUrl = options.searchBaseUrl;
     this.tavilyApiKey = options.tavilyApiKey;
     this.tavilyBaseUrl =
       options.tavilyBaseUrl ?? "https://api.tavily.com/search";
@@ -128,25 +180,23 @@ export class SearchTool {
       };
     }
 
-    // Try DuckDuckGo HTML first (no API key needed)
+    // Try the configured provider first
+    const configuredResult = await this.searchWithConfiguredProvider(query);
+    if (configuredResult.ok) {
+      return configuredResult;
+    }
+
+    // Fallback to free providers if configured provider fails or has no API key
     const duckResult = await this.searchWithDuckDuckGo(query);
     if (duckResult.ok) {
       return duckResult;
     }
 
-    // Try Wikipedia REST API as secondary fallback
     const wikipediaResult = await this.searchWithWikipediaSummary(query);
     if (wikipediaResult.ok) {
       return wikipediaResult;
     }
 
-    // Try Tavily if API key is configured
-    const tavilyResult = await this.searchWithTavily(query);
-    if (tavilyResult.ok) {
-      return tavilyResult;
-    }
-
-    // Try DuckDuckGo Instant Answer API as last resort
     const duckInstantResult = await this.searchWithDuckDuckGoInstant(query);
     if (duckInstantResult.ok) {
       return duckInstantResult;
@@ -156,17 +206,41 @@ export class SearchTool {
       ok: false,
       output: [
         `Web search failed for query: ${query}`,
-        `All search providers returned errors.`,
-        ``,
+        `Configured provider (${this.searchProvider}): ${configuredResult.output}`,
         `DuckDuckGo: ${duckResult.output}`,
         `Wikipedia: ${wikipediaResult.output}`,
-        `Tavily: ${tavilyResult.output}`,
         `DuckDuckGo Instant: ${duckInstantResult.output}`,
         ``,
+        `Tip: Configure a search API key in settings for better results.`,
         `Tip: Check your internet connection and try again.`,
-        `Tip: Try a different search query or shorter keywords.`,
       ].join("\n"),
     };
+  }
+
+  private async searchWithConfiguredProvider(query: string): Promise<ToolResult> {
+    const apiKey = this.searchApiKey || this.tavilyApiKey || process.env.SEARCH_API_KEY || process.env.TAVILY_API_KEY;
+    
+    if (!apiKey && this.searchProvider !== "custom") {
+      return {
+        ok: false,
+        output: `No API key configured for ${this.searchProvider}. Add one in Settings.`,
+      };
+    }
+
+    switch (this.searchProvider) {
+      case "tavily":
+        return this.searchWithTavily(query);
+      case "serpapi":
+        return this.searchWithSerpAPI(query);
+      case "serper":
+        return this.searchWithSerper(query);
+      case "bing":
+        return this.searchWithBing(query);
+      case "custom":
+        return this.searchWithCustomProvider(query);
+      default:
+        return this.searchWithTavily(query);
+    }
   }
 
   private async searchWithTavily(query: string): Promise<ToolResult> {
@@ -235,6 +309,185 @@ export class SearchTool {
         ok: false,
         output: `Tavily request failed: ${String(error)}`,
       };
+    }
+  }
+
+  private async searchWithSerpAPI(query: string): Promise<ToolResult> {
+    const apiKey = this.searchApiKey;
+    if (!apiKey) {
+      return { ok: false, output: "SerpAPI key not configured." };
+    }
+
+    try {
+      const baseUrl = this.searchBaseUrl || "https://serpapi.com/search";
+      const url = `${baseUrl}?q=${encodeURIComponent(query)}&api_key=${apiKey}&engine=google&num=5`;
+      
+      const json = await this.fetchJson<SerpApiResponse>(url, { method: "GET" });
+      
+      const answer = json.answer_box?.answer;
+      const results = json.organic_results?.slice(0, 5) || [];
+
+      if (!answer && results.length === 0) {
+        return { ok: false, output: "SerpAPI returned no results." };
+      }
+
+      const lines = [`Web search provider: SerpAPI`, `Query: ${query}`];
+      if (answer) {
+        lines.push("", `Answer: ${this.compact(answer, 400)}`);
+      }
+
+      if (results.length > 0) {
+        lines.push("", "Top results:");
+        for (let i = 0; i < results.length; i++) {
+          const item = results[i];
+          lines.push(`${i + 1}. ${item.title || "Untitled"} - ${item.link || "(no url)"}`);
+          if (item.snippet) {
+            lines.push(`   ${this.compact(item.snippet, 220)}`);
+          }
+        }
+      }
+
+      return { ok: true, output: lines.join("\n") };
+    } catch (error) {
+      return { ok: false, output: `SerpAPI request failed: ${String(error)}` };
+    }
+  }
+
+  private async searchWithSerper(query: string): Promise<ToolResult> {
+    const apiKey = this.searchApiKey;
+    if (!apiKey) {
+      return { ok: false, output: "Serper key not configured." };
+    }
+
+    try {
+      const baseUrl = this.searchBaseUrl || "https://google.serper.dev/search";
+      
+      const json = await this.fetchJson<SerperResponse>(baseUrl, {
+        method: "POST",
+        headers: {
+          "X-API-KEY": apiKey,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ q: query, num: 5 }),
+      });
+
+      const answer = json.answer_box?.answer;
+      const results = json.organic?.slice(0, 5) || [];
+
+      if (!answer && results.length === 0) {
+        return { ok: false, output: "Serper returned no results." };
+      }
+
+      const lines = [`Web search provider: Serper`, `Query: ${query}`];
+      if (answer) {
+        lines.push("", `Answer: ${this.compact(answer, 400)}`);
+      }
+
+      if (results.length > 0) {
+        lines.push("", "Top results:");
+        for (let i = 0; i < results.length; i++) {
+          const item = results[i];
+          lines.push(`${i + 1}. ${item.title || "Untitled"} - ${item.link || "(no url)"}`);
+          if (item.snippet) {
+            lines.push(`   ${this.compact(item.snippet, 220)}`);
+          }
+        }
+      }
+
+      return { ok: true, output: lines.join("\n") };
+    } catch (error) {
+      return { ok: false, output: `Serper request failed: ${String(error)}` };
+    }
+  }
+
+  private async searchWithBing(query: string): Promise<ToolResult> {
+    const apiKey = this.searchApiKey;
+    if (!apiKey) {
+      return { ok: false, output: "Bing API key not configured." };
+    }
+
+    try {
+      const baseUrl = this.searchBaseUrl || "https://api.bing.microsoft.com/v7.0/search";
+      const url = `${baseUrl}?q=${encodeURIComponent(query)}&count=5`;
+      
+      const json = await this.fetchJson<BingResponse>(url, {
+        method: "GET",
+        headers: { "Ocp-Apim-Subscription-Key": apiKey },
+      });
+
+      const results = json.webPages?.value?.slice(0, 5) || [];
+
+      if (results.length === 0) {
+        return { ok: false, output: "Bing returned no results." };
+      }
+
+      const lines = [`Web search provider: Bing`, `Query: ${query}`, "", "Top results:"];
+      for (let i = 0; i < results.length; i++) {
+        const item = results[i];
+        lines.push(`${i + 1}. ${item.name || "Untitled"} - ${item.url || "(no url)"}`);
+        if (item.snippet) {
+          lines.push(`   ${this.compact(item.snippet, 220)}`);
+        }
+      }
+
+      return { ok: true, output: lines.join("\n") };
+    } catch (error) {
+      return { ok: false, output: `Bing request failed: ${String(error)}` };
+    }
+  }
+
+  private async searchWithCustomProvider(query: string): Promise<ToolResult> {
+    const apiKey = this.searchApiKey;
+    const baseUrl = this.searchBaseUrl;
+    
+    if (!baseUrl) {
+      return { ok: false, output: "Custom search API base URL not configured." };
+    }
+
+    try {
+      const url = `${baseUrl}?q=${encodeURIComponent(query)}`;
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (apiKey) {
+        headers["Authorization"] = `Bearer ${apiKey}`;
+      }
+
+      const response = await this.fetchWithTimeout(url, {
+        method: "GET",
+        headers,
+      }, 15000);
+
+      if (!response.ok) {
+        return { ok: false, output: `Custom API returned status ${response.status}` };
+      }
+
+      const json = await response.json();
+      
+      // Try to extract results from common response formats
+      const results = json.results || json.data || json.webPages?.value || [];
+      const answer = json.answer || json.answer_box?.answer;
+
+      const lines = [`Web search provider: Custom`, `Query: ${query}`];
+      if (answer) {
+        lines.push("", `Answer: ${this.compact(answer, 400)}`);
+      }
+
+      if (Array.isArray(results) && results.length > 0) {
+        lines.push("", "Top results:");
+        for (let i = 0; i < Math.min(results.length, 5); i++) {
+          const item = results[i];
+          const title = item.title || item.name || "Untitled";
+          const url = item.url || item.link || "(no url)";
+          const snippet = item.content || item.snippet || item.description || "";
+          lines.push(`${i + 1}. ${title} - ${url}`);
+          if (snippet) {
+            lines.push(`   ${this.compact(snippet, 220)}`);
+          }
+        }
+      }
+
+      return { ok: true, output: lines.join("\n") };
+    } catch (error) {
+      return { ok: false, output: `Custom search request failed: ${String(error)}` };
     }
   }
 

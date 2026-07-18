@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 
 const SECRET_KEYS = {
   openAIApiKey: "nexcode.openAIApiKey",
+  searchApiKey: "nexcode.searchApiKey",
   tavilyApiKey: "nexcode.tavilyApiKey",
 } as const;
 

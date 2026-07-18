@@ -26,6 +26,9 @@ export interface ToolApprovalRequiredResult extends ToolResult {
 }
 
 interface ToolRegistryOptions {
+  searchProvider?: string;
+  searchApiKey?: string;
+  searchBaseUrl?: string;
   tavilyApiKey?: string;
   tavilyBaseUrl?: string;
   mcpRegistry?: McpRegistry;
@@ -50,6 +53,9 @@ export class ToolRegistry {
     this.git = new GitTool(this.terminal);
     this.test = new TestRunnerTool(this.terminal);
     this.search = new SearchTool(this.terminal, {
+      searchProvider: options.searchProvider as any,
+      searchApiKey: options.searchApiKey,
+      searchBaseUrl: options.searchBaseUrl,
       tavilyApiKey: options.tavilyApiKey,
       tavilyBaseUrl: options.tavilyBaseUrl,
     });

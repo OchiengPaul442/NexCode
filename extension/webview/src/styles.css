@@ -2235,6 +2235,22 @@ html, body {
   color: var(--vscode-descriptionForeground);
 }
 
+.nk-settings-hint {
+  font-size: 10px;
+  color: var(--vscode-descriptionForeground);
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+.nk-settings-hint a {
+  color: var(--vscode-textLink-foreground, #3794ff);
+  text-decoration: none;
+}
+
+.nk-settings-hint a:hover {
+  text-decoration: underline;
+}
+
 .nk-settings-toggle-row {
   display: flex;
   justify-content: space-between;

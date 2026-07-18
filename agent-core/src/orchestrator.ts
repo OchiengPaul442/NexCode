@@ -64,6 +64,9 @@ export interface NexcodeOrchestratorOptions {
   ollamaBaseUrl?: string;
   openAIBaseUrl?: string;
   openAIApiKey?: string;
+  searchProvider?: string;
+  searchApiKey?: string;
+  searchBaseUrl?: string;
   tavilyApiKey?: string;
   tavilyBaseUrl?: string;
   approvalCallback?: ApprovalCallback;
@@ -184,6 +187,9 @@ export class NexcodeOrchestrator {
     });
     this.mcpRegistry = new McpRegistry();
     this.tools = new ToolRegistry(this.config.workspaceRoot, {
+      searchProvider: this.config.toolDefaults.searchProvider,
+      searchApiKey: this.config.toolDefaults.searchApiKey,
+      searchBaseUrl: this.config.toolDefaults.searchBaseUrl,
       tavilyApiKey: this.config.toolDefaults.tavilyApiKey,
       tavilyBaseUrl: this.config.toolDefaults.tavilyBaseUrl,
       mcpRegistry: this.mcpRegistry,

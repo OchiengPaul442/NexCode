@@ -222,6 +222,8 @@ interface ToolbarSelectOption {
   meta?: { inputs: string[]; reasoning: boolean; context: string };
 }
 
+type SearchProviderId = "tavily" | "serpapi" | "serper" | "bing" | "custom";
+
 interface SidebarSettings {
   provider?: ProviderId;
   model?: string;
@@ -234,6 +236,10 @@ interface SidebarSettings {
   permissionLevel: PermissionLevel;
   openAIBaseUrl?: string;
   openAIApiKey?: string;
+  ollamaBaseUrl?: string;
+  searchProvider?: SearchProviderId;
+  searchApiKey?: string;
+  searchBaseUrl?: string;
 }
 
 interface PersistedState {
@@ -995,6 +1001,10 @@ const useStore = create<StoreState>((set, get) => {
     permissionLevel: "default" as PermissionLevel,
     openAIBaseUrl: "",
     openAIApiKey: "",
+    ollamaBaseUrl: "http://localhost:11434",
+    searchProvider: "tavily",
+    searchApiKey: "",
+    searchBaseUrl: "",
   };
 
   const initialSessions = persisted?.sessions?.length
@@ -2647,6 +2657,39 @@ function ToolApprovalDialog({
   );
 }
 
+// ─── Search Provider Helpers ─────────────────────────────────────────────────
+function getSearchProviderPlaceholder(provider: SearchProviderId): string {
+  switch (provider) {
+    case "tavily": return "tvly-...";
+    case "serpapi": return "Your SerpAPI key";
+    case "serper": return "Your Serper key";
+    case "bing": return "Your Bing API key";
+    case "custom": return "Your API key";
+    default: return "Your API key";
+  }
+}
+
+function getSearchProviderHint(provider: SearchProviderId): string {
+  switch (provider) {
+    case "tavily": return "Get a free key at tavily.com";
+    case "serpapi": return "Get a key at serpapi.com";
+    case "serper": return "Get a key at serper.dev";
+    case "bing": return "Get a key at azure.microsoft.com/services/bing-search";
+    case "custom": return "Enter your custom search API key";
+    default: return "Enter your API key";
+  }
+}
+
+function getSearchProviderUrlPlaceholder(provider: SearchProviderId): string {
+  switch (provider) {
+    case "serpapi": return "https://serpapi.com/search";
+    case "serper": return "https://google.serper.dev/search";
+    case "bing": return "https://api.bing.microsoft.com/v7.0/search";
+    case "custom": return "https://your-api-endpoint.com/search";
+    default: return "https://api.example.com/search";
+  }
+}
+
 // ─── App ──────────────────────────────────────────────────────────────────────
 function App() {
   const sessions = useStore((s) => s.sessions);
@@ -4153,6 +4196,23 @@ function App() {
                   </select>
                 </div>
 
+                {/* Ollama Settings - only show when provider is ollama */}
+                {activeSession.provider === 'ollama' && (
+                  <div className="nk-settings-section">
+                    <div className="nk-settings-label">Ollama Base URL</div>
+                    <input
+                      className="nk-settings-input"
+                      type="text"
+                      placeholder="http://localhost:11434"
+                      value={settings.ollamaBaseUrl ?? 'http://localhost:11434'}
+                      onChange={(e) => {
+                        useStore.getState().updateSetting('ollamaBaseUrl', e.target.value);
+                        vscode.postMessage({ type: 'updateSetting', key: 'ollamaBaseUrl', value: e.target.value });
+                      }}
+                    />
+                  </div>
+                )}
+
                 {/* OpenAI Compatible Settings - only show when provider is openai-compatible */}
                 {activeSession.provider === 'openai-compatible' && (
                   <>
@@ -4182,6 +4242,61 @@ function App() {
                         }}
                       />
                     </div>
+                  </>
+                )}
+
+                {/* Web Search Settings - show when web search is enabled */}
+                {settings.enableWebSearch && (
+                  <>
+                    <div className="nk-settings-section">
+                      <div className="nk-settings-label">Search Provider</div>
+                      <select
+                        className="nk-settings-select"
+                        value={settings.searchProvider ?? 'tavily'}
+                        onChange={(e) => {
+                          const provider = e.target.value as SearchProviderId;
+                          useStore.getState().updateSetting('searchProvider', provider);
+                          vscode.postMessage({ type: 'updateSetting', key: 'searchProvider', value: provider });
+                        }}
+                      >
+                        <option value="tavily">Tavily</option>
+                        <option value="serpapi">SerpAPI</option>
+                        <option value="serper">Serper</option>
+                        <option value="bing">Bing Search</option>
+                        <option value="custom">Custom API</option>
+                      </select>
+                    </div>
+                    <div className="nk-settings-section">
+                      <div className="nk-settings-label">Search API Key</div>
+                      <input
+                        className="nk-settings-input"
+                        type="password"
+                        placeholder={getSearchProviderPlaceholder(settings.searchProvider ?? 'tavily')}
+                        value={settings.searchApiKey ?? ''}
+                        onChange={(e) => {
+                          useStore.getState().updateSetting('searchApiKey', e.target.value);
+                          vscode.postMessage({ type: 'updateSetting', key: 'searchApiKey', value: e.target.value });
+                        }}
+                      />
+                      <div className="nk-settings-hint">
+                        {getSearchProviderHint(settings.searchProvider ?? 'tavily')}
+                      </div>
+                    </div>
+                    {(settings.searchProvider === 'custom' || settings.searchProvider === 'serpapi' || settings.searchProvider === 'serper' || settings.searchProvider === 'bing') && (
+                      <div className="nk-settings-section">
+                        <div className="nk-settings-label">Search API Base URL</div>
+                        <input
+                          className="nk-settings-input"
+                          type="text"
+                          placeholder={getSearchProviderUrlPlaceholder(settings.searchProvider ?? 'tavily')}
+                          value={settings.searchBaseUrl ?? ''}
+                          onChange={(e) => {
+                            useStore.getState().updateSetting('searchBaseUrl', e.target.value);
+                            vscode.postMessage({ type: 'updateSetting', key: 'searchBaseUrl', value: e.target.value });
+                          }}
+                        />
+                      </div>
+                    )}
                   </>
                 )}
 

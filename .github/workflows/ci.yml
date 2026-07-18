@@ -27,6 +27,9 @@ jobs:
       - name: Type-check agent-core
         run: npm run -w agent-core lint
 
+      - name: Build agent-core (required for extension type-check)
+        run: npm run -w agent-core build
+
       - name: Type-check extension
         run: npm run -w extension lint
 

@@ -4,6 +4,7 @@ import {
   ToolApprovalPolicy,
 } from "../src/tools/toolApprovalPolicy";
 import { ToolRegistry } from "../src/tools/toolRegistry";
+import { TOOL_DEFINITIONS } from "../src/tools/toolDefinitions";
 
 describe("DefaultToolApprovalPolicy", () => {
   const policy: ToolApprovalPolicy = new DefaultToolApprovalPolicy();
@@ -157,5 +158,54 @@ describe("ToolRegistry with approval policy", () => {
     const result = await registry.runToolCall("read package.json");
     expect(result.ok).toBe(true);
     expect(result.requiresApproval).toBeUndefined();
+  });
+});
+
+describe("Tool risk level and approval consistency (catches patch-class bugs)", () => {
+  const policy: ToolApprovalPolicy = new DefaultToolApprovalPolicy();
+
+  for (const def of TOOL_DEFINITIONS) {
+    const toolName = def.name;
+
+    it(`${toolName}: destructive risk must require approval`, () => {
+      const risk = policy.getToolRiskLevel(toolName, "test-arg");
+      const needsApproval = policy.requiresApproval(toolName, "test-arg");
+
+      if (risk === "destructive") {
+        expect(needsApproval).toBe(true);
+      }
+    });
+
+    it(`${toolName}: safe risk must not require approval`, () => {
+      const risk = policy.getToolRiskLevel(toolName, "test-arg");
+      const needsApproval = policy.requiresApproval(toolName, "test-arg");
+
+      if (risk === "safe") {
+        expect(needsApproval).toBe(false);
+      }
+    });
+  }
+
+  it("patch specifically: requires approval (was missing before fix)", () => {
+    expect(policy.requiresApproval("patch", "file.ts :: old :: new")).toBe(true);
+    expect(policy.getToolRiskLevel("patch", "file.ts :: old :: new")).toBe("low-risk");
+  });
+
+  it("all tools are classified in exactly one of the risk lists", () => {
+    const allToolNames = TOOL_DEFINITIONS.map((d) => d.name);
+    const safeList = ["read", "git-status", "git-diff", "git-branch", "git-log", "git-show"];
+    const lowRiskList = ["write", "append", "patch"];
+    const structuredList = ["test"];
+    const destructiveList = [
+      "delete", "delete-contents", "move", "terminal", "mcp",
+      "batch_edit", "web-search", "search-web", "online-search", "search",
+      "git-stage", "git-unstage", "git-commit", "git-create-branch",
+    ];
+    const knownLists = [...safeList, ...lowRiskList, ...structuredList, ...destructiveList];
+
+    for (const name of allToolNames) {
+      const count = knownLists.filter((n) => n === name).length;
+      expect(count).toBe(1);
+    }
   });
 });

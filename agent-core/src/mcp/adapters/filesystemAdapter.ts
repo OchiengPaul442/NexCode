@@ -1,6 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 import { McpAdapter, McpToolCall, McpToolResult } from "../types";
+import { checkPathWithinWorkspace } from "../../utils/pathContainment";
 
 export class FilesystemAdapter implements McpAdapter {
   readonly id = "filesystem";
@@ -14,10 +15,8 @@ export class FilesystemAdapter implements McpAdapter {
       switch (call.tool) {
         case "list_directory": {
           const targetPath = call.input.trim() || ".";
-          const absolutePath = path.resolve(this.workspaceRoot, targetPath);
-
-          const relative = path.relative(this.workspaceRoot, absolutePath);
-          if (relative.startsWith("..") || path.isAbsolute(relative)) {
+          const absolutePath = checkPathWithinWorkspace(this.workspaceRoot, targetPath);
+          if (!absolutePath) {
             return { ok: false, output: "Path escapes workspace root", latencyMs: Date.now() - startTime };
           }
 
@@ -34,9 +33,8 @@ export class FilesystemAdapter implements McpAdapter {
           if (!targetPath) {
             return { ok: false, output: "Path required", latencyMs: Date.now() - startTime };
           }
-          const absolutePath = path.resolve(this.workspaceRoot, targetPath);
-          const relative = path.relative(this.workspaceRoot, absolutePath);
-          if (relative.startsWith("..") || path.isAbsolute(relative)) {
+          const absolutePath = checkPathWithinWorkspace(this.workspaceRoot, targetPath);
+          if (!absolutePath) {
             return { ok: false, output: "Path escapes workspace root", latencyMs: Date.now() - startTime };
           }
 

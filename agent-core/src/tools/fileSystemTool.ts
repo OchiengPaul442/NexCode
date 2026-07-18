@@ -4,6 +4,7 @@ import { randomUUID } from "crypto";
 import { ProposedEdit, ToolResult } from "../types";
 import { createPatch } from "../utils/diff";
 import { ContextCompressor } from "../utils/contextCompressor";
+import { resolveWorkspacePath } from "../utils/pathContainment";
 
 export class FileSystemTool {
   private readonly compressor = new ContextCompressor(8000);
@@ -200,48 +201,7 @@ export class FileSystemTool {
   }
 
   public async resolveWorkspacePathSafe(targetPath: string): Promise<string> {
-    const absolutePath = path.isAbsolute(targetPath)
-      ? path.normalize(targetPath)
-      : path.normalize(path.join(this.workspaceRoot, targetPath));
-
-    let resolvedPath: string;
-    try {
-      resolvedPath = await fs.realpath(absolutePath);
-    } catch {
-      // Path doesn't exist yet - resolve parent directory to catch intermediate symlinks
-      try {
-        const parentResolved = await fs.realpath(path.dirname(absolutePath));
-        resolvedPath = path.join(parentResolved, path.basename(absolutePath));
-      } catch {
-        // Parent doesn't exist yet - use normalized path (mkdir will create it)
-        resolvedPath = absolutePath;
-      }
-    }
-
-    const relative = path.relative(this.workspaceRoot, resolvedPath);
-    if (relative.startsWith("..") || path.isAbsolute(relative)) {
-      throw new Error(`Path escapes workspace root: ${targetPath}`);
-    }
-
-    return resolvedPath;
-  }
-
-  /**
-   * @deprecated Use resolveWorkspacePathSafe() instead. This sync version does NOT
-   * resolve symlinks and is vulnerable to symlink-based path traversal attacks.
-   * Only保留 for backward compatibility with non-async callers that cannot use async.
-   */
-  public resolveWorkspacePath(targetPath: string): string {
-    const absolutePath = path.isAbsolute(targetPath)
-      ? path.normalize(targetPath)
-      : path.normalize(path.join(this.workspaceRoot, targetPath));
-
-    const relative = path.relative(this.workspaceRoot, absolutePath);
-    if (relative.startsWith("..") || path.isAbsolute(relative)) {
-      throw new Error(`Path escapes workspace root: ${targetPath}`);
-    }
-
-    return absolutePath;
+    return resolveWorkspacePath(this.workspaceRoot, targetPath);
   }
 
   public ensureNotWorkspaceRootPublic(

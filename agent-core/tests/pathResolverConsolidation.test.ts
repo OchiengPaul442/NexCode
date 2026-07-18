@@ -99,34 +99,6 @@ describe("Path resolver consolidation (N2)", () => {
     });
   });
 
-  describe("resolveWorkspacePath (deprecated sync) still works", () => {
-    it("allows normal relative path", () => {
-      const result = tool.resolveWorkspacePath("src/file.ts");
-      expect(result).toBe(path.join(tmpDir, "src/file.ts"));
-    });
-
-    it("rejects ../ traversal", () => {
-      expect(() => tool.resolveWorkspacePath("../etc/passwd")).toThrow(
-        "Path escapes workspace root",
-      );
-    });
-
-    it("does NOT resolve symlinks (known limitation - deprecated)", async () => {
-      const linkPath = path.join(tmpDir, "escape-link");
-      try {
-        await fs.symlink(outsideDir, linkPath);
-        // The sync version does NOT catch this - that's why it's deprecated
-        const result = tool.resolveWorkspacePath("escape-link");
-        expect(result).toBe(path.join(tmpDir, "escape-link"));
-      } catch (err: unknown) {
-        if ((err as NodeJS.ErrnoException).code === "EPERM") {
-          return;
-        }
-        throw err;
-      }
-    });
-  });
-
   describe("applyProposedEdit uses safe resolver", () => {
     it("rejects symlink escape in proposed edit", async () => {
       const linkPath = path.join(tmpDir, "escape-link");

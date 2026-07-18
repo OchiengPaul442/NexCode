@@ -20,22 +20,21 @@ export class GitTool {
     if (!paths.length) {
       return Promise.resolve({ ok: false, output: "No paths provided." });
     }
-    return this.terminal.run(`git add -- ${paths.map(p => `"${p}"`).join(" ")}`);
+    return this.terminal.runSafe("git", ["add", "--", ...paths]);
   }
 
   public unstage(paths: string[]): Promise<ToolResult> {
     if (!paths.length) {
       return Promise.resolve({ ok: false, output: "No paths provided." });
     }
-    return this.terminal.run(`git reset HEAD -- ${paths.map(p => `"${p}"`).join(" ")}`);
+    return this.terminal.runSafe("git", ["reset", "HEAD", "--", ...paths]);
   }
 
   public commit(message: string): Promise<ToolResult> {
     if (!message || !message.trim()) {
       return Promise.resolve({ ok: false, output: "Commit message cannot be empty." });
     }
-    const escaped = message.replace(/"/g, '\\"');
-    return this.terminal.run(`git commit -m "${escaped}"`);
+    return this.terminal.runSafe("git", ["commit", "-m", message]);
   }
 
   public createBranch(name: string): Promise<ToolResult> {

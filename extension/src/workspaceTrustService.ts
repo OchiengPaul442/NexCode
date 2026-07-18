@@ -30,6 +30,7 @@ export class WorkspaceTrustService {
       "git-unstage",
       "git-commit",
       "git-create-branch",
+      "patch",
     ];
 
     return !restrictedTools.includes(toolName);
@@ -58,6 +59,7 @@ export class WorkspaceTrustService {
       "git-unstage": "Git unstaging is restricted in untrusted workspaces.",
       "git-commit": "Git commits are restricted in untrusted workspaces.",
       "git-create-branch": "Git branch creation is restricted in untrusted workspaces.",
+      "patch": "Patch edits are restricted in untrusted workspaces.",
     };
 
     return restrictions[toolName] ?? null;

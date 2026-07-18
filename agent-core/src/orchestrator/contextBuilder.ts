@@ -2,6 +2,7 @@ import fs from "fs/promises";
 import path from "path";
 import { RequestAttachment, OrchestratorRequest } from "../types";
 import { ContextCache } from "../utils/contextCache";
+import { checkPathWithinWorkspace } from "../utils/pathContainment";
 
 const workspaceContextCache = new ContextCache(30000);
 const fileTreeCache = new ContextCache(30_000);
@@ -484,21 +485,7 @@ function resolvePathWithinWorkspaceRoot(
   workspaceRoot: string,
   rawPath: string,
 ): string | null {
-  const trimmed = rawPath.trim().replace(/^['"`]|['"`]$/g, "");
-  if (!trimmed) {
-    return null;
-  }
-
-  const absolutePath = path.isAbsolute(trimmed)
-    ? path.normalize(trimmed)
-    : path.normalize(path.join(workspaceRoot, trimmed));
-
-  const relative = path.relative(workspaceRoot, absolutePath);
-  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
-    return null;
-  }
-
-  return absolutePath;
+  return checkPathWithinWorkspace(workspaceRoot, rawPath);
 }
 
 function extractLikelyFileReferences(prompt: string): string[] {

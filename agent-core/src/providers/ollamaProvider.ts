@@ -155,13 +155,7 @@ export class OllamaProvider implements ModelProvider {
             JSON.parse(args);
           } catch {
             // Malformed arguments from Ollama - try to extract useful parts
-            const pathMatch = args.match(/["']?(?:path|filePath|file)["']?\s*[:=]\s*["']([^"']+)["']/i);
-            const contentMatch = args.match(/["'](?:content|text|command)["']?\s*[:=]\s*["']([\s\S]*?)["']/i);
-            const fixedArgs: Record<string, unknown> = {};
-            if (pathMatch) fixedArgs.path = pathMatch[1];
-            if (contentMatch) fixedArgs.content = contentMatch[1];
-            if (contentMatch) fixedArgs.command = contentMatch[1];
-            args = JSON.stringify(fixedArgs);
+            args = this.fixMalformedToolArgs(tc.function.name, args);
           }
           toolCalls.push({
             id: `call_${i}`,
@@ -179,7 +173,19 @@ export class OllamaProvider implements ModelProvider {
         };
       }
 
+      // Some Ollama models emit tool calls as JSON in the content text
+      // instead of in the structured tool_calls field. Try to detect this.
       const text = json.message?.content ?? json.response ?? "";
+      if (text) {
+        const extractedCalls = this.extractToolCallsFromText(text);
+        if (extractedCalls.length > 0) {
+          return {
+            text: "",
+            toolCalls: extractedCalls,
+            raw: json,
+          };
+        }
+      }
 
       return {
         text,
@@ -188,6 +194,86 @@ export class OllamaProvider implements ModelProvider {
     } finally {
       abort.clear();
     }
+  }
+
+  private fixMalformedToolArgs(toolName: string, rawArgs: string): string {
+    const fixedArgs: Record<string, unknown> = {};
+
+    // Generic field extractors - covers all tool argument patterns
+    const pathMatch = rawArgs.match(/["']?(?:path|filePath|file)["']?\s*[:=]\s*["']([^"']+)["']/i);
+    const contentMatch = rawArgs.match(/["'](?:content|text)["']?\s*[:=]\s*["']([\s\S]*?)["']/i);
+    const commandMatch = rawArgs.match(/["'](?:command|cmd)["']?\s*[:=]\s*["']([\s\S]*?)["']/i);
+    const queryMatch = rawArgs.match(/["'](?:query|search)["']?\s*[:=]\s*["']([\s\S]*?)["']/i);
+    const sourceMatch = rawArgs.match(/["'](?:source|from|src)["']?\s*[:=]\s*["']([^"']+)["']/i);
+    const destMatch = rawArgs.match(/["'](?:destination|to|dest)["']?\s*[:=]\s*["']([^"']+)["']/i);
+    const oldTextMatch = rawArgs.match(/["'](?:oldText|old)["']?\s*[:=]\s*["']([\s\S]*?)["']/i);
+    const newTextMatch = rawArgs.match(/["'](?:newText|new)["']?\s*[:=]\s*["']([\s\S]*?)["']/i);
+    const runnerMatch = rawArgs.match(/["'](?:runner)["']?\s*[:=]\s*["']([^"']+)["']/i);
+    const filterMatch = rawArgs.match(/["'](?:filter)["']?\s*[:=]\s*["']([^"']+)["']/i);
+    const serverMatch = rawArgs.match(/["'](?:server)["']?\s*[:=]\s*["']([^"']+)["']/i);
+    const toolMatch = rawArgs.match(/["'](?:tool)["']?\s*[:=]\s*["']([^"']+)["']/i);
+    const inputMatch = rawArgs.match(/["'](?:input)["']?\s*[:=]\s*["']([\s\S]*?)["']/i);
+
+    if (pathMatch) fixedArgs.path = pathMatch[1];
+    if (contentMatch) fixedArgs.content = contentMatch[1];
+    if (commandMatch) fixedArgs.command = commandMatch[1];
+    if (queryMatch) fixedArgs.query = queryMatch[1];
+    if (sourceMatch) fixedArgs.source = sourceMatch[1];
+    if (destMatch) fixedArgs.destination = destMatch[1];
+    if (oldTextMatch) fixedArgs.oldText = oldTextMatch[1];
+    if (newTextMatch) fixedArgs.newText = newTextMatch[1];
+    if (runnerMatch) fixedArgs.runner = runnerMatch[1];
+    if (filterMatch) fixedArgs.filter = filterMatch[1];
+    if (serverMatch) fixedArgs.server = serverMatch[1];
+    if (toolMatch) fixedArgs.tool = toolMatch[1];
+    if (inputMatch) fixedArgs.input = inputMatch[1];
+
+    // For terminal/test, map content to command if no explicit command found
+    if ((toolName === "terminal" || toolName === "test") && fixedArgs.content && !fixedArgs.command) {
+      fixedArgs.command = fixedArgs.content;
+    }
+
+    return JSON.stringify(fixedArgs);
+  }
+
+  private extractToolCallsFromText(text: string): ToolCallRequest[] {
+    const calls: ToolCallRequest[] = [];
+
+    // Try JSON code block: ```json\n{"name": "...", "arguments": {...}}\n```
+    const fenceMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
+    const content = fenceMatch ? fenceMatch[1] : text;
+    const trimmed = content.trim();
+
+    if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+      return calls;
+    }
+
+    try {
+      const parsed = JSON.parse(trimmed);
+      const items = Array.isArray(parsed) ? parsed : [parsed];
+
+      for (const item of items) {
+        if (
+          item &&
+          typeof item.name === "string" &&
+          item.arguments &&
+          typeof item.arguments === "object"
+        ) {
+          calls.push({
+            id: `call_ollama_text_${Date.now()}_${calls.length}`,
+            type: "function",
+            function: {
+              name: item.name,
+              arguments: JSON.stringify(item.arguments),
+            },
+          });
+        }
+      }
+    } catch {
+      // Not valid JSON
+    }
+
+    return calls;
   }
 
   public async *stream(request: ModelRequest): AsyncGenerator<string> {

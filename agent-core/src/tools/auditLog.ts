@@ -1,5 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
+import { redactSecrets } from "../utils/redact";
 
 interface AuditEntry {
   timestamp: string;
@@ -22,7 +23,12 @@ export class AuditLog {
   }
 
   async log(entry: AuditEntry): Promise<void> {
-    this.buffer.push(entry);
+    const redacted: AuditEntry = {
+      ...entry,
+      arg: redactSecrets(entry.arg),
+      outputPreview: redactSecrets(entry.outputPreview),
+    };
+    this.buffer.push(redacted);
     if (this.buffer.length >= 10) {
       await this.flush();
     } else if (!this.flushTimer) {

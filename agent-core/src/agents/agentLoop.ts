@@ -96,6 +96,7 @@ function formatToolArgs(
 }
 
 function tryParseTextAsToolCall(text: string): ToolCallRequest[] | null {
+  // Try JSON code block first
   const fenceMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
   const content = fenceMatch ? fenceMatch[1] : text;
 
@@ -209,6 +210,17 @@ export async function* runAgentLoop(
       const textToolCalls = tryParseTextAsToolCall(response.text);
       if (textToolCalls && textToolCalls.length > 0) {
         response.toolCalls = textToolCalls;
+      } else if (response.text && turn < config.maxTurns - 1) {
+        // Model returned text without tool calls — it may be describing what it
+        // would do instead of doing it. Send a follow-up to nudge it toward using
+        // the actual tool.
+        messages.push({ role: "assistant", content: response.text });
+        messages.push({
+          role: "user",
+          content:
+            "Use the actual tool commands to accomplish this. Do not describe what you would do — execute it using the available tools (e.g., use `read <path>` to read a file, `write <path> :: <content>` to write, `terminal <command>` to run a command).",
+        });
+        continue;
       } else {
         messages.push({ role: "assistant", content: response.text });
         return messages;

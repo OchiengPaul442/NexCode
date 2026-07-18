@@ -20,6 +20,7 @@ import {
   OrchestratorResponse,
   ProviderId,
   ProposedEdit,
+  ReasoningEffort,
   ToolResult,
 } from "./types";
 import { McpAdapter, McpToolCall, McpToolResult } from "./mcp";
@@ -685,6 +686,7 @@ export class NexcodeOrchestrator {
             diagnostics,
             strategy.pipeline,
             request.abortSignal,
+            request.reasoningEffort,
           );
 
           while (true) {
@@ -730,6 +732,7 @@ export class NexcodeOrchestrator {
             sessionContext,
             diagnostics,
             request.abortSignal,
+            request.reasoningEffort,
           );
 
           while (true) {
@@ -770,6 +773,7 @@ export class NexcodeOrchestrator {
           sessionContext,
           diagnostics,
           request.abortSignal,
+          request.reasoningEffort,
         );
 
         while (true) {
@@ -1057,6 +1061,7 @@ export class NexcodeOrchestrator {
     diagnostics: string[],
     pipeline: Exclude<AgentMode, "auto">[],
     abortSignal?: AbortSignal,
+    reasoningEffort?: ReasoningEffort,
   ): AsyncGenerator<OrchestratorEvent, OrchestratorResponse> {
     const composedChunks: string[] = [];
     let planContent: string | undefined;
@@ -1118,6 +1123,7 @@ export class NexcodeOrchestrator {
           sessionContext,
           diagnostics,
           abortSignal,
+          reasoningEffort,
         )) {
           this.ensureNotAborted(abortSignal);
           if (event.type === "token") {
@@ -1222,6 +1228,7 @@ export class NexcodeOrchestrator {
     sessionContext: string,
     diagnostics: string[],
     abortSignal?: AbortSignal,
+    reasoningEffort?: ReasoningEffort,
   ): AsyncGenerator<OrchestratorEvent, OrchestratorResponse> {
     const resolvedMode = (mode === "auto" ? "coder" : mode) as Exclude<AgentMode, "auto">;
     const toolDefs = getToolDefinitionsForMode(resolvedMode);
@@ -1261,6 +1268,7 @@ export class NexcodeOrchestrator {
         config,
         abortSignal,
         this.approvalCallback,
+        reasoningEffort,
       )) {
         yield event;
       }
@@ -1309,6 +1317,7 @@ export class NexcodeOrchestrator {
       sessionContext?: string;
       plan?: string;
       implementationDraft?: string;
+      reasoningEffort?: ReasoningEffort;
     },
     provider: ProviderId,
     model: string,
@@ -1324,6 +1333,7 @@ export class NexcodeOrchestrator {
       maxTokens: getAgentMaxTokens(mode, input.userPrompt),
       complexity: input.userPrompt.length > 1200 ? "large" : "small",
       signal: abortSignal,
+      reasoningEffort: input.reasoningEffort,
     })) {
       if (token) {
         yield token;

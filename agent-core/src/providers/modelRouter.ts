@@ -177,6 +177,7 @@ export class ModelRouter {
           maxTokens: options.maxTokens,
           signal: options.signal,
           tools: options.tools,
+          reasoningEffort: options.reasoningEffort,
         });
         this.responseCache.set(cacheKey, JSON.stringify(result));
         return result;
@@ -227,6 +228,7 @@ export class ModelRouter {
             maxTokens: options.maxTokens,
             signal: options.signal,
             tools: options.tools,
+            reasoningEffort: options.reasoningEffort,
           });
 
           if (result.text) {
@@ -243,6 +245,7 @@ export class ModelRouter {
           maxTokens: options.maxTokens,
           signal: options.signal,
           tools: options.tools,
+          reasoningEffort: options.reasoningEffort,
         })) {
           if (!token) {
             continue;

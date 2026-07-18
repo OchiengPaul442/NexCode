@@ -2564,3 +2564,47 @@ html, body {
   align-items: center;
   gap: 2px;
 }
+
+/* ── Reasoning effort selector ─────────────────────────────────────────────── */
+.nk-effort-select {
+  display: inline-flex;
+  align-items: center;
+}
+
+.nk-effort-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--vscode-dropdown-border, #3c3c3c);
+  border-radius: 4px;
+  background: var(--vscode-dropdown-background, #2d2d2d);
+  color: var(--vscode-foreground, #cccccc);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+
+.nk-effort-trigger:hover {
+  background: var(--vscode-dropdown-hoverBackground, #3c3c3c);
+  border-color: var(--vscode-focusBorder, #007fd4);
+}
+
+.nk-effort-label {
+  opacity: 0.6;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.nk-effort-value {
+  font-weight: 500;
+  color: var(--vscode-textLink-foreground, #3794ff);
+}
+
+.nk-effort-value[data-effort="none"] { color: var(--vscode-descriptionForeground, #888); }
+.nk-effort-value[data-effort="low"] { color: #4ec9b0; }
+.nk-effort-value[data-effort="medium"] { color: #dcdcaa; }
+.nk-effort-value[data-effort="high"] { color: #ce9178; }
+.nk-effort-value[data-effort="max"] { color: #f48771; }

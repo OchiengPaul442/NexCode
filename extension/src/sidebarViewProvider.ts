@@ -7,6 +7,7 @@ import {
   NexcodeOrchestrator,
   OrchestratorRequest,
   ProviderId,
+  ReasoningEffort,
   RequestAttachment,
   Task,
 } from "@nexcode/agent-core";
@@ -23,6 +24,7 @@ interface WebviewSendPromptMessage {
   model?: string;
   mode?: AgentMode;
   temperature?: number;
+  reasoningEffort?: ReasoningEffort;
   allowWebSearch?: boolean;
   attachmentIds?: string[];
 }
@@ -395,6 +397,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
           typeof message.temperature === "number"
             ? message.temperature
             : settings.temperature,
+        reasoningEffort: message.reasoningEffort,
         allowWebSearch:
           typeof message.allowWebSearch === "boolean"
             ? message.allowWebSearch

@@ -6,6 +6,7 @@ import {
   ToolCallRequest,
 } from "../types";
 import { detectModelCapabilities } from "./modelRouter";
+import { getModelEffortConfig } from "../utils/modelEffortConfig";
 
 interface OllamaToolCall {
   function: {
@@ -111,6 +112,17 @@ export class OllamaProvider implements ModelProvider {
           num_ctx: this.resolveNumCtx(request.model),
         },
       };
+
+      // Add thinking parameter for Ollama thinking models
+      const effortConfig = getModelEffortConfig(request.model, "ollama");
+      if (effortConfig.supportsEffort && request.reasoningEffort) {
+        const effort = request.reasoningEffort;
+        if (effort === "none") {
+          payload.think = false;
+        } else {
+          payload.think = effort;
+        }
+      }
 
       if (request.tools && request.tools.length > 0) {
         payload.tools = request.tools.map((tool) => ({
@@ -395,7 +407,7 @@ export class OllamaProvider implements ModelProvider {
       this.resolveTimeoutMs("stream"),
     );
     try {
-      const payload = {
+      const payload: any = {
         model: request.model,
         messages: request.messages,
         stream: true,
@@ -405,6 +417,17 @@ export class OllamaProvider implements ModelProvider {
           num_ctx: this.resolveNumCtx(request.model),
         },
       };
+
+      // Add thinking parameter for Ollama thinking models
+      const effortConfig = getModelEffortConfig(request.model, "ollama");
+      if (effortConfig.supportsEffort && request.reasoningEffort) {
+        const effort = request.reasoningEffort;
+        if (effort === "none") {
+          payload.think = false;
+        } else {
+          payload.think = effort;
+        }
+      }
 
       const response = await fetch(`${this.baseUrl}/api/chat`, {
         method: "POST",

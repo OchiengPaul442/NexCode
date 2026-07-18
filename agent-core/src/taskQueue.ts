@@ -6,6 +6,7 @@ import {
   TaskEvent,
   AgentMode,
   ProviderId,
+  ReasoningEffort,
   OrchestratorRequest,
   RequestAttachment,
 } from "./types";
@@ -47,6 +48,7 @@ export class TaskQueue {
       provider?: ProviderId;
       model?: string;
       temperature?: number;
+      reasoningEffort?: ReasoningEffort;
       allowWebSearch?: boolean;
       attachmentIds?: string[];
       attachments?: RequestAttachment[];
@@ -75,6 +77,7 @@ export class TaskQueue {
       model: task.model,
       mode: task.mode,
       temperature: options.temperature ?? 0.2,
+      reasoningEffort: options.reasoningEffort,
       allowWebSearch: options.allowWebSearch ?? true,
       attachmentIds: options.attachmentIds ?? [],
       createdAt: task.createdAt,

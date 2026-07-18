@@ -4,6 +4,7 @@ import {
   ModelResponse,
   ToolCallRequest,
 } from "../types";
+import { getModelEffortConfig } from "../utils/modelEffortConfig";
 
 interface OpenAIMessage {
   role: string;
@@ -258,6 +259,12 @@ export class OpenAICompatibleProvider implements ModelProvider {
         }));
       }
 
+      // Add reasoning effort for supported models
+      const effortConfig = getModelEffortConfig(request.model, "openai-compatible");
+      if (effortConfig.supportsEffort && request.reasoningEffort && request.reasoningEffort !== "none") {
+        (body as any).reasoning_effort = request.reasoningEffort;
+      }
+
       const response = await this.fetchWithRetries(
         `${this.baseUrl}/chat/completions`,
         () => ({
@@ -325,18 +332,26 @@ export class OpenAICompatibleProvider implements ModelProvider {
     try {
       this.validateModel(request.model);
 
+      const streamBody: any = {
+        model: request.model,
+        messages: request.messages,
+        temperature: request.temperature ?? 0.2,
+        max_tokens: request.maxTokens,
+        stream: true,
+      };
+
+      // Add reasoning effort for supported models
+      const effortConfig = getModelEffortConfig(request.model, "openai-compatible");
+      if (effortConfig.supportsEffort && request.reasoningEffort && request.reasoningEffort !== "none") {
+        streamBody.reasoning_effort = request.reasoningEffort;
+      }
+
       const response = await this.fetchWithRetries(
         `${this.baseUrl}/chat/completions`,
         () => ({
           method: "POST",
           headers: this.createHeaders(),
-          body: JSON.stringify({
-            model: request.model,
-            messages: request.messages,
-            temperature: request.temperature ?? 0.2,
-            max_tokens: request.maxTokens,
-            stream: true,
-          }),
+          body: JSON.stringify(streamBody),
         }),
         abort.controller.signal,
       );

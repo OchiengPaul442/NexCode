@@ -3,6 +3,7 @@ import {
   ToolCallRequest,
   OrchestratorEvent,
   ToolCallRequestTool,
+  ReasoningEffort,
 } from "../types";
 import { ModelRouter } from "../providers/modelRouter";
 import { ToolRegistry } from "../tools/toolRegistry";
@@ -140,6 +141,7 @@ export async function* runAgentLoop(
   config: AgentLoopConfig,
   signal?: AbortSignal,
   approvalCallback?: ApprovalCallback,
+  reasoningEffort?: ReasoningEffort,
 ): AsyncGenerator<OrchestratorEvent, ChatMessage[]> {
   const startedAt = Date.now();
   const toolSchemas: ToolCallRequestTool[] = toolDefinitions.map((def) => ({
@@ -188,6 +190,7 @@ export async function* runAgentLoop(
           tools: retryTools,
           maxTokens: config.maxTokensPerTurn,
           signal,
+          reasoningEffort,
         });
         break; // Success, exit retry loop
       } catch (error) {
@@ -396,6 +399,7 @@ export async function* runAgentLoop(
     const finalResponse = await router.generate(messages, {
       maxTokens: config.maxTokensPerTurn,
       signal,
+      reasoningEffort,
     });
 
     messages.push({ role: "assistant", content: finalResponse.text });

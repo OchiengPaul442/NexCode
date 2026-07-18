@@ -7,6 +7,7 @@ import {
   OrchestratorRequest,
   ProviderId,
   AgentMode,
+  ReasoningEffort,
   RequestAttachment,
 } from "./types";
 import { TaskQueue, classifyPromptIntent } from "./taskQueue";
@@ -43,6 +44,7 @@ export class TaskQueueManager {
       provider?: ProviderId;
       model?: string;
       temperature?: number;
+      reasoningEffort?: ReasoningEffort;
       allowWebSearch?: boolean;
       attachmentIds?: string[];
       attachments?: RequestAttachment[];
@@ -66,6 +68,7 @@ export class TaskQueueManager {
       provider?: ProviderId;
       model?: string;
       temperature?: number;
+      reasoningEffort?: ReasoningEffort;
       allowWebSearch?: boolean;
       attachmentIds?: string[];
     } = {},
@@ -176,6 +179,7 @@ export class TaskQueueManager {
       model: item.model,
       mode: item.mode,
       temperature: item.temperature,
+      reasoningEffort: item.reasoningEffort,
       allowWebSearch: item.allowWebSearch,
       abortSignal: controller.signal,
     };

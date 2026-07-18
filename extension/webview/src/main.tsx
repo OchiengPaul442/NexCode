@@ -155,9 +155,12 @@ interface QueuedPrompt {
   model: string;
   mode: AgentMode;
   temperature: number;
+  reasoningEffort?: ReasoningEffort;
   allowWebSearch: boolean;
   attachmentIds: string[];
 }
+
+type ReasoningEffort = "none" | "low" | "medium" | "high" | "max";
 
 interface Session {
   id: string;
@@ -167,6 +170,7 @@ interface Session {
   provider: ProviderId;
   model: string;
   mode: UiMode;
+  reasoningEffort?: ReasoningEffort;
   messages: ChatMessage[];
 }
 
@@ -277,7 +281,7 @@ interface StoreState {
   deleteSession: (sessionId: string) => void;
   setActiveSession: (sessionId: string) => void;
   updateActiveSession: (
-    update: Partial<Pick<Session, "provider" | "model" | "mode">>,
+    update: Partial<Pick<Session, "provider" | "model" | "mode" | "reasoningEffort">>,
   ) => void;
   clearActiveSession: () => void;
   addUserMessageToSession: (
@@ -645,6 +649,54 @@ const modelCapabilities: Record<string, { inputs: string[]; reasoning: boolean; 
   'glm-5.1': { inputs: ['text'], reasoning: true, context: '200K' },
   'kimi-k2.7-code': { inputs: ['text'], reasoning: false, context: '128K' },
   'kimi-k2.6': { inputs: ['text'], reasoning: false, context: '128K' },
+};
+
+interface ModelEffortInfo {
+  supportsEffort: boolean;
+  levels: ReasoningEffort[];
+  default: ReasoningEffort;
+}
+
+const modelEffortConfig: Record<string, ModelEffortInfo> = {
+  'deepseek-r1:8b': { supportsEffort: true, levels: ["none", "low", "medium", "high", "max"], default: "medium" },
+  'deepseek-r1:14b': { supportsEffort: true, levels: ["none", "low", "medium", "high", "max"], default: "medium" },
+  'deepseek-r1:32b': { supportsEffort: true, levels: ["none", "low", "medium", "high", "max"], default: "medium" },
+  'deepseek-r1:70b': { supportsEffort: true, levels: ["none", "low", "medium", "high", "max"], default: "medium" },
+  'qwen3:8b': { supportsEffort: true, levels: ["none", "low", "medium", "high", "max"], default: "medium" },
+  'qwen3:14b': { supportsEffort: true, levels: ["none", "low", "medium", "high", "max"], default: "medium" },
+  'qwen3:32b': { supportsEffort: true, levels: ["none", "low", "medium", "high", "max"], default: "medium" },
+  'o1': { supportsEffort: true, levels: ["low", "medium", "high"], default: "medium" },
+  'o1-mini': { supportsEffort: true, levels: ["low", "medium", "high"], default: "medium" },
+  'o3': { supportsEffort: true, levels: ["low", "medium", "high"], default: "medium" },
+  'o3-mini': { supportsEffort: true, levels: ["low", "medium", "high"], default: "medium" },
+  'o4-mini': { supportsEffort: true, levels: ["low", "medium", "high"], default: "medium" },
+};
+
+function getModelEffortInfo(model?: string): ModelEffortInfo | null {
+  if (!model) return null;
+  const normalized = model.toLowerCase().trim();
+  if (modelEffortConfig[normalized]) return modelEffortConfig[normalized];
+  if (/^o[134]|^gpt-5/.test(normalized)) {
+    return { supportsEffort: true, levels: ["low", "medium", "high"], default: "medium" };
+  }
+  if (/claude/.test(normalized)) {
+    return { supportsEffort: true, levels: ["low", "medium", "high", "max"], default: "medium" };
+  }
+  if (/deepseek/.test(normalized)) {
+    return { supportsEffort: true, levels: ["none", "low", "medium", "high", "max"], default: "high" };
+  }
+  if (/gemini/.test(normalized)) {
+    return { supportsEffort: true, levels: ["none", "low", "medium", "high"], default: "medium" };
+  }
+  return null;
+}
+
+const effortLabels: Record<ReasoningEffort, string> = {
+  none: "Off",
+  low: "Low",
+  medium: "Balanced",
+  high: "High",
+  max: "Max",
 };
 
 function hasThinkingCapability(model?: string): boolean {
@@ -2540,6 +2592,7 @@ function App() {
       model: request.model,
       mode: request.mode,
       temperature: request.temperature,
+      reasoningEffort: request.reasoningEffort,
       allowWebSearch: request.allowWebSearch,
       attachmentIds: request.attachmentIds,
     });
@@ -2620,6 +2673,7 @@ function App() {
         model: session.model,
         mode: parsed.mode,
         temperature: settings.temperature,
+        reasoningEffort: session.reasoningEffort,
         allowWebSearch: settings.enableWebSearch,
         attachmentIds,
       };
@@ -4199,6 +4253,31 @@ function App() {
                 className="nk-toolbar-select--model"
                 menuClassName="nk-toolbar-select-menu--model"
               />
+              {(() => {
+                const effortInfo = getModelEffortInfo(activeSession.model);
+                if (!effortInfo || !effortInfo.supportsEffort) return null;
+                return (
+                  <div className="nk-effort-select">
+                    <button
+                      className="nk-effort-trigger"
+                      type="button"
+                      title="Reasoning effort"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const current = activeSession.reasoningEffort ?? effortInfo.default;
+                        const idx = effortInfo.levels.indexOf(current);
+                        const next = effortInfo.levels[(idx + 1) % effortInfo.levels.length];
+                        useStore.getState().updateActiveSession({ reasoningEffort: next });
+                      }}
+                    >
+                      <span className="nk-effort-label">Effort</span>
+                      <span className="nk-effort-value" data-effort={activeSession.reasoningEffort ?? effortInfo.default}>
+                        {effortLabels[activeSession.reasoningEffort ?? effortInfo.default]}
+                      </span>
+                    </button>
+                  </div>
+                );
+              })()}
               <button
                 className="nk-toolbar-btn"
                 type="button"

@@ -10,6 +10,8 @@ export type AgentMode =
   | "qa"
   | "security";
 
+export type ReasoningEffort = "none" | "low" | "medium" | "high" | "max";
+
 export interface ToolCallRequestTool {
   name: string;
   description: string;
@@ -68,6 +70,7 @@ export interface OrchestratorRequest {
   model?: string;
   mode?: AgentMode;
   temperature?: number;
+  reasoningEffort?: ReasoningEffort;
   workspaceRoot?: string;
   activeFilePath?: string;
   selectedText?: string;
@@ -191,15 +194,6 @@ export type OrchestratorEvent =
       successCount: number;
     };
 
-export interface ToolCallRequest {
-  id: string;
-  type: "function";
-  function: {
-    name: string;
-    arguments: string;
-  };
-}
-
 export interface ModelRequest {
   model: string;
   messages: ChatMessage[];
@@ -207,12 +201,7 @@ export interface ModelRequest {
   maxTokens?: number;
   signal?: AbortSignal;
   tools?: ToolCallRequestTool[];
-}
-
-export interface ModelResponse {
-  text: string;
-  toolCalls?: ToolCallRequest[];
-  raw?: unknown;
+  reasoningEffort?: ReasoningEffort;
 }
 
 export interface ModelResponse {
@@ -229,6 +218,7 @@ export interface ProviderGenerateOptions {
   maxTokens?: number;
   signal?: AbortSignal;
   tools?: ToolCallRequestTool[];
+  reasoningEffort?: ReasoningEffort;
 }
 
 export interface ModelProvider {
@@ -296,6 +286,7 @@ export interface TaskQueueItem {
   model: string;
   mode: AgentMode;
   temperature: number;
+  reasoningEffort?: ReasoningEffort;
   allowWebSearch: boolean;
   attachmentIds: string[];
   createdAt: number;

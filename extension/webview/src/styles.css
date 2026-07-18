@@ -1067,6 +1067,18 @@ html, body {
   font-weight: bold;
 }
 
+.nk-bg-agent-card-pending {
+  color: var(--vscode-descriptionForeground, #8b8b9a);
+  font-size: 12px;
+}
+
+.nk-bg-agents-wave-text {
+  font-size: 12px;
+  color: var(--vscode-foreground);
+  margin-bottom: 10px;
+  line-height: 1.5;
+}
+
 .nk-bg-agent-card-info {
   display: flex;
   flex-direction: column;
@@ -1126,17 +1138,17 @@ html, body {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 4px;
-  background: rgba(117, 152, 188, 0.1);
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .nk-streaming-status-text {
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  font-size: 10px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 13px;
 }
 
 /* ── Tool Card ────────────────────────────────────────────────────────────── */
@@ -3077,6 +3089,74 @@ html, body {
   }
 }
 
+/* ── Streaming Live Activity ──────────────────────────────────────────── */
+.nk-streaming-live {
+  padding: 2px 0;
+}
+
+.nk-streaming-live-activity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.nk-streaming-live-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.nk-streaming-live-counts {
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground, #8b8b9a);
+}
+
+.nk-streaming-live-shell {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--vscode-textCodeBlock-background, #1a1a2e);
+  border-radius: var(--nk-radius-sm);
+  margin: 4px 0;
+  font-family: var(--vscode-editor-font-family, monospace);
+}
+
+.nk-streaming-live-shell-label {
+  font-size: 12px;
+  font-weight: 600;
+  flex-shrink: 0;
+  padding-top: 1px;
+}
+
+.nk-streaming-live-shell-cmd {
+  font-size: 12px;
+  color: var(--vscode-terminal-foreground, #cccccc);
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+}
+
+.nk-streaming-live-thinking {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.nk-streaming-live-thinking-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--vscode-descriptionForeground, #8b8b9a);
+  animation: nk-pulse-dot 1.5s ease-in-out infinite;
+}
+
+@keyframes nk-pulse-dot {
+  0%, 100% { opacity: 0.4; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+
 /* ── Details / debug ──────────────────────────────────────────────────────── */
 .nk-details-block {
   background: var(--vscode-editorWidget-background);
@@ -3498,7 +3578,8 @@ html, body {
   .nk-bg-agent-card-spinner,
   .nk-bg-agent-card-progress-fill,
   .nk-tool-card-spinner,
-  .nk-bg-agents-stat-dot--running {
+  .nk-bg-agents-stat-dot--running,
+  .nk-streaming-live-thinking-dot {
     animation: none !important;
   }
   

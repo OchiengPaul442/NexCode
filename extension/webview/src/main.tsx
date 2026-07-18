@@ -2067,6 +2067,47 @@ function MessageBubble({
                 className="markdown-body text-[13px] leading-relaxed"
                 showCursor
                 thinkingLabel={message.reasoning.length > 0 ? message.reasoning[message.reasoning.length - 1] : "Working..."}
+                statusLabel={
+                  (message.streaming || message.thinking) && (message.toolExecutions ?? []).length > 0
+                    ? (() => {
+                        const execs = message.toolExecutions!;
+                        const lastExec = execs[execs.length - 1];
+                        if (lastExec?.toolName === "terminal") return "shell";
+                        if (lastExec?.toolName === "read") return "exploring";
+                        if (lastExec?.toolName === "search" || lastExec?.toolName === "web-search") return "searching";
+                        if (lastExec?.toolName === "write" || lastExec?.toolName === "append" || lastExec?.toolName === "patch") return "editing";
+                        return "exploring";
+                      })()
+                    : undefined
+                }
+                toolCounts={
+                  (message.toolExecutions ?? []).length > 0
+                    ? (() => {
+                        const execs = message.toolExecutions!;
+                        const counts: { reads?: number; writes?: number; searches?: number; terminals?: number; patches?: number; deletes?: number } = {};
+                        for (const e of execs) {
+                          if (e.toolName === "read") counts.reads = (counts.reads ?? 0) + 1;
+                          else if (e.toolName === "write" || e.toolName === "append") counts.writes = (counts.writes ?? 0) + 1;
+                          else if (e.toolName === "search" || e.toolName === "web-search") counts.searches = (counts.searches ?? 0) + 1;
+                          else if (e.toolName === "terminal") counts.terminals = (counts.terminals ?? 0) + 1;
+                          else if (e.toolName === "patch") counts.patches = (counts.patches ?? 0) + 1;
+                          else if (e.toolName === "delete") counts.deletes = (counts.deletes ?? 0) + 1;
+                        }
+                        return counts;
+                      })()
+                    : undefined
+                }
+                activeCommand={
+                  (message.streaming || message.thinking) && (message.toolExecutions ?? []).length > 0
+                    ? (() => {
+                        const execs = message.toolExecutions!;
+                        // Show the last terminal command (running or just completed)
+                        const lastTerminal = [...execs].reverse().find(e => e.toolName === "terminal");
+                        if (lastTerminal && lastTerminal.command.trim()) return lastTerminal.command;
+                        return undefined;
+                      })()
+                    : undefined
+                }
                 onFrame={onAnimatedFrame}
               />
             )}
@@ -2309,6 +2350,13 @@ function BackgroundAgents({ agents, waveInfo }: { agents: SubAgentTask[]; waveIn
 
   return (
     <div className="nk-bg-agents nk-bg-agents--enhanced">
+      {/* Wave deployment text */}
+      {waveInfo && waveInfo.current > 1 && completed.length > 0 && (
+        <div className="nk-bg-agents-wave-text">
+          Excellent! First {completed.length} agent{completed.length !== 1 ? "s" : ""} have reported. Now deploying Wave {waveInfo.current}: {running.length} more agent{running.length !== 1 ? "s" : ""} for remaining areas:
+        </div>
+      )}
+
       <div className="nk-bg-agents-header">
         <div className="nk-bg-agents-title-row">
           <span className="nk-bg-agents-title">Agents</span>
@@ -2366,6 +2414,9 @@ function BackgroundAgents({ agents, waveInfo }: { agents: SubAgentTask[]; waveIn
                 )}
                 {agent.status === "failed" && (
                   <span className="nk-bg-agent-card-x">✗</span>
+                )}
+                {agent.status !== "running" && agent.status !== "completed" && agent.status !== "failed" && (
+                  <span className="nk-bg-agent-card-pending">☐</span>
                 )}
               </div>
               <div className="nk-bg-agent-card-info">

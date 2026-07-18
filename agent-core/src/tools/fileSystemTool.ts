@@ -195,6 +195,11 @@ export class FileSystemTool {
     return resolvedPath;
   }
 
+  /**
+   * @deprecated Use resolveWorkspacePathSafe() instead. This sync version does NOT
+   * resolve symlinks and is vulnerable to symlink-based path traversal attacks.
+   * Only保留 for backward compatibility with non-async callers that cannot use async.
+   */
   public resolveWorkspacePath(targetPath: string): string {
     const absolutePath = path.isAbsolute(targetPath)
       ? path.normalize(targetPath)

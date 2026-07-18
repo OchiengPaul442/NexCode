@@ -51,16 +51,16 @@ export class SearchTool {
       };
     }
 
-    const escaped = query.replace(/"/g, '\\"');
-    const rgResult = await this.terminal.run(
-      `rg --line-number --no-heading "${escaped}" .`,
+    const rgResult = await this.terminal.runSafe(
+      "rg",
+      ["--line-number", "--no-heading", query, "."],
     );
 
     if (rgResult.ok) {
       return rgResult;
     }
 
-    return this.terminal.run(`grep -R -n "${escaped}" .`);
+    return this.terminal.runSafe("grep", ["-R", "-n", query, "."]);
   }
 
   public async webSearch(query: string): Promise<ToolResult> {

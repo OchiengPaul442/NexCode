@@ -25,6 +25,7 @@ export class WorkspaceTrustService {
       "web-search",
       "search-web",
       "online-search",
+      "search",
     ];
 
     return !restrictedTools.includes(toolName);
@@ -48,6 +49,7 @@ export class WorkspaceTrustService {
       "web-search": "Web search is restricted in untrusted workspaces.",
       "search-web": "Web search is restricted in untrusted workspaces.",
       "online-search": "Online search is restricted in untrusted workspaces.",
+      search: "Search (executes rg/grep) is restricted in untrusted workspaces.",
     };
 
     return restrictions[toolName] ?? null;

@@ -49,7 +49,14 @@ function formatToolArgs(
       return String(cmd);
     }
     case "test": {
+      const runner = args.runner ?? "";
       const filter = args.filter ?? args.value ?? "";
+      if (runner && filter) {
+        return JSON.stringify({ runner, filter });
+      }
+      if (runner) {
+        return JSON.stringify({ runner });
+      }
       return String(filter);
     }
     case "search": {

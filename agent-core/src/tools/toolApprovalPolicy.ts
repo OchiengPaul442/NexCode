@@ -11,9 +11,10 @@ export type ApprovalCallback = (
   arg: string,
 ) => Promise<boolean>;
 
-const SAFE_TOOLS = ["read", "git-status", "git-diff", "git-branch", "search"];
+const SAFE_TOOLS = ["read", "git-status", "git-diff", "git-branch"];
 const LOW_RISK_WRITE_TOOLS = ["write", "append"];
-const DESTRUCTIVE_TOOLS = ["delete", "delete-contents", "move", "terminal", "mcp", "batch_edit", "web-search", "search-web", "online-search", "test"];
+const DESTRUCTIVE_TOOLS = ["delete", "delete-contents", "move", "terminal", "mcp", "batch_edit", "web-search", "search-web", "online-search", "search"];
+const STRUCTURED_TOOLS = ["test"];
 
 export class DefaultToolApprovalPolicy implements ToolApprovalPolicy {
   private readonly bypassTools: Set<string>;
@@ -21,11 +22,15 @@ export class DefaultToolApprovalPolicy implements ToolApprovalPolicy {
 
   constructor(bypassTools: string[] = [], autoApproveTools: string[] = []) {
     this.bypassTools = new Set(bypassTools);
-    this.autoApproveTools = new Set([...SAFE_TOOLS, ...autoApproveTools]);
+    this.autoApproveTools = new Set([...SAFE_TOOLS, ...STRUCTURED_TOOLS, ...autoApproveTools]);
   }
 
   public requiresApproval(toolName: string, arg: string): boolean {
     if (this.bypassTools.has(toolName)) {
+      return false;
+    }
+
+    if (STRUCTURED_TOOLS.includes(toolName)) {
       return false;
     }
 
@@ -52,6 +57,9 @@ export class DefaultToolApprovalPolicy implements ToolApprovalPolicy {
     }
     if (SAFE_TOOLS.includes(toolName)) {
       return "safe";
+    }
+    if (STRUCTURED_TOOLS.includes(toolName)) {
+      return "low-risk";
     }
     if (LOW_RISK_WRITE_TOOLS.includes(toolName)) {
       return "low-risk";

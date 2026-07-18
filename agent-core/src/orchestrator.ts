@@ -935,7 +935,7 @@ export class NexcodeOrchestrator {
   }
 
   public async applyProposedEdit(edit: ProposedEdit): Promise<void> {
-    const absolutePath = this.tools.filesystem.resolveWorkspacePath(
+    const absolutePath = await this.tools.filesystem.resolveWorkspacePathSafe(
       edit.filePath,
     );
     await fs.mkdir(path.dirname(absolutePath), { recursive: true });

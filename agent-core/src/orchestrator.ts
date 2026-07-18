@@ -450,9 +450,15 @@ export class NexcodeOrchestrator {
 
 
       if (this.isSimpleQuestion(request.prompt)) {
+        const contextParts: string[] = [];
+        if (workspaceContext) {
+          contextParts.push(`Workspace context:\n${workspaceContext}`);
+        }
+        contextParts.push(request.prompt);
+
         const messages: ChatMessage[] = [
           { role: "system", content: await this.prompts.getPrompt("coder") },
-          { role: "user", content: request.prompt },
+          { role: "user", content: contextParts.join("\n\n") },
         ];
         const response = await this.router.generate(messages, { maxTokens: 2048 });
 

@@ -315,3 +315,74 @@ Append one section per autonomous iteration. Never rewrite prior entries.
 | `agent-core/src/tools/terminalTool.ts` | Change validateCommand default from allow to deny | +5, -1 |
 | `agent-core/tests/terminalDenyByDefault.test.ts` | New regression test file | +256 |
 
+---
+
+## Iteration 4 — NC-005: Webview message runtime validation
+
+**Date:** 20 July 2026
+**Finding IDs:** NC-005 (Critical)
+**Phase:** 0 — Containment patch
+**Commit:** `94aeab5` — `fix(extension,agent-core): resolve NC-005 — webview message runtime validation`
+
+### What was done
+
+1. **Verified NC-005 against current source code:**
+   - `extension/src/sidebarViewProvider.ts:229-232` — confirmed `onDidReceiveMessage` accepts `InboundWebviewMessage` (compile-time type only, no runtime validation).
+   - `extension/src/sidebarViewProvider.ts:316-462` — confirmed `handleWebviewMessage` casts to `InboundWebviewMessage` and switches on `message.type` without verifying the discriminator or field presence at runtime.
+   - `extension/src/sidebarViewProvider.ts:383-398` — confirmed `openFile` handler takes `filePath` from message and opens it via `vscode.Uri.file(filePath)` without workspace containment check.
+   - `extension/src/sidebarViewProvider.ts:399-435` — confirmed `updateSetting` accepts any `message.key` and writes it to workspace settings (only secret keys are guarded, but non-secret arbitrary keys are accepted).
+
+2. **Implemented containment fix (3 production files changed, 1 new utility):**
+   - `agent-core/src/utils/webviewMessageValidation.ts` (new, 320 lines):
+     - `validateWebviewMessage()`: validates type discriminator is a recognized string (26 message types), validates required fields per type (prompt non-empty + length, editId non-empty, filePath non-null-bytes + length, setting key in allowlist, taskId/requestId/approved present), enforces size limits (1MB message, 500K prompt, 4K file path, 100K setting value), rejects non-objects/null/undefined/unknown types.
+     - `validateOpenFilePath()`: pure function that checks file path containment against workspace root — rejects traversal, absolute paths outside workspace, null bytes.
+     - `isAllowedSettingKey()` / `getAllowedSettingKeys()`: hardcoded allowlist of 13 safe setting keys (defaultModel, defaultProvider, openAIBaseUrl, ollamaBaseUrl, autoApproveWrite, toolApproval, maxConcurrentTasks, showReasoning, theme, searchProvider, searchBaseUrl, mcpServers). Secret keys explicitly excluded.
+   - `agent-core/src/index.ts` (+8):
+     - Exported `validateWebviewMessage`, `validateOpenFilePath`, `isAllowedSettingKey`, `getAllowedSettingKeys`, `ValidationResult`, `ValidMessageType`.
+   - `extension/src/sidebarViewProvider.ts` (+35, -15):
+     - `resolveWebviewView()`: `onDidReceiveMessage` handler changed from `(message: InboundWebviewMessage)` to `(message: unknown)`.
+     - `populateTabPanel()`: same change.
+     - `handleWebviewMessage()`: changed signature from `message: InboundWebviewMessage` to `message: unknown`. Added `validateWebviewMessage()` call at entry — rejects invalid messages with `console.warn`. All `message.xxx` references changed to `msg.xxx` (validated cast).
+     - `updateSetting` handler: added `isAllowedSettingKey(msg.key)` check — rejects disallowed keys with `console.warn`.
+     - `handleOpenFile()`: added `validateOpenFilePath(workspaceRoot, filePath)` call — rejects paths outside workspace with user-facing error message.
+
+3. **Added regression tests (1 new file, 71 tests):**
+   - `agent-core/tests/webviewValidation.test.ts`:
+     - `validateWebviewMessage`: 46 tests covering null/undefined/string/number/array/object rejection, unknown type rejection, all 26 valid types accepted, field validation for sendPrompt/enhancePrompt/openFile/updateSetting/toolApprovalResponse/steerTask/cancelTask/invokeMcpToolQuick, size limits, non-serializable rejection.
+     - `validateOpenFilePath`: 10 tests covering relative/absolute paths within workspace, traversal rejection, outside-absolute rejection, empty/whitespace rejection, dot-paths, deep traversal, Windows path on POSIX, backslash traversal.
+     - `isAllowedSettingKey`: 5 tests covering allowed keys, unknown keys rejected, prototype pollution rejected, empty string rejected, secret keys excluded.
+
+4. **Validated:**
+   - 71/71 new webviewValidation tests pass.
+   - 759/759 full unit tests pass.
+   - `tsc --noEmit` clean in agent-core, extension, and webview.
+   - `npm run build` clean (agent-core + extension + webview).
+
+### Validation
+
+| Check | Result | Notes |
+|---|---|---|
+| Focused tests (NC-005) | PASS | 71/71 webviewValidation tests pass |
+| Full test suite | PASS | 759/759 unit tests pass |
+| Type check (agent-core) | PASS | `tsc --noEmit` clean |
+| Type check (extension) | PASS | `tsc --noEmit` clean |
+| Type check (webview) | PASS | `tsc --noEmit` clean |
+| Build | PASS | Full `npm run build` clean |
+| No secrets in diff | PASS | No API keys, tokens, or secrets in the diff |
+| No test suppression | PASS | All existing tests retained and passing |
+
+### Remaining risks
+
+- The `InboundWebviewMessage` TypeScript type is still used for internal switch-statement typing after runtime validation. Phase C should consider using Zod or equivalent for fully inferred types from runtime schemas.
+- The `updateSetting` handler still writes to `ConfigurationTarget.Workspace`. Phase 0 item NC-008 (approval modes) should consider restricting which settings can be written at workspace scope.
+- The `openFile` workspace containment check uses `getWorkspaceRoot()` which returns `workspaceFolders[0]` (NC-023 territory). Multi-root support will need to resolve the correct workspace folder.
+
+### Files changed
+
+| File | Change | Lines |
+|---|---|---|
+| `agent-core/src/utils/webviewMessageValidation.ts` | New runtime validation utility | +320 |
+| `agent-core/src/index.ts` | Export validation utilities | +8 |
+| `extension/src/sidebarViewProvider.ts` | Add runtime validation, setting key allowlist, openFile containment | +35, -15 |
+| `agent-core/tests/webviewValidation.test.ts` | New regression test file | +488 |
+

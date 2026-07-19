@@ -3,28 +3,28 @@
   "project": "NexCode",
   "status": "in_progress",
   "bootstrapRequired": false,
-  "iteration": 4,
+  "iteration": 5,
   "currentPhase": 0,
   "totalFindings": 45,
   "counts": {
-    "pending": 41,
+    "pending": 40,
     "inProgress": 0,
-    "fixed": 4,
+    "fixed": 5,
     "blocked": 0,
     "obsolete": 0,
     "falsePositive": 0
   },
   "activeFindingIds": [],
-  "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004"],
+  "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004", "NC-005"],
   "blockedFindingIds": [],
-  "lastCommit": "c93bd36",
-  "lastSummary": "NC-004 fixed: Terminal safety boundary changed to deny-by-default. validateCommand() now rejects any command not matching SAFE_PATTERNS (ls, pwd, echo, cat, head, tail, wc, git status/diff/log/branch/show, npm test, cargo check/build/test/clippy/fmt, go build/test/fmt/vet, PowerShell/dir/cd/type/where/findstr equivalents). Previously, any command not caught by the denylist was silently allowed through a real shell. Unknown commands (curl, wget, docker, nc, ruby, perl, make, etc.) now fail closed. 159 new regression tests in agent-core/tests/terminalDenyByDefault.test.ts. 688/688 tests pass. Build clean. Type-check clean.",
+  "lastCommit": "94aeab5",
+  "lastSummary": "NC-005 fixed: Webview messages now validated at runtime before the extension host acts on them. (1) validateWebviewMessage() checks type discriminator is a recognized string, validates required fields per message type (prompt non-empty, editId non-empty, filePath non-null-bytes, setting key in allowlist, taskId/requestId/approved present and correct types), enforces size limits (1MB message, 500K prompt, 4K file path, 100K setting value). (2) handleOpenFile() now validates filePath against workspace root via validateOpenFilePath() — rejects paths outside workspace, traversal, and null bytes. (3) updateSetting now rejects any key not in a hardcoded allowlist of 13 safe settings (defaultModel, defaultProvider, openAIBaseUrl, ollamaBaseUrl, autoApproveWrite, toolApproval, maxConcurrentTasks, showReasoning, theme, searchProvider, searchBaseUrl, mcpServers). Secret keys (openAIApiKey, searchApiKey, tavilyApiKey) are explicitly excluded. 71 new regression tests in agent-core/tests/webviewValidation.test.ts. 759/759 tests pass. Build clean. Type-check clean.",
   "lastVerification": {
-    "focusedTests": "PASS — 159/159 terminalDenyByDefault tests pass",
+    "focusedTests": "PASS — 71/71 webviewValidation tests pass",
     "typecheck": "PASS — agent-core, extension, and webview tsc --noEmit all clean",
     "lint": "PASS — no lint configured beyond tsc (NC-030)",
     "build": "PASS — full npm run build clean",
-    "fullTests": "PASS — 688/688 unit tests pass",
+    "fullTests": "PASS — 759/759 unit tests pass",
     "packaging": "SKIPPED — not attempted this iteration"
   }
 }

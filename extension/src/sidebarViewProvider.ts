@@ -11,6 +11,9 @@ import {
   RequestAttachment,
   Task,
   validateProviderUrl,
+  validateWebviewMessage,
+  validateOpenFilePath,
+  isAllowedSettingKey,
 } from "@nexcode/agent-core";
 import { SecretService } from "./secretService";
 import { WorkspaceTrustService } from "./workspaceTrustService";
@@ -228,7 +231,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     };
 
     view.webview.html = this.getHtml(view.webview);
-    view.webview.onDidReceiveMessage((message: InboundWebviewMessage) => {
+    view.webview.onDidReceiveMessage((message: unknown) => {
       void this.handleWebviewMessage(message);
     });
     this.webviews.add(view.webview);
@@ -314,23 +317,33 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
   }
 
   private async handleWebviewMessage(
-    message: InboundWebviewMessage,
+    message: unknown,
   ): Promise<void> {
-    switch (message.type) {
+    // NC-005: Runtime validation — reject messages that don't have a recognized
+    // type discriminator and valid shape. The TypeScript type system only
+    // provides compile-time guarantees; the webview can send arbitrary objects.
+    const validation = validateWebviewMessage(message);
+    if (!validation.valid) {
+      console.warn(`[NexCode] Rejected invalid webview message: ${validation.error}`);
+      return;
+    }
+
+    const msg = message as InboundWebviewMessage;
+    switch (msg.type) {
       case "sendPrompt":
-        await this.handlePrompt(message);
+        await this.handlePrompt(msg);
         return;
       case "cancelPrompt":
         this.cancelPrompt();
         return;
       case "applyEdit":
-        await this.applyProposedEdit(message.editId);
+        await this.applyProposedEdit(msg.editId);
         return;
       case "previewEdit":
-        await this.previewProposedEdit(message.editId);
+        await this.previewProposedEdit(msg.editId);
         return;
       case "rejectEdit":
-        this.rejectProposedEdit(message.editId);
+        this.rejectProposedEdit(msg.editId);
         return;
       case "clearConversation":
         this.clearConversation();
@@ -339,22 +352,22 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         this.showCompletionNotification();
         return;
       case "refreshProviderStatus":
-        await this.refreshProviderStatus(message.provider);
+        await this.refreshProviderStatus(msg.provider);
         return;
       case "requestModelSuggestions":
-        await this.provideModelSuggestions(message.provider);
+        await this.provideModelSuggestions(msg.provider);
         return;
       case "enhancePrompt":
-        await this.handleEnhancePrompt(message);
+        await this.handleEnhancePrompt(msg);
         return;
       case "listMcpServers":
         await this.postMcpRegistryState();
         return;
       case "listMcpTools":
-        await this.postMcpTools(message.server);
+        await this.postMcpTools(msg.server);
         return;
       case "invokeMcpToolQuick":
-        await this.invokeMcpToolQuick(message);
+        await this.invokeMcpToolQuick(msg);
         return;
       case "pickAttachments":
         await this.pickAttachments();
@@ -381,24 +394,30 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         );
         return;
       case "openFile":
-        await this.handleOpenFile(message);
+        await this.handleOpenFile(msg);
         return;
       case "updateSetting":
-        if (message.key && message.value !== undefined) {
+        if (msg.key && msg.value !== undefined) {
           const secretKeys = ["openAIApiKey", "searchApiKey", "tavilyApiKey"];
-          if (secretKeys.includes(message.key)) {
+          if (secretKeys.includes(msg.key)) {
             await this.secretService.setSecret(
-              message.key as "openAIApiKey" | "searchApiKey" | "tavilyApiKey",
-              String(message.value),
+              msg.key as "openAIApiKey" | "searchApiKey" | "tavilyApiKey",
+              String(msg.value),
             );
           } else {
+            // NC-005: Setting key must be in the allowlist.
+            // The webview must never be able to send an arbitrary configuration key.
+            if (!isAllowedSettingKey(msg.key)) {
+              console.warn(`[NexCode] Rejected disallowed setting key: ${msg.key}`);
+              return;
+            }
             // NC-002: Validate provider endpoint URLs before persisting.
             // Reject non-HTTPS, private-IP, and malformed URLs.
-            if (message.key === "openAIBaseUrl") {
+            if (msg.key === "openAIBaseUrl") {
               const validated = this.validateProviderUrl(
-                String(message.value),
+                String(msg.value),
               );
-              if (validated !== String(message.value).replace(/\/+$/, "")) {
+              if (validated !== String(msg.value).replace(/\/+$/, "")) {
                 // URL failed validation — reject the update and notify
                 this.postMessage({
                   type: "configError",
@@ -412,8 +431,8 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
             const config =
               vscode.workspace.getConfiguration("nexcodeKiboko");
             await config.update(
-              message.key,
-              message.value,
+              msg.key,
+              msg.value,
               vscode.ConfigurationTarget.Workspace,
             );
           }
@@ -421,23 +440,23 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         }
         return;
       case "addAttachment":
-        await this.addAttachmentFromWebview(message);
+        await this.addAttachmentFromWebview(msg);
         return;
       case "removeAttachment":
-        this.taskController.removeAttachment(message.attachmentId);
+        this.taskController.removeAttachment(msg.attachmentId);
         this.taskController.postAttachments();
         return;
       case "steerTask":
-        this.handleSteerTask(message.taskId, message.message);
+        this.handleSteerTask(msg.taskId, msg.message);
         return;
       case "cancelTask":
-        this.handleCancelTask(message.taskId);
+        this.handleCancelTask(msg.taskId);
         return;
       case "listTasks":
         this.taskController.postTaskList();
         return;
       case "toolApprovalResponse":
-        this.handleToolApprovalResponse(message.requestId, message.approved);
+        this.handleToolApprovalResponse(msg.requestId, msg.approved);
         return;
     }
   }
@@ -1465,7 +1484,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     panel.webview.html = this.getHtml(panel.webview);
 
     panel.webview.onDidReceiveMessage(
-      (message: InboundWebviewMessage) => {
+      (message: unknown) => {
         void this.handleWebviewMessage(message);
       },
       undefined,
@@ -1511,8 +1530,19 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     const filePath = msg.filePath;
     if (!filePath) return;
 
+    // NC-005: Validate that the file path is within the workspace.
+    // The webview must not be able to open arbitrary absolute files.
+    const workspaceRoot = this.getWorkspaceRoot();
+    const containedPath = validateOpenFilePath(workspaceRoot, filePath);
+    if (!containedPath) {
+      vscode.window.showErrorMessage(
+        `NexCode: Cannot open file outside workspace: ${filePath}`,
+      );
+      return;
+    }
+
     try {
-      const uri = vscode.Uri.file(filePath);
+      const uri = vscode.Uri.file(containedPath);
       const document = await vscode.workspace.openTextDocument(uri);
       const editor = await vscode.window.showTextDocument(document, {
         preserveFocus: true,
@@ -1529,7 +1559,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         );
       }
     } catch {
-      vscode.window.showErrorMessage(`Could not open file: ${filePath}`);
+      vscode.window.showErrorMessage(`Could not open file: ${containedPath}`);
     }
   }
 

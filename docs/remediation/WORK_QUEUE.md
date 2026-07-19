@@ -58,14 +58,15 @@
 
 ### NC-005 — Webview messages cross privilege boundary without runtime validation
 - **Severity:** Critical
-- **Status:** pending
+- **Status:** fixed
 - **Phase:** 0 / C
 - **Dependencies:** none
-- **Affected files:** `extension/src/sidebarViewProvider.ts:229-232,294-403,1425-1449`
-- **Verified:** unverified
+- **Affected files:** `extension/src/sidebarViewProvider.ts:229-232,294-403,1425-1449`, `agent-core/src/utils/webviewMessageValidation.ts` (new)
+- **Verified:** yes — verified against current source; runtime validation added for type discriminator, field presence, setting key allowlist, openFile workspace containment, size limits
 - **Required tests:** arbitrary webview message types rejected; unknown setting keys rejected; openFile cannot escape workspace root; runtime schema validation on inbound messages
 - **Verification commands:** `npx vitest run agent-core/tests/webviewValidation.test.ts`
-- **Resolution evidence:** (none yet)
+- **Resolution evidence:** `TBD` — (1) `validateWebviewMessage()` validates type discriminator is a recognized string from VALID_MESSAGE_TYPES (26 types). (2) Validates required fields per message type: prompt non-empty + length limit, editId non-empty, filePath non-empty + no null bytes + length limit, setting key in allowlist, taskId/requestId/approved present and correct types. (3) Rejects non-objects, null/undefined, unknown types, oversized messages (>1MB). (4) `validateOpenFilePath()` checks containment against workspace root — rejects traversal, absolute paths outside workspace. (5) `updateSetting` now rejects any key not in ALLOWED_SETTING_KEYS (13 safe settings). Secret keys excluded. (6) `handleOpenFile()` uses validateOpenFilePath() before opening. 71 regression tests. 759/759 tests pass. Build clean.
+- **Remaining risk:** The `InboundWebviewMessage` TypeScript type is still used for internal switch-statement typing after runtime validation. Phase C should consider using Zod or equivalent for fully inferred types.
 
 ### NC-006 — Reviewed edits can escape workspace or overwrite newer file
 - **Severity:** Critical

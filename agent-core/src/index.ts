@@ -14,3 +14,11 @@ export {
 } from "./providers/modelRouter";
 export { TaskQueue, classifyPromptIntent } from "./taskQueue";
 export { TaskQueueManager } from "./taskManager";
+export {
+  validateWebviewMessage,
+  validateOpenFilePath,
+  isAllowedSettingKey,
+  getAllowedSettingKeys,
+  type ValidationResult,
+  type ValidMessageType,
+} from "./utils/webviewMessageValidation";

@@ -21,6 +21,7 @@ interface StreamingMessageProps {
   as?: "div" | "span";
   className?: string;
   showCursor?: boolean;
+  showThinkingOverlay?: boolean;
   thinkingLabel?: string;
   statusLabel?: StatusLabel;
   statusDetail?: string;
@@ -61,7 +62,7 @@ function formatToolCounts(counts: ToolCallCounts): string {
   if (counts.reads && counts.reads > 0) parts.push(`${counts.reads} read${counts.reads !== 1 ? "s" : ""}`);
   if (counts.writes && counts.writes > 0) parts.push(`${counts.writes} write${counts.writes !== 1 ? "s" : ""}`);
   if (counts.searches && counts.searches > 0) parts.push(`${counts.searches} search${counts.searches !== 1 ? "es" : ""}`);
-  if (counts.terminals && counts.terminals > 0) parts.push(`${counts.terminals} shell command${counts.terminals !== 1 ? "s" : ""}`);
+  if (counts.terminals && counts.terminals > 0) parts.push(`${counts.terminals} shell${counts.terminals !== 1 ? "s" : ""}`);
   if (counts.patches && counts.patches > 0) parts.push(`${counts.patches} patch${counts.patches !== 1 ? "es" : ""}`);
   if (counts.deletes && counts.deletes > 0) parts.push(`${counts.deletes} delete${counts.deletes !== 1 ? "s" : ""}`);
   if (counts.other && counts.other > 0) parts.push(`${counts.other} other`);
@@ -75,6 +76,7 @@ export function StreamingMessage({
   as = "div",
   className,
   showCursor = true,
+  showThinkingOverlay = true,
   thinkingLabel = "Thinking...",
   statusLabel,
   statusDetail,
@@ -95,7 +97,8 @@ export function StreamingMessage({
     .join(" ");
 
   // Show thinking overlay during thinking phase (when streaming but no text yet)
-  const showThinkingOverlay = isThinking;
+  // Only show if showThinkingOverlay is true (to avoid overlap with ReasoningIndicator)
+  const shouldShowThinkingOverlay = isThinking && showThinkingOverlay;
   const config = statusLabel ? statusLabelConfig[statusLabel] : null;
   const rawThinking = statusDetail ?? thinkingLabel;
   const displayText = cleanThinkingText(rawThinking);
@@ -118,7 +121,7 @@ export function StreamingMessage({
       )}
 
       {/* Thinking overlay - shown during thinking phase */}
-      {showThinkingOverlay && (
+      {shouldShowThinkingOverlay && (
         <div className="nk-streaming-live" role="status" aria-label="Agent activity">
           {/* Live activity line: status label + tool counts */}
           {config && (

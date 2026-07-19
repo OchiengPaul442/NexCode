@@ -48,6 +48,45 @@ import {
 } from "lucide-react";
 import { StreamingMessage } from "./components/StreamingMessage";
 
+// ── Completion sound (two-tone ascending chime, no CSP changes needed) ──────
+function playCompletionSound(): void {
+  try {
+    const ctx = new AudioContext();
+    const osc1 = ctx.createOscillator();
+    const osc2 = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    // First tone: A5 (880Hz) - 0-80ms
+    osc1.type = "sine";
+    osc1.frequency.setValueAtTime(880, ctx.currentTime);
+
+    // Second tone: E6 (1320Hz) - 80-200ms (harmonic rise)
+    osc2.type = "sine";
+    osc2.frequency.setValueAtTime(1320, ctx.currentTime + 0.08);
+
+    // Envelope: soft, clean fade-out
+    gain.gain.setValueAtTime(0, ctx.currentTime);
+    gain.gain.linearRampToValueAtTime(0.12, ctx.currentTime + 0.01);
+    gain.gain.linearRampToValueAtTime(0.12, ctx.currentTime + 0.08);
+    gain.gain.linearRampToValueAtTime(0.08, ctx.currentTime + 0.1);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
+
+    osc1.connect(gain);
+    osc2.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc1.start(ctx.currentTime);
+    osc1.stop(ctx.currentTime + 0.1);
+    osc2.start(ctx.currentTime + 0.08);
+    osc2.stop(ctx.currentTime + 0.25);
+
+    // Clean up AudioContext after playback
+    setTimeout(() => ctx.close(), 300);
+  } catch {
+    // Silently fail if audio is not available
+  }
+}
+
 // ── Simple line-level diff utility (no external dependency) ──────────────────
 interface DiffLine {
   type: "add" | "del" | "ctx";
@@ -2063,11 +2102,12 @@ function MessageBubble({
               </div>
             ) : (
               <StreamingMessage
-                text={message.text || ""}
+                text={(message.text || "").replace(/<think>[\s\S]*?<\/think>/g, "").replace(/<think>[\s\S]*$/g, "").trim()}
                 streaming={Boolean(message.streaming || message.thinking)}
                 markdown
                 className="markdown-body text-[13px] leading-relaxed"
                 showCursor
+                showThinkingOverlay={!(message.reasoning.length > 0 && (message.streaming || message.thinking))}
                 thinkingLabel={
                   message.reasoning.length > 0
                     ? message.reasoning[message.reasoning.length - 1]
@@ -2768,7 +2808,11 @@ const ActivitySection = React.memo(function ActivitySection({
   const grouped = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const exec of toolExecutions) {
-      const name = exec.toolName === "terminal" ? "shell" : exec.toolName;
+      // Normalize tool names for consistent grouping
+      let name = exec.toolName;
+      if (name === "terminal") name = "shell";
+      else if (name === "append") name = "write";
+      else if (name === "web-search") name = "search";
       counts[name] = (counts[name] ?? 0) + 1;
     }
     return counts;
@@ -3993,6 +4037,9 @@ function App() {
             clearTimeout(flushHandleRef.current);
             flushHandleRef.current = null;
           }
+          // Play completion sound and notify extension for VS Code notification
+          playCompletionSound();
+          vscode.postMessage({ type: "taskCompleted" });
           const queued = dequeuePromptRequest();
           if (queued) {
             dispatchPromptRequest(queued);

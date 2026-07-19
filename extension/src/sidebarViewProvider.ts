@@ -300,6 +300,9 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       case "clearConversation":
         this.clearConversation();
         return;
+      case "taskCompleted":
+        this.showCompletionNotification();
+        return;
       case "refreshProviderStatus":
         await this.refreshProviderStatus(message.provider);
         return;
@@ -1387,6 +1390,17 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     void this.postMcpRegistryState();
     void this.refreshProviderStatus();
     void this.provideModelSuggestions();
+  }
+
+  private showCompletionNotification(): void {
+    // Only show notification if the sidebar is not focused
+    const activeEditor = vscode.window.activeTextEditor;
+    const sidebarVisible = this._panel?.visible ?? false;
+    if (sidebarVisible && !activeEditor) {
+      // Sidebar is focused, no need for notification
+      return;
+    }
+    vscode.window.showInformationMessage("NexCode: Task completed.");
   }
 
   private postMessage(message: unknown): void {

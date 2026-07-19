@@ -17,7 +17,7 @@
   "activeFindingIds": [],
   "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004", "NC-005", "NC-007"],
   "blockedFindingIds": [],
-  "lastCommit": "TBD",
+  "lastCommit": "3bccfda",
   "lastSummary": "NC-007 fixed: PowerShell Select-String search fallback (injection-prone) replaced with a pure Node.js filesystem walker that uses fs.promises.readdir and fs.promises.readFile for recursive walking with case-insensitive literal substring matching. No shell, no PowerShell, no injection. (1) searchWithNodeFallback() — new private method on SearchTool that recursively walks workspace, reads files matching known extensions, skips node_modules/.git/dist/build, performs case-insensitive literal substring matching, returns file:line:content format, limited to 50 results with 1MB per-file size limit and 12-level depth limit. (2) PowerShell Select-String -Command invocation completely removed. (3) Linux/Mac grep fallback also replaced (grep interprets query as regex, not literal). (4) findstr kept on Windows (uses execFile argv, safe). (5) Query truncated to 100 chars in diagnostic output. (6) TerminalTool.getWorkspaceRoot() public getter added. 19 regression tests in agent-core/tests/searchInjection.test.ts. 778/778 tests pass. Build clean. Type-check clean.",
   "lastVerification": {
     "focusedTests": "PASS — 19/19 searchInjection tests pass",

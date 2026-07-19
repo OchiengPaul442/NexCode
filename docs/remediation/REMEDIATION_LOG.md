@@ -393,6 +393,7 @@ Append one section per autonomous iteration. Never rewrite prior entries.
 **Date:** 20 July 2026
 **Finding IDs:** NC-007 (Critical)
 **Phase:** 0 — Containment patch
+**Commit:** `3bccfda` — `fix(agent-core): resolve NC-007 — replace PowerShell search injection with Node.js walker`
 
 ### What was done
 

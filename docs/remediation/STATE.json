@@ -3,28 +3,28 @@
   "project": "NexCode",
   "status": "in_progress",
   "bootstrapRequired": false,
-  "iteration": 3,
+  "iteration": 4,
   "currentPhase": 0,
   "totalFindings": 45,
   "counts": {
-    "pending": 42,
+    "pending": 41,
     "inProgress": 0,
-    "fixed": 3,
+    "fixed": 4,
     "blocked": 0,
     "obsolete": 0,
     "falsePositive": 0
   },
   "activeFindingIds": [],
-  "resolvedFindingIds": ["NC-001", "NC-002", "NC-003"],
+  "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004"],
   "blockedFindingIds": [],
-  "lastCommit": "4b628cf",
-  "lastSummary": "NC-003 fixed: API keys removed from webview state. SidebarSettings now uses openAIApiKeyConfigured/searchApiKeyConfigured boolean flags instead of raw secret strings. BackendConfig sends boolean presence flags only. sendSecret() posts to extension (SecretStorage) but never stores in Zustand state. stripSecretsFromSettings migration strips legacy fields from persisted state. updateSetting rejects secret keys with safety net. UI inputs use local state, send on blur, and clear immediately. Also fixed pre-existing TS errors: validateProviderUrl called with 2 args at lines 1260/1359 in sidebarViewProvider.ts. 20 new regression tests. 529/529 tests pass. Build clean. All typechecks clean.",
+  "lastCommit": "pending",
+  "lastSummary": "NC-004 fixed: Terminal safety boundary changed to deny-by-default. validateCommand() now rejects any command not matching SAFE_PATTERNS (ls, pwd, echo, cat, head, tail, wc, git status/diff/log/branch/show, npm test, cargo check/build/test/clippy/fmt, go build/test/fmt/vet, PowerShell/dir/cd/type/where/findstr equivalents). Previously, any command not caught by the denylist was silently allowed through a real shell. Unknown commands (curl, wget, docker, nc, ruby, perl, make, etc.) now fail closed. 159 new regression tests in agent-core/tests/terminalDenyByDefault.test.ts. 688/688 tests pass. Build clean. Type-check clean.",
   "lastVerification": {
-    "focusedTests": "PASS — 20/20 webviewSecrets tests pass",
+    "focusedTests": "PASS — 159/159 terminalDenyByDefault tests pass",
     "typecheck": "PASS — agent-core, extension, and webview tsc --noEmit all clean",
     "lint": "PASS — no lint configured beyond tsc (NC-030)",
     "build": "PASS — full npm run build clean",
-    "fullTests": "PASS — 529/529 unit tests pass",
+    "fullTests": "PASS — 688/688 unit tests pass",
     "packaging": "SKIPPED — not attempted this iteration"
   }
 }

@@ -46,14 +46,15 @@
 
 ### NC-004 — Terminal policy accepts arbitrary unmatched shell commands
 - **Severity:** Critical
-- **Status:** pending
-- **Phase:** 0 / E
+- **Status:** fixed
+- **Phase:** 0 / containment
 - **Dependencies:** none
-- **Affected files:** `agent-core/src/tools/terminalTool.ts:548-571,674-710`
-- **Verified:** unverified
+- **Affected files:** `agent-core/src/tools/terminalTool.ts:674-715`
+- **Verified:** yes — verified against current source; validateCommand now rejects commands not in SAFE_PATTERNS
 - **Required tests:** unknown terminal command fails closed; raw shell requires approval; untrusted workspace disables raw terminal; typed argv with shell:false for allowed commands
-- **Verification commands:** `npx vitest run agent-core/tests/terminalSafety.test.ts`
-- **Resolution evidence:** (none yet)
+- **Verification commands:** `npx vitest run agent-core/tests/terminalDenyByDefault.test.ts`
+- **Resolution evidence:** `validateCommand()` changed from returning `null` (allow) for any command not matching denylist/safe-list, to returning a rejection message for any command not in `SAFE_PATTERNS`. The terminal safety boundary now uses deny-by-default: only explicitly permitted read-only commands (ls, pwd, echo, cat, head, tail, wc, git status/diff/log/branch/show, npm test, cargo check/build/test/clippy/fmt, go build/test/fmt/vet, and PowerShell/dir/cd/type/where/findstr equivalents) are allowed. 159 regression tests in `agent-core/tests/terminalDenyByDefault.test.ts` covering: safe commands still allowed (35), unknown commands now rejected (58), previously blocked commands still blocked (16), run() rejects unknown (3), stream() rejects unknown (1), SAFE_PATTERNS coverage (46). 688/688 unit tests pass. Build clean. Type-check clean.
+- **Remaining risk:** Terminal still uses `shell: true` (PowerShell on Windows). Full typed-argv-with-shell:false redesign is Phase E work. The deny-by-default containment patch eliminates the primary attack surface (arbitrary unmatched commands) while preserving the existing safe-command allowlist.
 
 ### NC-005 — Webview messages cross privilege boundary without runtime validation
 - **Severity:** Critical

@@ -249,3 +249,69 @@ Append one section per autonomous iteration. Never rewrite prior entries.
 | `extension/src/sidebarViewProvider.ts` | Return boolean flags instead of raw secrets; fix validateProviderUrl 2-arg TS errors | +10, -8 |
 | `agent-core/tests/webviewSecrets.test.ts` | New regression test file | +292 |
 
+---
+
+## Iteration 3 — NC-004: Terminal policy deny-by-default
+
+**Date:** 20 July 2026
+**Finding IDs:** NC-004 (Critical)
+**Phase:** 0 — Containment patch
+
+### What was done
+
+1. **Verified NC-004 against current source code:**
+   - `agent-core/src/tools/terminalTool.ts:674-711` — confirmed `validateCommand()` returns `null` (allow) for any command not matching `SHELL_EXPANSION_PATTERNS`, `BLOCKED_PATTERNS`, `BLOCKED_GIT_PATTERNS`, or `SAFE_PATTERNS`. This means commands like `curl`, `wget`, `docker`, `nc`, `ruby`, `perl`, `make`, etc. pass through unchallenged into a real shell (`shell: true`).
+   - `agent-core/src/tools/toolApprovalPolicy.ts:32-37` — confirmed `requiresApproval()` uses `SAFE_PATTERNS` to determine if terminal needs approval, but the approval layer is a separate concern from the safety boundary in `validateCommand()`.
+   - `agent-core/src/tools/gitTool.ts` — confirmed `GitTool` uses `runSafe()` (execFile with argv), not `run()`, so git operations bypass `validateCommand()` entirely.
+   - `agent-core/src/tools/searchTool.ts` — confirmed `SearchTool` uses `runSafe()` (execFile with argv), so search operations bypass `validateCommand()`.
+   - `agent-core/src/tools/testRunnerTool.ts` — confirmed `TestRunnerTool` uses `terminal.run()` which goes through `validateCommand()`. Commands like `npm test`, `npx vitest run`, `cargo test` are in `SAFE_PATTERNS` and pass.
+
+2. **Implemented deny-by-default fix (1 file changed):**
+   - `agent-core/src/tools/terminalTool.ts` (+5, -1):
+     - Changed the final `return null;` in `validateCommand()` to return a rejection message: `"Command is not in the terminal allowlist. Only explicitly permitted read-only commands are allowed. Use typed tool wrappers (git, test, search) instead of raw shell."`
+     - This means only commands matching `SAFE_PATTERNS` pass through the terminal safety boundary. Everything else is rejected.
+     - The change is minimal and surgical — only the default return value changed.
+
+3. **Added regression tests (1 new file, 159 tests):**
+   - `agent-core/tests/terminalDenyByDefault.test.ts`:
+     - Safe commands still allowed (35 tests): ls, pwd, echo, cat, head, tail, wc, git status/diff/log/branch/show, npm test, cargo check/build/test/clippy/fmt, go build/test/fmt/vet, PowerShell equivalents, dir/cd/type/where/findstr.
+     - Unknown commands now rejected (58 tests): curl, wget, docker, nc, ruby, perl, php, java, make, cmake, gcc, g++, rustc, swift, dotnet, mvn, gradle, pip, pip3, conda, brew, scoop, choco, apt-get, yum, dnf, systemctl, service, ssh, scp, rsync, tar create, unzip, dd, mount, umount, chown, chmod, iptables, crontab, sudo, su, kill, pkill, ps, top, htop, df, du, free, uname, whoami, id, which, file, strings, hexdump, od, xxd.
+     - Previously blocked commands still blocked (16 tests): command substitution, backtick substitution, parameter expansion, chained commands, node -e, python -c, python3 -c, rm -rf, mkfs, shutdown, reboot, git reset --hard, git clean -fd, git checkout --.
+     - `run()` rejects unknown commands (3 tests): curl, docker, netcat.
+     - `stream()` rejects unknown commands (1 test): curl.
+     - `SAFE_PATTERNS` coverage (46 tests): every expected safe prefix is covered by at least one pattern.
+
+4. **Validated:**
+   - 159/159 new terminalDenyByDefault tests pass.
+   - 688/688 full unit tests pass (3 pre-existing e2e failures unrelated).
+   - `tsc --noEmit` clean in agent-core.
+   - `npm run build` clean (agent-core + extension + webview).
+   - `tsc --noEmit` clean in webview.
+
+### Validation
+
+| Check | Result | Notes |
+|---|---|---|
+| Focused tests (NC-004) | PASS | 159/159 terminalDenyByDefault tests pass |
+| Existing terminal tests | PASS | 57/57 pass (bypasses, arbitraryExecution, normalization) |
+| Security regression tests | PASS | 21/21 pass |
+| Full test suite | PASS | 688/688 unit tests pass; 3 pre-existing e2e failures |
+| Type check (agent-core) | PASS | `tsc --noEmit` clean |
+| Type check (webview) | PASS | `tsc --noEmit` clean |
+| Build | PASS | Full `npm run build` clean |
+| No secrets in diff | PASS | No API keys, tokens, or secrets in the diff |
+| No test suppression | PASS | All existing tests retained and passing |
+
+### Remaining risks
+
+- Terminal still uses `shell: true` (PowerShell on Windows). Full typed-argv-with-shell:false redesign is Phase E work (NC-012 cancellation propagation, NC-016 tool schema validation).
+- The `SAFE_PATTERNS` list is still maintained as regex patterns. A more robust approach would be typed command schemas with explicit executable + argv validation.
+- Commands that are safe but not yet in `SAFE_PATTERNS` (e.g., `sort`, `uniq`, `tr`) will be rejected. This is the correct security posture — users should request additions through the typed tool wrappers.
+
+### Files changed
+
+| File | Change | Lines |
+|---|---|---|
+| `agent-core/src/tools/terminalTool.ts` | Change validateCommand default from allow to deny | +5, -1 |
+| `agent-core/tests/terminalDenyByDefault.test.ts` | New regression test file | +256 |
+

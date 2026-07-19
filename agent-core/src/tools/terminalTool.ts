@@ -707,6 +707,10 @@ export class TerminalTool {
       }
     }
 
-    return null;
+    // Deny-by-default: unknown commands are rejected.
+    // Only commands matching SAFE_PATTERNS are allowed through the terminal
+    // safety boundary. Everything else must go through typed tool wrappers
+    // (GitTool, TestRunnerTool, SearchTool) or require explicit approval.
+    return "Command is not in the terminal allowlist. Only explicitly permitted read-only commands are allowed. Use typed tool wrappers (git, test, search) instead of raw shell.";
   }
 }

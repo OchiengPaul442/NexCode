@@ -39,6 +39,23 @@ const statusLabelConfig: Record<StatusLabel, { color: string; defaultText: strin
   reviewing: { color: "#94a3b8", defaultText: "Reviewing" },
 };
 
+function cleanThinkingText(text: string): string {
+  // Remove <think> tags and their content (model reasoning artifacts)
+  let cleaned = text.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+  // Remove any remaining partial <think> tags
+  cleaned = cleaned.replace(/<think>[\s\S]*$/g, "").trim();
+  // If the text is empty after cleaning, return empty
+  if (!cleaned) return "";
+  // Truncate very long thinking content to first meaningful line
+  const lines = cleaned.split("\n").filter(l => l.trim().length > 0);
+  if (lines.length > 0) {
+    // Return first meaningful line, truncated to reasonable length
+    const first = lines[0].trim();
+    return first.length > 80 ? first.slice(0, 80) + "..." : first;
+  }
+  return cleaned.length > 80 ? cleaned.slice(0, 80) + "..." : cleaned;
+}
+
 function formatToolCounts(counts: ToolCallCounts): string {
   const parts: string[] = [];
   if (counts.reads && counts.reads > 0) parts.push(`${counts.reads} read${counts.reads !== 1 ? "s" : ""}`);
@@ -77,15 +94,33 @@ export function StreamingMessage({
     .filter(Boolean)
     .join(" ");
 
-  if (isThinking) {
-    const config = statusLabel ? statusLabelConfig[statusLabel] : null;
-    const displayText = statusDetail ?? thinkingLabel;
-    const toolCountStr = toolCounts ? formatToolCounts(toolCounts) : "";
+  // Show thinking overlay during thinking phase (when streaming but no text yet)
+  const showThinkingOverlay = isThinking;
+  const config = statusLabel ? statusLabelConfig[statusLabel] : null;
+  const rawThinking = statusDetail ?? thinkingLabel;
+  const displayText = cleanThinkingText(rawThinking);
+  const toolCountStr = toolCounts ? formatToolCounts(toolCounts) : "";
 
-    return (
-      <Element className={rootClassName}>
+  return (
+    <Element className={rootClassName}>
+      {/* Main text with typewriter effect - always rendered when streaming or has text */}
+      {(displayedText || isStreaming) && (
+        <div className="nk-streaming-content">
+          {markdown ? (
+            <RichMarkdown text={displayedText} />
+          ) : (
+            <span className="whitespace-pre-wrap">{displayedText}</span>
+          )}
+          {showCursor && isStreaming && (
+            <span className="nk-streaming-cursor" aria-hidden="true" />
+          )}
+        </div>
+      )}
+
+      {/* Thinking overlay - shown during thinking phase */}
+      {showThinkingOverlay && (
         <div className="nk-streaming-live" role="status" aria-label="Agent activity">
-          {/* Live activity line: "Exploring  18 reads, 3 searches" */}
+          {/* Live activity line: status label + tool counts */}
           {config && (
             <div className="nk-streaming-live-activity">
               <span className="nk-streaming-live-label" style={{ color: config.color }}>
@@ -107,32 +142,29 @@ export function StreamingMessage({
             </div>
           )}
 
-          {/* Thinking indicator */}
-          <div className="nk-streaming-live-thinking">
-            <span className="nk-streaming-live-thinking-dot" />
-            <span className="nk-streaming-thinking">{displayText}</span>
-          </div>
+          {/* Thinking indicator - only show if we have meaningful text */}
+          {displayText && (
+            <div className="nk-streaming-live-thinking">
+              <span className="nk-streaming-live-thinking-dot" />
+              <span className="nk-streaming-thinking">{displayText}</span>
+            </div>
+          )}
+
+          {/* Pulsing dot when no other content */}
+          {!displayText && !config && (
+            <div className="nk-streaming-live-thinking">
+              <span className="nk-streaming-live-thinking-dot" />
+              <span className="nk-streaming-thinking">Working...</span>
+            </div>
+          )}
         </div>
-      </Element>
-    );
-  }
+      )}
 
-  if (markdown) {
-    return (
-      <div className={rootClassName}>
-        <RichMarkdown text={displayedText} />
-        {showCursor && isStreaming && (
-          <span className="nk-streaming-cursor" aria-hidden="true" />
-        )}
-      </div>
-    );
-  }
-
-  return (
-    <Element className={rootClassName}>
-      <span className="whitespace-pre-wrap">{displayedText}</span>
-      {showCursor && isStreaming && (
-        <span className="nk-streaming-cursor" aria-hidden="true" />
+      {/* Static content when not streaming and no text */}
+      {!isStreaming && !displayedText && !streaming && (
+        <Element className={rootClassName}>
+          <span className="whitespace-pre-wrap">{text}</span>
+        </Element>
       )}
     </Element>
   );

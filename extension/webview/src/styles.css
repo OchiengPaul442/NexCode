@@ -3125,6 +3125,11 @@ html, body {
   display: block;
   width: 100%;
 }
+.nk-streaming-content {
+  display: block;
+  width: 100%;
+  position: relative;
+}
 .nk-streaming-text {
   display: inline-block;
   width: 100%;

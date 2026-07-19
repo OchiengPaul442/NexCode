@@ -834,6 +834,14 @@ function ReasoningIndicator({ reasoning, streaming, startTime }: {
   if (!streaming || reasoning.length === 0) return null;
 
   const latest = reasoning[reasoning.length - 1];
+  // Clean up thinking content - remove <think> tags and truncate
+  const cleaned = latest
+    .replace(/<think>[\s\S]*?<\/think>/g, "")
+    .replace(/<think>[\s\S]*$/g, "")
+    .trim();
+  const displayText = cleaned.length > 0
+    ? (cleaned.length > 60 ? cleaned.slice(0, 60) + "..." : cleaned)
+    : "Working...";
 
   return (
     <div className="nk-reasoning-dynamic">
@@ -841,7 +849,7 @@ function ReasoningIndicator({ reasoning, streaming, startTime }: {
         <span className="nk-reasoning-dot" />
         <span className="nk-reasoning-timer">Working for {elapsed}s</span>
         <span>—</span>
-        <span className="nk-reasoning-text">{latest}</span>
+        <span className="nk-reasoning-text">{displayText}</span>
       </div>
     </div>
   );
@@ -1931,7 +1939,6 @@ function ResponseSummary({ message }: { message: ChatMessage }) {
   if (message.streaming || message.thinking) return null;
   if (!message.text) return null;
 
-  const editCount = message.proposedEdits?.length ?? 0;
   const elapsed =
     message.endTime && message.startTime
       ? Math.floor((message.endTime - message.startTime) / 1000)
@@ -1947,11 +1954,6 @@ function ResponseSummary({ message }: { message: ChatMessage }) {
           <span>· {formatTokenCount(message.tokenUsage.total)} tokens</span>
         )}
       </div>
-      {editCount > 0 && (
-        <div className="nk-response-changes">
-          {editCount} file{editCount !== 1 ? "s" : ""} changed
-        </div>
-      )}
     </div>
   );
 }
@@ -2066,7 +2068,14 @@ function MessageBubble({
                 markdown
                 className="markdown-body text-[13px] leading-relaxed"
                 showCursor
-                thinkingLabel={message.reasoning.length > 0 ? message.reasoning[message.reasoning.length - 1] : "Working..."}
+                thinkingLabel={
+                  message.reasoning.length > 0
+                    ? message.reasoning[message.reasoning.length - 1]
+                        .replace(/<think>[\s\S]*?<\/think>/g, "")
+                        .replace(/<think>[\s\S]*$/g, "")
+                        .trim() || "Working..."
+                    : "Working..."
+                }
                 statusLabel={
                   (message.streaming || message.thinking) && (message.toolExecutions ?? []).length > 0
                     ? (() => {
@@ -3043,13 +3052,14 @@ function App() {
 
   const modelsForActiveProvider = useMemo(() => {
     if (!activeSession) return [];
-    const current = activeSession.model ? [activeSession.model] : [];
-    return [
-      ...new Set([
-        ...current,
-        ...(modelSuggestions[activeSession.provider] ?? []),
-      ]),
-    ];
+    const providerModels = modelSuggestions[activeSession.provider] ?? [];
+    const current = activeSession.model?.trim();
+    // Only include current model if it's actually in the provider's model list
+    // This prevents showing stale models from a previous provider
+    if (current && providerModels.includes(current)) {
+      return [...new Set([current, ...providerModels])];
+    }
+    return [...new Set(providerModels)];
   }, [activeSession, modelSuggestions]);
 
   const mcpToolsForSelectedServer = useMemo(
@@ -3062,11 +3072,13 @@ function App() {
       return [];
     }
 
+    const providerModels = modelSuggestions[activeSession.provider] ?? [];
     const current = activeSession.model?.trim();
-    const merged = [
-      ...(current ? [current] : []),
-      ...(modelSuggestions[activeSession.provider] ?? []),
-    ];
+
+    // Only include current model if it belongs to the active provider's list
+    const merged = (current && providerModels.includes(current))
+      ? [current, ...providerModels]
+      : [...providerModels];
 
     return [...new Set(merged)]
       .filter((option) => option.trim().length > 0)
@@ -4367,7 +4379,7 @@ function App() {
   }
 
   function onProviderChange(provider: ProviderId): void {
-    useStore.getState().updateActiveSession({ provider });
+    useStore.getState().updateActiveSession({ provider, model: "" });
     vscode.postMessage({ type: "refreshProviderStatus", provider });
     vscode.postMessage({ type: "requestModelSuggestions", provider });
   }
@@ -4422,7 +4434,7 @@ function App() {
                     value={activeSession.provider}
                     onChange={(e) => {
                       const provider = e.target.value as ProviderId;
-                      useStore.getState().updateActiveSession({ provider });
+                      useStore.getState().updateActiveSession({ provider, model: "" });
                       vscode.postMessage({ type: "refreshProviderStatus", provider });
                       vscode.postMessage({ type: "requestModelSuggestions", provider });
                     }}

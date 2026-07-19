@@ -23,25 +23,26 @@
 
 ### NC-002 — Malicious workspace can redirect authenticated provider probe
 - **Severity:** Critical
-- **Status:** pending
-- **Phase:** 0
+- **Status:** fixed
+- **Phase:** 0 / containment
 - **Dependencies:** NC-001 (provider endpoint trust)
 - **Affected files:** `extension/src/sidebarViewProvider.ts:1103-1177,1200-1233,1256-1305,1405-1411`, `extension/package.json:184-186`
-- **Verified:** unverified
+- **Verified:** yes — verified against current source; auto-probing removed, URL validation added, trust declaration corrected
 - **Required tests:** workspace-controlled base URL cannot receive stored key; untrusted workspace blocks authenticated network calls; capabilities.untrustedWorkspaces declared correctly
-- **Verification commands:** `npx vitest run agent-core/tests/workspaceTrust.test.ts`
-- **Resolution evidence:** (none yet)
+- **Verification commands:** `npx vitest run agent-core/tests/workspaceProviderUrlValidation.test.ts && npx vitest run agent-core/tests/workspaceTrustDeclaration.test.ts`
+- **Resolution evidence:** `5ae7a5a` — (1) `pushInitialWebviewState()` no longer auto-probes provider status or model suggestions. (2) `validateProviderUrl()` rejects non-HTTPS, private IPs, malformed URLs. (3) `canProbeProviderEndpoint()` requires trusted workspace for custom endpoints. (4) `openAIBaseUrl` validated on `updateSetting`. (5) `capabilities.untrustedWorkspaces` with `restrictedConfigurations` added to `extension/package.json`. 44 new regression tests. 509/509 tests pass. Build clean.
+- **Remaining risk:** `handleOpenFile` still accepts arbitrary absolute paths (NC-005). Phase D should restrict provider endpoints to known allowlist.
 
 ### NC-003 — API keys persisted in plaintext webview state
 - **Severity:** Critical
-- **Status:** pending
-- **Phase:** 0
+- **Status:** fixed
+- **Phase:** 0 / containment
 - **Dependencies:** none
-- **Affected files:** `extension/webview/src/main.tsx:380-403,550-609,1217-1220,3982-3988,5033-5076`
-- **Verified:** unverified
-- **Required tests:** serialized webview state contains no key/token fields; migration strips legacy secret fields; write-only secret input pattern
+- **Affected files:** `extension/webview/src/main.tsx:380-403,550-609,1217-1220,3982-3988,5033-5076`, `extension/src/sidebarViewProvider.ts:1151-1219`
+- **Verified:** yes — verified against current source; secrets removed from SidebarSettings, BackendConfig, and PersistedState
+- **Required tests:** serialized webview state contains no key/token fields; migration strips legacy secret fields; write-only secret input pattern; updateSetting rejects secret keys
 - **Verification commands:** `npx vitest run agent-core/tests/webviewSecrets.test.ts`
-- **Resolution evidence:** (none yet)
+- **Resolution evidence:** Working tree changes: (1) SidebarSettings interface: `openAIApiKey` and `searchApiKey` string fields replaced with `openAIApiKeyConfigured` and `searchApiKeyConfigured` boolean flags. (2) BackendConfig: added `openAIApiKeyConfigured`, `tavilyApiKeyConfigured`, `searchApiKeyConfigured` boolean flags. (3) `sendSecret()` action: posts to extension host via `vscode.postMessage({ type: "updateSetting" })` but never stores value in Zustand state. (4) `stripSecretsFromSettings()`: strips `openAIApiKey`, `searchApiKey`, `tavilyApiKey` from settings objects; called in `normalizePersistedState()` for migration. (5) `updateSetting` guard: rejects secret keys with console.warn. (6) UI: API key inputs use local React state (`localApiKey`, `localSearchApiKey`), send on blur via `sendSecret()`, clear immediately. (7) `getRuntimeSettings()` in sidebarViewProvider.ts now returns `openAIApiKeyConfigured: boolean`, `tavilyApiKeyConfigured: boolean`, `searchApiKeyConfigured: boolean` instead of raw secret strings. (8) 20 regression tests in `agent-core/tests/webviewSecrets.test.ts`. (9) Also fixed pre-existing TS errors: `validateProviderUrl()` called with 2 args at lines 1260/1359 in sidebarViewProvider.ts (only takes 1 param). 529/529 tests pass. Build clean. All typechecks clean.
 
 ### NC-004 — Terminal policy accepts arbitrary unmatched shell commands
 - **Severity:** Critical
@@ -562,9 +563,9 @@ NC-016 (tool schema validation)
 ## Execution Order (Phase 0 containment first)
 
 **Phase 0 (containment — highest priority, do first):**
-1. NC-001 — provider key isolation
-2. NC-002 — workspace trust / endpoint scope
-3. NC-003 — webview secret removal
+1. NC-001 — provider key isolation ✅
+2. NC-002 — workspace trust / endpoint scope ✅
+3. NC-003 — webview secret removal ✅
 4. NC-004 — terminal deny-by-default
 5. NC-005 — webview message validation
 6. NC-006 — edit preconditions

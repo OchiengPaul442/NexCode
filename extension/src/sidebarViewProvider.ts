@@ -1166,9 +1166,9 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     autoApplyChanges: boolean;
     allowWebSearch: boolean;
     searchProvider: string;
-    searchApiKey: string;
+    // NC-003: Boolean status only — never send raw secrets to the webview.
+    searchApiKeyConfigured: boolean;
     searchBaseUrl: string;
-    tavilyApiKey: string;
   }> {
     const config = vscode.workspace.getConfiguration("nexcodeKiboko");
     const secrets = await this.secretService.getAllSecrets();
@@ -1214,9 +1214,9 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       autoApplyChanges: config.get<boolean>("autoApplyChanges", false),
       allowWebSearch: config.get<boolean>("allowWebSearch", true),
       searchProvider: config.get<string>("searchProvider", "tavily"),
-      searchApiKey: secrets.searchApiKey,
+      // NC-003: Send boolean presence indicator, not the raw secret.
+      searchApiKeyConfigured: !!secrets.searchApiKey.trim(),
       searchBaseUrl: config.get<string>("searchBaseUrl", ""),
-      tavilyApiKey: secrets.tavilyApiKey,
     };
   }
 
@@ -1257,7 +1257,6 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         const defaultBaseUrl = "https://opencode.ai/zen/go/v1";
         const validatedBaseUrl = this.validateProviderUrl(
           settings.openAIBaseUrl,
-          settings.openAIBaseUrl !== defaultBaseUrl,
         );
 
         // NC-002: In untrusted workspaces, block probing to custom endpoints.
@@ -1356,7 +1355,6 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         const defaultBaseUrl = "https://opencode.ai/zen/go/v1";
         const validatedBaseUrl = this.validateProviderUrl(
           settings.openAIBaseUrl,
-          settings.openAIBaseUrl !== defaultBaseUrl,
         );
 
         // NC-002: In untrusted workspaces, block probing to custom endpoints.

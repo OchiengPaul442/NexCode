@@ -388,11 +388,13 @@ interface SidebarSettings {
   enableWebSearch: boolean;
   permissionLevel: PermissionLevel;
   openAIBaseUrl?: string;
-  openAIApiKey?: string;
   ollamaBaseUrl?: string;
   searchProvider?: SearchProviderId;
-  searchApiKey?: string;
   searchBaseUrl?: string;
+  // NC-003: Boolean status flags only — never store actual secret values.
+  // openAIApiKeyConfigured indicates whether a key is stored in SecretStorage.
+  openAIApiKeyConfigured?: boolean;
+  searchApiKeyConfigured?: boolean;
 }
 
 interface PersistedState {
@@ -410,6 +412,10 @@ interface BackendConfig {
   temperature: number;
   autoApplyChanges: boolean;
   allowWebSearch: boolean;
+  // NC-003: Boolean status flags — extension sends presence, not secrets.
+  openAIApiKeyConfigured?: boolean;
+  tavilyApiKeyConfigured?: boolean;
+  searchApiKeyConfigured?: boolean;
 }
 
 interface StoreState {
@@ -441,6 +447,8 @@ interface StoreState {
   setSettingsPanelOpen: (open: boolean) => void;
   setSettings: (update: Partial<SidebarSettings>) => void;
   updateSetting: (key: keyof SidebarSettings, value: unknown) => void;
+  // NC-003: Write-only secret sender — posts to extension, never stores in state.
+  sendSecret: (key: "openAIApiKey" | "searchApiKey" | "tavilyApiKey", value: string) => void;
   newSession: () => void;
   deleteSession: (sessionId: string) => void;
   setActiveSession: (sessionId: string) => void;
@@ -549,12 +557,45 @@ interface BackendEvent {
 
 const vscode = acquireVsCodeApi<PersistedState>();
 
+// NC-003: Legacy secret field names that must never be persisted in webview state.
+// If found in old persisted state, they are silently stripped.
+const LEGACY_SECRET_KEYS = [
+  "openAIApiKey",
+  "searchApiKey",
+  "tavilyApiKey",
+];
+
+function stripSecretsFromSettings(
+  settings: SidebarSettings | undefined,
+): SidebarSettings {
+  if (!settings) {
+    // NC-003: Return safe defaults if settings are missing.
+    return {
+      temperature: 0.2,
+      autoApprove: false,
+      autoApplyChanges: false,
+      requireTerminalApproval: true,
+      showDebugPanel: false,
+      enableWebSearch: true,
+      permissionLevel: "default",
+    };
+  }
+  const clean = { ...settings };
+  for (const key of LEGACY_SECRET_KEYS) {
+    delete (clean as Record<string, unknown>)[key];
+  }
+  return clean;
+}
+
 function normalizePersistedState(
   state: PersistedState | undefined,
 ): PersistedState | undefined {
   if (!state) {
     return undefined;
   }
+
+  // NC-003: Strip any legacy secret fields from persisted settings
+  const sanitizedSettings = stripSecretsFromSettings(state.settings);
 
   const sessions = (state.sessions ?? [])
     .map((session) => ({
@@ -582,6 +623,7 @@ function normalizePersistedState(
   if (sessions.length === 0) {
     return {
       ...state,
+      settings: sanitizedSettings,
       sessions: [],
       activeSessionId: null,
       drafts: {},
@@ -594,6 +636,7 @@ function normalizePersistedState(
 
   return {
     ...state,
+    settings: sanitizedSettings,
     sessions,
     activeSessionId: activeSessionExists
       ? state.activeSessionId
@@ -1214,11 +1257,12 @@ const useStore = create<StoreState>((set, get) => {
     enableWebSearch: true,
     permissionLevel: "default" as PermissionLevel,
     openAIBaseUrl: "",
-    openAIApiKey: "",
     ollamaBaseUrl: "http://localhost:11434",
     searchProvider: "tavily",
-    searchApiKey: "",
     searchBaseUrl: "",
+    // NC-003: Boolean status flags — actual secrets live in SecretStorage only.
+    openAIApiKeyConfigured: false,
+    searchApiKeyConfigured: false,
   };
 
   const initialSessions = persisted?.sessions?.length
@@ -1319,6 +1363,15 @@ const useStore = create<StoreState>((set, get) => {
             typeof config.allowWebSearch === "boolean"
               ? config.allowWebSearch
               : state.settings.enableWebSearch,
+          // NC-003: Boolean status flags — never actual secret values.
+          openAIApiKeyConfigured:
+            typeof config.openAIApiKeyConfigured === "boolean"
+              ? config.openAIApiKeyConfigured
+              : state.settings.openAIApiKeyConfigured,
+          searchApiKeyConfigured:
+            typeof config.searchApiKeyConfigured === "boolean"
+              ? config.searchApiKeyConfigured
+              : state.settings.searchApiKeyConfigured,
         };
 
         return {
@@ -1742,10 +1795,23 @@ const useStore = create<StoreState>((set, get) => {
       }));
     },
     updateSetting: (key: string, value: unknown) => {
+      // NC-003: Safety net — never persist secret keys in the store.
+      const SECRET_KEYS = ["openAIApiKey", "searchApiKey", "tavilyApiKey"];
+      if (SECRET_KEYS.includes(key)) {
+        // Use sendSecret() instead for secret values.
+        console.warn(`NC-003: updateSetting rejected secret key "${key}". Use sendSecret() instead.`);
+        return;
+      }
       vscode.postMessage({ type: "updateSetting", key, value });
       set((state) => ({
         settings: { ...state.settings, [key]: value },
       }));
+    },
+    // NC-003: Write-only secret sender. Posts the value to the extension host
+    // (which stores it in SecretStorage) but never persists it in webview state.
+    sendSecret: (key, value) => {
+      vscode.postMessage({ type: "updateSetting", key, value });
+      // Do NOT store the value in Zustand — it is write-only.
     },
     setDraft: (sessionId, value) => {
       set((state) => ({
@@ -3497,6 +3563,11 @@ function App() {
     Record<string, string[]>
   >({});
   const [mcpSelectedServer, setMcpSelectedServer] = useState("");
+  // NC-003: Local (uncontrolled) state for API key inputs.
+  // These are never persisted — the value is sent to the extension via
+  // sendSecret() and then the local state is cleared.
+  const [localApiKey, setLocalApiKey] = useState("");
+  const [localSearchApiKey, setLocalSearchApiKey] = useState("");
   const [mcpSelectedTool, setMcpSelectedTool] = useState("");
   const [mcpQuickInput, setMcpQuickInput] = useState("");
   const [mcpInvokeBusy, setMcpInvokeBusy] = useState(false);
@@ -3973,7 +4044,8 @@ function App() {
     input.click();
   }, []);
 
-  // Persist state to VS Code webview state
+  // NC-003: Persist state to VS Code webview state.
+  // Settings are sanitized to ensure no secret values are ever written to disk.
   useEffect(() => {
     let handle: number | null = null;
     const unsub = useStore.subscribe((state) => {
@@ -3983,7 +4055,7 @@ function App() {
           sessions: state.sessions,
           activeSessionId: state.activeSessionId,
           drafts: state.drafts,
-          settings: state.settings,
+          settings: stripSecretsFromSettings(state.settings),
         });
         handle = null;
       }, 260);
@@ -5025,14 +5097,27 @@ function App() {
                         />
                       </div>
                       <div className="nk-settings-section">
-                        <div className="nk-settings-label">API Key</div>
+                        <div className="nk-settings-label">
+                          API Key
+                          {settings.openAIApiKeyConfigured && (
+                            <span style={{ marginLeft: 8, fontSize: '0.85em', opacity: 0.7 }}>(configured)</span>
+                          )}
+                        </div>
                         <input
                           className="nk-settings-input"
                           type="password"
-                          placeholder={preset.apiKeyPlaceholder}
-                          value={settings.openAIApiKey ?? ''}
+                          placeholder={settings.openAIApiKeyConfigured ? "Key stored securely — type to replace" : preset.apiKeyPlaceholder}
+                          value={localApiKey}
                           onChange={(e) => {
-                            useStore.getState().updateSetting('openAIApiKey', e.target.value);
+                            setLocalApiKey(e.target.value);
+                          }}
+                          onBlur={() => {
+                            // NC-003: Send the secret to the extension host on blur.
+                            // Never store it in the Zustand store or webview state.
+                            if (localApiKey.trim()) {
+                              useStore.getState().sendSecret('openAIApiKey', localApiKey);
+                              setLocalApiKey('');
+                            }
                           }}
                         />
                         <div className="nk-settings-hint">
@@ -5066,14 +5151,27 @@ function App() {
                     </div>
                     {settings.searchProvider !== 'duckduckgo' && (
                       <div className="nk-settings-section">
-                        <div className="nk-settings-label">Search API Key</div>
+                        <div className="nk-settings-label">
+                          Search API Key
+                          {settings.searchApiKeyConfigured && (
+                            <span style={{ marginLeft: 8, fontSize: '0.85em', opacity: 0.7 }}>(configured)</span>
+                          )}
+                        </div>
                         <input
                           className="nk-settings-input"
                           type="password"
-                          placeholder={getSearchProviderPlaceholder(settings.searchProvider ?? 'tavily')}
-                          value={settings.searchApiKey ?? ''}
+                          placeholder={settings.searchApiKeyConfigured ? "Key stored securely — type to replace" : getSearchProviderPlaceholder(settings.searchProvider ?? 'tavily')}
+                          value={localSearchApiKey}
                           onChange={(e) => {
-                            useStore.getState().updateSetting('searchApiKey', e.target.value);
+                            setLocalSearchApiKey(e.target.value);
+                          }}
+                          onBlur={() => {
+                            // NC-003: Send the secret to the extension host on blur.
+                            // Never store it in the Zustand store or webview state.
+                            if (localSearchApiKey.trim()) {
+                              useStore.getState().sendSecret('searchApiKey', localSearchApiKey);
+                              setLocalSearchApiKey('');
+                            }
                           }}
                         />
                         <div className="nk-settings-hint">

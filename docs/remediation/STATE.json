@@ -3,28 +3,28 @@
   "project": "NexCode",
   "status": "in_progress",
   "bootstrapRequired": false,
-  "iteration": 1,
+  "iteration": 3,
   "currentPhase": 0,
   "totalFindings": 45,
   "counts": {
-    "pending": 44,
+    "pending": 42,
     "inProgress": 0,
-    "fixed": 1,
+    "fixed": 3,
     "blocked": 0,
     "obsolete": 0,
     "falsePositive": 0
   },
   "activeFindingIds": [],
-  "resolvedFindingIds": ["NC-001"],
+  "resolvedFindingIds": ["NC-001", "NC-002", "NC-003"],
   "blockedFindingIds": [],
-  "lastCommit": "059748a",
-  "lastSummary": "NC-001 contained: removed eager cross-provider health checks from orchestrator constructor. Provider status is now lazily evaluated on first getProviderStatus() call. 5 regression tests added. 465/465 tests pass. 3 pre-existing e2e script failures unrelated.",
+  "lastCommit": "pending",
+  "lastSummary": "NC-003 fixed: API keys removed from webview state. SidebarSettings now uses openAIApiKeyConfigured/searchApiKeyConfigured boolean flags instead of raw secret strings. BackendConfig sends boolean presence flags only. sendSecret() posts to extension (SecretStorage) but never stores in Zustand state. stripSecretsFromSettings migration strips legacy fields from persisted state. updateSetting rejects secret keys with safety net. UI inputs use local state, send on blur, and clear immediately. Also fixed pre-existing TS errors: validateProviderUrl called with 2 args at lines 1260/1359 in sidebarViewProvider.ts. 20 new regression tests. 529/529 tests pass. Build clean. All typechecks clean.",
   "lastVerification": {
-    "focusedTests": "PASS — 5/5 new providerKeyIsolation tests pass",
-    "typecheck": "PASS — agent-core tsc --noEmit clean",
+    "focusedTests": "PASS — 20/20 webviewSecrets tests pass",
+    "typecheck": "PASS — agent-core, extension, and webview tsc --noEmit all clean",
     "lint": "PASS — no lint configured beyond tsc (NC-030)",
     "build": "PASS — full npm run build clean",
-    "fullTests": "PASS — 465/465 unit tests pass; 3 pre-existing e2e script failures",
+    "fullTests": "PASS — 529/529 unit tests pass",
     "packaging": "SKIPPED — not attempted this iteration"
   }
 }

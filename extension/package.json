@@ -183,6 +183,20 @@
     },
     "workspaceTrust": {
       "trusted": true
+    },
+    "capabilities": {
+      "untrustedWorkspaces": {
+        "supported": "limited",
+        "restrictedConfigurations": [
+          "nexcodeKiboko.openAIBaseUrl",
+          "nexcodeKiboko.ollamaBaseUrl",
+          "nexcodeKiboko.toolApproval",
+          "nexcodeKiboko.allowToolCommands",
+          "nexcodeKiboko.allowWebSearch",
+          "nexcodeKiboko.searchProvider",
+          "nexcodeKiboko.searchBaseUrl"
+        ]
+      }
     }
   },
   "scripts": {

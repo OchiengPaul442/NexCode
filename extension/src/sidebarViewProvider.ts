@@ -10,6 +10,7 @@ import {
   ReasoningEffort,
   RequestAttachment,
   Task,
+  validateProviderUrl,
 } from "@nexcode/agent-core";
 import { SecretService } from "./secretService";
 import { WorkspaceTrustService } from "./workspaceTrustService";
@@ -291,6 +292,27 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  /**
+   * NC-002: Validate that a provider base URL is safe to receive credentials.
+   * Delegates to the pure utility function in agent-core for testability.
+   */
+  private validateProviderUrl(rawUrl: string): string {
+    return validateProviderUrl(rawUrl);
+  }
+
+  /**
+   * NC-002: Check whether the current workspace is trusted enough to allow
+   * authenticated provider probing to a custom (non-default) endpoint.
+   */
+  private canProbeProviderEndpoint(isCustomUrl: boolean): boolean {
+    if (!isCustomUrl) {
+      // Always allow probing the built-in default endpoint
+      return true;
+    }
+    // Custom endpoints require workspace trust
+    return this.workspaceTrustService.isWorkspaceTrusted();
+  }
+
   private async handleWebviewMessage(
     message: InboundWebviewMessage,
   ): Promise<void> {
@@ -370,6 +392,23 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
               String(message.value),
             );
           } else {
+            // NC-002: Validate provider endpoint URLs before persisting.
+            // Reject non-HTTPS, private-IP, and malformed URLs.
+            if (message.key === "openAIBaseUrl") {
+              const validated = this.validateProviderUrl(
+                String(message.value),
+              );
+              if (validated !== String(message.value).replace(/\/+$/, "")) {
+                // URL failed validation — reject the update and notify
+                this.postMessage({
+                  type: "configError",
+                  message:
+                    "Provider URL rejected: must use HTTPS (or HTTP for localhost only). " +
+                    "Private/internal IP addresses are not allowed.",
+                });
+                return;
+              }
+            }
             const config =
               vscode.workspace.getConfiguration("nexcodeKiboko");
             await config.update(
@@ -1141,10 +1180,14 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       ollamaBaseUrl: this.normalizeOllamaBaseUrl(
         config.get<string>("ollamaBaseUrl", "http://localhost:11434"),
       ),
-      openAIBaseUrl: config.get<string>(
-        "openAIBaseUrl",
-        "https://opencode.ai/zen/go/v1",
-      ).replace(/\/+$/, ""),
+      // NC-002: Validate the provider URL at read time to prevent workspace
+      // injection from .vscode/settings.json redirecting authenticated requests.
+      openAIBaseUrl: this.validateProviderUrl(
+        config.get<string>(
+          "openAIBaseUrl",
+          "https://opencode.ai/zen/go/v1",
+        ),
+      ),
       openAIApiKeyConfigured: !!secrets.openAIApiKey.trim(),
       tavilyApiKeyConfigured: !!secrets.tavilyApiKey.trim(),
       allowTools: config.get<boolean>("allowToolCommands", true),
@@ -1209,6 +1252,29 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
           throw new Error(`HTTP ${response.status}`);
         }
       } else {
+        // NC-002: Validate the provider URL before sending credentials.
+        // Reject non-HTTPS, private-IP, and malformed URLs.
+        const defaultBaseUrl = "https://opencode.ai/zen/go/v1";
+        const validatedBaseUrl = this.validateProviderUrl(
+          settings.openAIBaseUrl,
+          settings.openAIBaseUrl !== defaultBaseUrl,
+        );
+
+        // NC-002: In untrusted workspaces, block probing to custom endpoints.
+        const isCustomUrl = validatedBaseUrl !== defaultBaseUrl;
+        if (!this.canProbeProviderEndpoint(isCustomUrl)) {
+          this.postMessage({
+            type: "providerStatus",
+            value: {
+              provider,
+              connected: false,
+              latencyMs: Date.now() - startedAt,
+              error: "Custom provider endpoints are blocked in untrusted workspaces.",
+            },
+          });
+          return;
+        }
+
         const headers: Record<string, string> = {
           Accept: "application/json",
         };
@@ -1219,7 +1285,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         }
 
         const response = await this.fetchWithTimeout(
-          `${settings.openAIBaseUrl.replace(/\/$/, "")}/models`,
+          `${validatedBaseUrl}/models`,
           {
             method: "GET",
             headers,
@@ -1286,6 +1352,24 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
           .map((model) => (typeof model.name === "string" ? model.name : ""))
           .filter((name) => name.length > 0);
       } else {
+        // NC-002: Validate the provider URL before sending credentials.
+        const defaultBaseUrl = "https://opencode.ai/zen/go/v1";
+        const validatedBaseUrl = this.validateProviderUrl(
+          settings.openAIBaseUrl,
+          settings.openAIBaseUrl !== defaultBaseUrl,
+        );
+
+        // NC-002: In untrusted workspaces, block probing to custom endpoints.
+        const isCustomUrl = validatedBaseUrl !== defaultBaseUrl;
+        if (!this.canProbeProviderEndpoint(isCustomUrl)) {
+          this.postMessage({
+            type: "modelSuggestions",
+            provider,
+            models: [],
+          });
+          return;
+        }
+
         const headers: Record<string, string> = {
           Accept: "application/json",
         };
@@ -1296,7 +1380,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         }
 
         const response = await this.fetchWithTimeout(
-          `${settings.openAIBaseUrl.replace(/\/$/, "")}/models`,
+          `${validatedBaseUrl}/models`,
           {
             method: "GET",
             headers,
@@ -1407,8 +1491,10 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     this.postMessage({ type: "config", value: settings });
     this.taskController.postAttachments();
     void this.postMcpRegistryState();
-    void this.refreshProviderStatus();
-    void this.provideModelSuggestions();
+    // NC-002: Do NOT auto-probe provider status or model suggestions on sidebar
+    // initialization. A workspace-controlled openAIBaseUrl could redirect an
+    // authenticated request. Probing is now triggered only by explicit user action
+    // (refreshProviderStatus / requestModelSuggestions messages from the webview).
   }
 
   private showCompletionNotification(): void {

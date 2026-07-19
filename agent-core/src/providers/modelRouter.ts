@@ -7,6 +7,8 @@ import {
 } from "../types";
 import { ContextCache } from "../utils/contextCache";
 
+const CLOUD_PROVIDERS: ProviderId[] = ["openai-compatible", "huggingface", "openrouter", "together", "fireworks", "groq", "nvidia", "baseten"];
+
 export interface ModelCapabilities {
   hasThinking: boolean;
   hasToolCalling: boolean;
@@ -100,7 +102,7 @@ export class ModelRouter {
 
     const model =
       options.model ??
-      (selectedProviderId === "openai-compatible"
+      (CLOUD_PROVIDERS.includes(selectedProviderId)
         ? this.config.defaultCloudModel
         : this.config.defaultModel);
 
@@ -144,10 +146,10 @@ export class ModelRouter {
       addCandidate(selectedProviderId, explicitModel);
     }
 
-    const sameProviderDefault =
-      selectedProviderId === "openai-compatible"
-        ? this.config.defaultCloudModel
-        : this.config.defaultModel;
+    // Determine the default model based on provider type
+    const sameProviderDefault = CLOUD_PROVIDERS.includes(selectedProviderId)
+      ? this.config.defaultCloudModel
+      : this.config.defaultModel;
     addCandidate(selectedProviderId, sameProviderDefault);
 
     // Only add alternate provider as fallback if explicitly requested
@@ -293,8 +295,11 @@ export class ModelRouter {
       return options.provider;
     }
 
-    if (options.complexity === "large" && this.providers["openai-compatible"]) {
-      return "openai-compatible";
+    // Check if any cloud provider is available
+    if (options.complexity === "large") {
+      for (const cp of CLOUD_PROVIDERS) {
+        if (this.providers[cp]) return cp;
+      }
     }
 
     return this.config.defaultProvider;

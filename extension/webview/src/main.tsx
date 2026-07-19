@@ -194,7 +194,20 @@ declare const acquireVsCodeApi: <T = unknown>() => {
   getState: () => T | undefined;
 };
 
-type ProviderId = "ollama" | "openai-compatible";
+type ProviderId = "ollama" | "openai-compatible" | "huggingface" | "openrouter" | "together" | "fireworks" | "groq" | "nvidia" | "baseten";
+
+// Provider presets for cloud AI services
+const providerPresets: Record<string, { name: string; baseUrl: string; apiKeyPlaceholder: string; hint: string }> = {
+  "ollama": { name: "Ollama (Local)", baseUrl: "http://localhost:11434/v1", apiKeyPlaceholder: "Not needed", hint: "No API key required for local Ollama" },
+  "openai-compatible": { name: "OpenAI Compatible", baseUrl: "", apiKeyPlaceholder: "Your API key", hint: "Enter your API key" },
+  "huggingface": { name: "Hugging Face", baseUrl: "https://router.huggingface.co/v1", apiKeyPlaceholder: "hf_xxx", hint: "Get a free key at huggingface.co/settings/tokens" },
+  "openrouter": { name: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", apiKeyPlaceholder: "sk-or-xxx", hint: "Get a key at openrouter.ai/keys" },
+  "together": { name: "Together AI", baseUrl: "https://api.together.ai/v1", apiKeyPlaceholder: "Your Together API key", hint: "Get a key at api.together.xyz/settings/api-keys" },
+  "fireworks": { name: "Fireworks AI", baseUrl: "https://api.fireworks.ai/inference/v1", apiKeyPlaceholder: "Your Fireworks API key", hint: "Get a key at fireworks.ai" },
+  "groq": { name: "GroqCloud", baseUrl: "https://api.groq.com/openai/v1", apiKeyPlaceholder: "gsk_xxx", hint: "Get a free key at console.groq.com" },
+  "nvidia": { name: "NVIDIA NIM", baseUrl: "https://integrate.api.nvidia.com/v1", apiKeyPlaceholder: "nvapi-xxx", hint: "Get a key at build.nvidia.com" },
+  "baseten": { name: "Baseten", baseUrl: "https://inference.baseten.co/v1", apiKeyPlaceholder: "Your Baseten API key", hint: "Get a key at baseten.co" },
+};
 type AgentMode = "auto" | "planner" | "coder" | "reviewer" | "qa" | "security";
 type UiMode = "agent" | "plan" | "ask";
 type PermissionLevel = "default" | "bypass" | "autopilot";
@@ -285,6 +298,7 @@ interface ToolExecution {
   timestamp: number;
   durationMs?: number;
   filesChanged?: string[];
+  sources?: Array<{ title: string; url: string; snippet?: string }>;
 }
 
 interface QueuedPrompt {
@@ -861,7 +875,7 @@ const effortLabels: Record<ReasoningEffort, string> = {
 
 function hasThinkingCapability(model?: string): boolean {
   if (!model) return false;
-  return /claude|deepseek-r1|qwen3|o1|o3|glm-5|kimi-k2/i.test(model);
+  return /claude|deepseek-r1|deepseek-v4|qwen3|o1|o3|glm-5|kimi-k2|mimo/i.test(model);
 }
 
 function ReasoningIndicator({ reasoning, streaming, startTime }: {
@@ -1232,10 +1246,24 @@ const useStore = create<StoreState>((set, get) => {
     providerStatus: {
       ollama: undefined,
       "openai-compatible": undefined,
+      huggingface: undefined,
+      openrouter: undefined,
+      together: undefined,
+      fireworks: undefined,
+      groq: undefined,
+      nvidia: undefined,
+      baseten: undefined,
     },
     modelSuggestions: {
       ollama: [],
       "openai-compatible": [],
+      huggingface: [],
+      openrouter: [],
+      together: [],
+      fireworks: [],
+      groq: [],
+      nvidia: [],
+      baseten: [],
     },
     hydrateConfig: (config) => {
       set((state) => {
@@ -2551,6 +2579,45 @@ function MessageBubble({
         {!isUser && (message.activityTodos ?? []).length > 0 && (
           <ActivityTodosSection todos={message.activityTodos!} />
         )}
+
+        {/* Web search sources */}
+        {!isUser && (() => {
+          const allSources = (message.toolExecutions ?? [])
+            .flatMap(exec => exec.sources ?? []);
+          if (allSources.length === 0) return null;
+          // Deduplicate by URL
+          const seen = new Set<string>();
+          const unique = allSources.filter(s => {
+            if (!s.url || seen.has(s.url)) return false;
+            seen.add(s.url);
+            return true;
+          });
+          if (unique.length === 0) return null;
+          return (
+            <div className="nk-sources">
+              <div className="nk-sources-header">
+                <Globe size={12} className="nk-sources-icon" />
+                <span className="nk-sources-title">Sources</span>
+              </div>
+              <div className="nk-sources-list">
+                {unique.map((src, i) => (
+                  <a
+                    key={i}
+                    className="nk-source-item"
+                    href={src.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={src.snippet ?? src.title}
+                  >
+                    <span className="nk-source-index">{i + 1}</span>
+                    <span className="nk-source-title">{src.title}</span>
+                    <ExternalLink size={10} className="nk-source-link-icon" />
+                  </a>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Debug */}
         {!isUser && showDebug && message.debug.length > 0 && (
@@ -4530,6 +4597,7 @@ function App() {
                   timestamp: Date.now(),
                   durationMs,
                   filesChanged,
+                  sources: Array.isArray(payload.sources) ? payload.sources : undefined,
                 },
               );
           }
@@ -4861,6 +4929,13 @@ function App() {
                   >
                     <option value="ollama">Ollama (Local)</option>
                     <option value="openai-compatible">OpenAI Compatible</option>
+                    <option value="huggingface">Hugging Face</option>
+                    <option value="openrouter">OpenRouter</option>
+                    <option value="together">Together AI</option>
+                    <option value="fireworks">Fireworks AI</option>
+                    <option value="groq">GroqCloud</option>
+                    <option value="nvidia">NVIDIA NIM</option>
+                    <option value="baseten">Baseten</option>
                   </select>
                 </div>
 
@@ -4899,43 +4974,46 @@ function App() {
                       value={settings.ollamaBaseUrl ?? 'http://localhost:11434'}
                       onChange={(e) => {
                         useStore.getState().updateSetting('ollamaBaseUrl', e.target.value);
-                        vscode.postMessage({ type: 'updateSetting', key: 'ollamaBaseUrl', value: e.target.value });
                       }}
                     />
                   </div>
                 )}
 
-                {/* OpenAI Compatible Settings - only show when provider is openai-compatible */}
-                {activeSession.provider === 'openai-compatible' && (
-                  <>
-                    <div className="nk-settings-section">
-                      <div className="nk-settings-label">API Base URL</div>
-                      <input
-                        className="nk-settings-input"
-                        type="text"
-                        placeholder="https://api.openai.com/v1"
-                        value={settings.openAIBaseUrl ?? ''}
-                        onChange={(e) => {
-                          useStore.getState().updateSetting('openAIBaseUrl', e.target.value);
-                          vscode.postMessage({ type: 'updateSetting', key: 'openAIBaseUrl', value: e.target.value });
-                        }}
-                      />
-                    </div>
-                    <div className="nk-settings-section">
-                      <div className="nk-settings-label">API Key</div>
-                      <input
-                        className="nk-settings-input"
-                        type="password"
-                        placeholder="sk-..."
-                        value={settings.openAIApiKey ?? ''}
-                        onChange={(e) => {
-                          useStore.getState().updateSetting('openAIApiKey', e.target.value);
-                          vscode.postMessage({ type: 'updateSetting', key: 'openAIApiKey', value: e.target.value });
-                        }}
-                      />
-                    </div>
-                  </>
-                )}
+                {/* Cloud Provider Settings - show for all cloud providers */}
+                {activeSession.provider !== 'ollama' && (() => {
+                  const preset = providerPresets[activeSession.provider] ?? providerPresets['openai-compatible'];
+                  return (
+                    <>
+                      <div className="nk-settings-section">
+                        <div className="nk-settings-label">API Base URL</div>
+                        <input
+                          className="nk-settings-input"
+                          type="text"
+                          placeholder={preset.baseUrl || "https://api.example.com/v1"}
+                          value={settings.openAIBaseUrl ?? ''}
+                          onChange={(e) => {
+                            useStore.getState().updateSetting('openAIBaseUrl', e.target.value);
+                          }}
+                        />
+                      </div>
+                      <div className="nk-settings-section">
+                        <div className="nk-settings-label">API Key</div>
+                        <input
+                          className="nk-settings-input"
+                          type="password"
+                          placeholder={preset.apiKeyPlaceholder}
+                          value={settings.openAIApiKey ?? ''}
+                          onChange={(e) => {
+                            useStore.getState().updateSetting('openAIApiKey', e.target.value);
+                          }}
+                        />
+                        <div className="nk-settings-hint">
+                          {preset.hint}
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
 
                 {/* Web Search Settings - show when web search is enabled */}
                 {settings.enableWebSearch && (
@@ -4948,7 +5026,6 @@ function App() {
                         onChange={(e) => {
                           const provider = e.target.value as SearchProviderId;
                           useStore.getState().updateSetting('searchProvider', provider);
-                          vscode.postMessage({ type: 'updateSetting', key: 'searchProvider', value: provider });
                         }}
                       >
                         <option value="tavily">Tavily</option>
@@ -4969,7 +5046,6 @@ function App() {
                           value={settings.searchApiKey ?? ''}
                           onChange={(e) => {
                             useStore.getState().updateSetting('searchApiKey', e.target.value);
-                            vscode.postMessage({ type: 'updateSetting', key: 'searchApiKey', value: e.target.value });
                           }}
                         />
                         <div className="nk-settings-hint">
@@ -4994,7 +5070,6 @@ function App() {
                           value={settings.searchBaseUrl ?? ''}
                           onChange={(e) => {
                             useStore.getState().updateSetting('searchBaseUrl', e.target.value);
-                            vscode.postMessage({ type: 'updateSetting', key: 'searchBaseUrl', value: e.target.value });
                           }}
                         />
                       </div>

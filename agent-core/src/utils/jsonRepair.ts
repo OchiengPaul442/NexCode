@@ -27,16 +27,25 @@ export function repairTruncatedJson(json: string): string {
   }
 
   // Try to repair by adding missing closing brackets
-  const repaired = addMissingClosingBrackets(trimmed);
+  const bracketRepaired = addMissingClosingBrackets(trimmed);
   try {
-    JSON.parse(repaired);
-    return repaired;
+    JSON.parse(bracketRepaired);
+    return bracketRepaired;
+  } catch {
+    // Continue with other repair strategies
+  }
+
+  // Try to repair by adding missing commas
+  const commaRepaired = addMissingCommas(bracketRepaired);
+  try {
+    JSON.parse(commaRepaired);
+    return commaRepaired;
   } catch {
     // Continue with other repair strategies
   }
 
   // Try to repair by closing unclosed strings
-  const stringRepaired = closeUnclosedStrings(repaired);
+  const stringRepaired = closeUnclosedStrings(commaRepaired);
   try {
     JSON.parse(stringRepaired);
     return stringRepaired;
@@ -44,6 +53,56 @@ export function repairTruncatedJson(json: string): string {
     // Return original if all repairs fail
     return json;
   }
+}
+
+/**
+ * Add missing commas between array elements and object properties.
+ */
+function addMissingCommas(json: string): string {
+  let inString = false;
+  let escaped = false;
+  let result = "";
+
+  for (let i = 0; i < json.length; i++) {
+    const char = json[i];
+    const prevChar = i > 0 ? json[i - 1] : "";
+
+    if (escaped) {
+      result += char;
+      escaped = false;
+      continue;
+    }
+
+    if (char === "\\" && inString) {
+      result += char;
+      escaped = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = !inString;
+      result += char;
+      continue;
+    }
+
+    if (inString) {
+      result += char;
+      continue;
+    }
+
+    // Check for missing comma after } or ] before " or { or [
+    if ((prevChar === "}" || prevChar === "]") && (char === '"' || char === "{" || char === "[")) {
+      result += ",";
+    }
+    // Add missing commas between string values: " " or "] [ or } {
+    else if (prevChar === '"' && (char === '"' || char === "[" || char === "{")) {
+      result += ",";
+    }
+
+    result += char;
+  }
+
+  return result;
 }
 
 /**

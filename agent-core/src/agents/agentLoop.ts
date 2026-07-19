@@ -489,6 +489,7 @@ export async function* runAgentLoop(
         message: result.output.slice(0, 200),
         durationMs: toolDurationMs,
         filesChanged,
+        sources: result.sources,
       };
 
       // Track failures and detect repeated failures on similar commands

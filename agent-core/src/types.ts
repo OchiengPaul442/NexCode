@@ -1,6 +1,6 @@
 export type ChatRole = "system" | "user" | "assistant" | "tool";
 
-export type ProviderId = "ollama" | "openai-compatible";
+export type ProviderId = "ollama" | "openai-compatible" | "huggingface" | "openrouter" | "together" | "fireworks" | "groq" | "nvidia" | "baseten";
 
 export type AgentMode =
   | "auto"
@@ -184,6 +184,7 @@ export type OrchestratorEvent =
       message?: string;
       durationMs?: number;
       filesChanged?: string[];
+      sources?: SearchResult[];
     }
   | {
       type: "batchEditStarted";
@@ -233,12 +234,19 @@ export interface AgentResult {
   content: string;
 }
 
+export interface SearchResult {
+  title: string;
+  url: string;
+  snippet?: string;
+}
+
 export interface ToolResult {
   ok: boolean;
   output: string;
   requiresApproval?: boolean;
   toolName?: string;
   pendingArg?: string;
+  sources?: SearchResult[];
 }
 
 export interface InteractionFeedback {

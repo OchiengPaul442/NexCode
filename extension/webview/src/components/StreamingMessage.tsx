@@ -165,9 +165,9 @@ export function StreamingMessage({
 
       {/* Static content when not streaming and no text */}
       {!isStreaming && !displayedText && !streaming && (
-        <Element className={rootClassName}>
+        <div>
           <span className="whitespace-pre-wrap">{text}</span>
-        </Element>
+        </div>
       )}
     </Element>
   );

@@ -308,6 +308,11 @@ export class SearchTool {
       return {
         ok: true,
         output: lines.join("\n"),
+        sources: results.map(r => ({
+          title: r.title?.trim() || "Untitled",
+          url: r.url?.trim() || "",
+          snippet: r.content?.trim()?.slice(0, 200),
+        })),
       };
     } catch (error) {
       return {
@@ -352,7 +357,15 @@ export class SearchTool {
         }
       }
 
-      return { ok: true, output: lines.join("\n") };
+      return {
+        ok: true,
+        output: lines.join("\n"),
+        sources: results.map(r => ({
+          title: r.title?.trim() || "Untitled",
+          url: r.link?.trim() || "",
+          snippet: r.snippet?.trim()?.slice(0, 200),
+        })),
+      };
     } catch (error) {
       return { ok: false, output: `SerpAPI request failed: ${String(error)}` };
     }
@@ -399,7 +412,15 @@ export class SearchTool {
         }
       }
 
-      return { ok: true, output: lines.join("\n") };
+      return {
+        ok: true,
+        output: lines.join("\n"),
+        sources: results.map(r => ({
+          title: r.title?.trim() || "Untitled",
+          url: r.link?.trim() || "",
+          snippet: r.snippet?.trim()?.slice(0, 200),
+        })),
+      };
     } catch (error) {
       return { ok: false, output: `Serper request failed: ${String(error)}` };
     }
@@ -435,7 +456,15 @@ export class SearchTool {
         }
       }
 
-      return { ok: true, output: lines.join("\n") };
+      return {
+        ok: true,
+        output: lines.join("\n"),
+        sources: results.map(r => ({
+          title: r.name?.trim() || "Untitled",
+          url: r.url?.trim() || "",
+          snippet: r.snippet?.trim()?.slice(0, 200),
+        })),
+      };
     } catch (error) {
       return { ok: false, output: `Bing request failed: ${String(error)}` };
     }
@@ -490,7 +519,15 @@ export class SearchTool {
         }
       }
 
-      return { ok: true, output: lines.join("\n") };
+      return {
+        ok: true,
+        output: lines.join("\n"),
+        sources: results.map((r: any) => ({
+          title: r.title?.trim() || "Untitled",
+          url: r.url?.trim() || r.link?.trim() || "",
+          snippet: r.snippet?.trim()?.slice(0, 200),
+        })),
+      };
     } catch (error) {
       return { ok: false, output: `Custom search request failed: ${String(error)}` };
     }
@@ -540,7 +577,15 @@ export class SearchTool {
         lines.push("");
       }
 
-      return { ok: true, output: lines.join("\n") };
+      return {
+        ok: true,
+        output: lines.join("\n"),
+        sources: results.map(r => ({
+          title: r.title?.trim() || "Untitled",
+          url: r.url?.trim() || "",
+          snippet: r.snippet?.trim()?.slice(0, 200),
+        })),
+      };
     } catch (error) {
       const msg = String(error);
       if (msg.includes("abort") || msg.includes("timeout") || msg.includes("network")) {
@@ -554,7 +599,7 @@ export class SearchTool {
     const results: Array<{ title: string; url: string; snippet: string }> = [];
 
     // Pattern 1: result__a class with result__snippet
-    const resultRegex = /<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/gi;
+    const resultRegex = /<a[^>]*class="[^"]*\bresult__a\b[^"]*"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<(?:a|div|span)[^>]*class="[^"]*\bresult__snippet\b[^"]*"[^>]*>([\s\S]*?)<\/(?:a|div|span)>/gi;
     let match;
     while ((match = resultRegex.exec(html)) !== null && results.length < 5) {
       const rawUrl = match[1]?.trim() || "";
@@ -685,7 +730,15 @@ export class SearchTool {
         lines.push(`Summary:`, this.compact(extract, 500));
       }
 
-      return { ok: true, output: lines.join("\n") };
+      return {
+        ok: true,
+        output: lines.join("\n"),
+        sources: [{
+          title: title || "Wikipedia Article",
+          url: pageUrl || `https://en.wikipedia.org/wiki/${encodedQuery}`,
+          snippet: description?.slice(0, 200),
+        }],
+      };
     } catch (error) {
       const msg = String(error);
       if (msg.includes("abort") || msg.includes("timeout") || msg.includes("network")) {
@@ -739,7 +792,28 @@ export class SearchTool {
         return { ok: false, output: "DuckDuckGo Instant returned no useful results." };
       }
 
-      return { ok: true, output: lines.join("\n") };
+      const sources: Array<{ title: string; url: string; snippet?: string }> = [];
+
+      if (abstract && abstractUrl) {
+        sources.push({
+          title: heading || "DuckDuckGo Instant Answer",
+          url: abstractUrl,
+          snippet: abstract?.slice(0, 200),
+        });
+      }
+
+      if (Array.isArray(json.RelatedTopics)) {
+        const flatTopics = this.flattenDuckTopics(json.RelatedTopics).slice(0, 5);
+        for (const t of flatTopics) {
+          sources.push({
+            title: t.text?.slice(0, 100) || "Related Topic",
+            url: t.url,
+            snippet: t.text?.slice(0, 200),
+          });
+        }
+      }
+
+      return { ok: true, output: lines.join("\n"), sources };
     } catch (error) {
       return { ok: false, output: `DuckDuckGo Instant search failed: ${String(error)}` };
     }

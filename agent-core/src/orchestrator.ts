@@ -168,6 +168,34 @@ export class NexcodeOrchestrator {
           this.config.providerDefaults.openAIBaseUrl,
           this.config.providerDefaults.openAIApiKey,
         ),
+        huggingface: new OpenAICompatibleProvider(
+          "https://router.huggingface.co/v1",
+          this.config.providerDefaults.openAIApiKey,
+        ),
+        openrouter: new OpenAICompatibleProvider(
+          "https://openrouter.ai/api/v1",
+          this.config.providerDefaults.openAIApiKey,
+        ),
+        together: new OpenAICompatibleProvider(
+          "https://api.together.ai/v1",
+          this.config.providerDefaults.openAIApiKey,
+        ),
+        fireworks: new OpenAICompatibleProvider(
+          "https://api.fireworks.ai/inference/v1",
+          this.config.providerDefaults.openAIApiKey,
+        ),
+        groq: new OpenAICompatibleProvider(
+          "https://api.groq.com/openai/v1",
+          this.config.providerDefaults.openAIApiKey,
+        ),
+        nvidia: new OpenAICompatibleProvider(
+          "https://integrate.api.nvidia.com/v1",
+          this.config.providerDefaults.openAIApiKey,
+        ),
+        baseten: new OpenAICompatibleProvider(
+          "https://inference.baseten.co/v1",
+          this.config.providerDefaults.openAIApiKey,
+        ),
       },
       {
         defaultProvider: this.config.providerDefaults.provider,
@@ -1383,8 +1411,19 @@ export class NexcodeOrchestrator {
 
       const errorStr = String(error);
       diagnostics.push(`Agent loop error: ${errorStr}`);
+      
+      // Provide user-friendly error message
+      let userMessage = "An error occurred while processing your request.";
+      if (errorStr.includes("malformed JSON") || errorStr.includes("can't find closing") || errorStr.includes("invalid response")) {
+        userMessage = `The model "${model}" had trouble processing this request. This can happen when a model doesn't fully support tool calling. Try using a different model or simplifying your request.`;
+      } else if (errorStr.includes("Context window overflow")) {
+        userMessage = "Your request was too long for the model's context window. Try breaking it into smaller parts or using a model with a larger context window.";
+      } else if (errorStr.includes("Provider returned no response")) {
+        userMessage = "The model didn't return a response. Please check if your provider is running and try again.";
+      }
+      
       return {
-        text: `Agent loop failed: ${errorStr}`,
+        text: userMessage,
         modeUsed: mode,
         providerUsed: provider,
         modelUsed: model,
@@ -1839,13 +1878,41 @@ export class NexcodeOrchestrator {
 
     const testMatch = toolCommand.match(/^test(?:\s+([\s\S]+))?$/i);
     if (testMatch) {
+      const testArg = testMatch[1]?.trim() ?? "";
+      if (this.tools.requiresApproval("test", testArg)) {
+        if (this.approvalCallback) {
+          const approved = await this.approvalCallback("test", testArg);
+          if (!approved) {
+            return {
+              text: [
+                "## Tool Execution",
+                `Command: ${toolCommand}`,
+                "",
+                "```text",
+                "Command cancelled by user.",
+                "```",
+              ].join("\n"),
+              modeUsed: mode,
+              providerUsed: provider,
+              modelUsed: model,
+              proposedEdits: [],
+              diagnostics,
+            };
+          }
+          this.tools.markApproved("test", testArg);
+        } else {
+          throw new Error(
+            "Tool requires approval but no approvalCallback was provided — this is a wiring bug, not a user decision.",
+          );
+        }
+      }
       return yield* this.streamCommandToolResult(
         toolCommand,
         mode,
         provider,
         model,
         diagnostics,
-        this.tools.test.stream(testMatch[1]?.trim()),
+        this.tools.test.stream(testArg),
         abortSignal,
       );
     }

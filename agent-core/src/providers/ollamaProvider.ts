@@ -225,16 +225,15 @@ export class OllamaProvider implements ModelProvider {
           try {
             return await this.generateWithoutTools(request, abort);
           } catch (fallbackError) {
-            // If fallback also fails, throw the original error with context
-            const fallbackMsg = String(fallbackError);
-            throw new Error(`Model returned malformed tool call. Retry without tools also failed: ${fallbackMsg}. Original error: ${errorMsg}`);
+            // If fallback also fails, throw a user-friendly error
+            throw new Error(`The model ${request.model} couldn't process this request. Try using a different model that better supports tool calling, or simplify your request.`);
           }
         }
 
         if (isExplicitContextError(errorMsg)) {
           errorMsg = `Context window overflow: The request was too large for the model's context window (${this.resolveNumCtx(request.model)} tokens). Try a shorter prompt, a smaller file, or increase NEXCODE_OLLAMA_MAX_CONTEXT. Original error: ${errorMsg}`;
         } else if (isToolOrJsonParseError(errorMsg)) {
-          errorMsg = `Ollama returned malformed JSON (likely the model generated invalid tool call arguments). Try a different prompt or model. Error: ${errorMsg}`;
+          errorMsg = `The model ${request.model} returned an invalid response. This can happen when the model doesn't fully support tool calling. Try switching to a different model (like qwen2.5-coder:14b) or simplifying your request.`;
         }
 
         console.error(`[ollama] request failed: ${request.messages?.length ?? 0} messages, ${JSON.stringify(payload).length} chars, ${request.tools?.length ?? 0} tools, num_ctx=${this.resolveNumCtx(request.model)}`);

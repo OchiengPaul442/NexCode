@@ -1486,6 +1486,9 @@ html, body {
   padding: 6px 12px;
   cursor: pointer;
   user-select: none;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .nk-changeset-file-row:hover {
@@ -1502,9 +1505,8 @@ html, body {
   font-size: 11px;
   font-family: var(--vscode-editor-font-family, monospace);
   color: var(--vscode-foreground);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  word-break: break-all;
+  overflow-wrap: break-word;
   flex: 1;
   min-width: 0;
 }

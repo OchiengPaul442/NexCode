@@ -4959,23 +4959,31 @@ function App() {
                         <option value="custom">Custom API</option>
                       </select>
                     </div>
-                    <div className="nk-settings-section">
-                      <div className="nk-settings-label">Search API Key</div>
-                      <input
-                        className="nk-settings-input"
-                        type="password"
-                        placeholder={getSearchProviderPlaceholder(settings.searchProvider ?? 'tavily')}
-                        value={settings.searchApiKey ?? ''}
-                        disabled={settings.searchProvider === 'duckduckgo'}
-                        onChange={(e) => {
-                          useStore.getState().updateSetting('searchApiKey', e.target.value);
-                          vscode.postMessage({ type: 'updateSetting', key: 'searchApiKey', value: e.target.value });
-                        }}
-                      />
-                      <div className="nk-settings-hint">
-                        {getSearchProviderHint(settings.searchProvider ?? 'tavily')}
+                    {settings.searchProvider !== 'duckduckgo' && (
+                      <div className="nk-settings-section">
+                        <div className="nk-settings-label">Search API Key</div>
+                        <input
+                          className="nk-settings-input"
+                          type="password"
+                          placeholder={getSearchProviderPlaceholder(settings.searchProvider ?? 'tavily')}
+                          value={settings.searchApiKey ?? ''}
+                          onChange={(e) => {
+                            useStore.getState().updateSetting('searchApiKey', e.target.value);
+                            vscode.postMessage({ type: 'updateSetting', key: 'searchApiKey', value: e.target.value });
+                          }}
+                        />
+                        <div className="nk-settings-hint">
+                          {getSearchProviderHint(settings.searchProvider ?? 'tavily')}
+                        </div>
                       </div>
-                    </div>
+                    )}
+                    {settings.searchProvider === 'duckduckgo' && (
+                      <div className="nk-settings-section">
+                        <div className="nk-settings-hint">
+                          {getSearchProviderHint(settings.searchProvider ?? 'tavily')}
+                        </div>
+                      </div>
+                    )}
                     {(settings.searchProvider === 'custom' || settings.searchProvider === 'serpapi' || settings.searchProvider === 'serper' || settings.searchProvider === 'bing') && (
                       <div className="nk-settings-section">
                         <div className="nk-settings-label">Search API Base URL</div>

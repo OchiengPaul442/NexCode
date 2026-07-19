@@ -87,7 +87,17 @@ function playCompletionSound(): void {
   }
 }
 
-// ── Simple line-level diff utility (no external dependency) ──────────────────
+// ── Git-style diff utility using the `diff` package ──────────────────────────
+import { diffLines, diffWords, type Change } from "diff";
+
+interface DiffHunk {
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  lines: DiffLine[];
+}
+
 interface DiffLine {
   type: "add" | "del" | "ctx";
   oldNum: number | null;
@@ -95,68 +105,69 @@ interface DiffLine {
   content: string;
 }
 
-function computeLineDiff(oldText: string, newText: string): DiffLine[] {
-  const oldLines = oldText === "" ? [] : oldText.split("\n");
-  const newLines = newText === "" ? [] : newText.split("\n");
-  const result: DiffLine[] = [];
+function computeGitDiff(oldText: string, newText: string): DiffHunk[] {
+  const changes: Change[] = diffLines(oldText, newText);
+  const hunks: DiffHunk[] = [];
+  let currentHunk: DiffHunk | null = null;
+  let oldLine = 1;
+  let newLine = 1;
 
-  // Guard: if either side is too large, skip LCS and show all as add/del
-  const MAX_LCS_LINES = 5000;
-  if (oldLines.length > MAX_LCS_LINES || newLines.length > MAX_LCS_LINES) {
-    for (let k = 0; k < oldLines.length; k++) {
-      result.push({ type: "del", oldNum: k + 1, newNum: null, content: oldLines[k] });
-    }
-    for (let k = 0; k < newLines.length; k++) {
-      result.push({ type: "add", oldNum: null, newNum: k + 1, content: newLines[k] });
-    }
-    return result;
-  }
+  for (const change of changes) {
+    const lines = change.value.split("\n").filter((_, i, arr) =>
+      i < arr.length - 1 || arr[i] !== "",
+    );
 
-  // Simple LCS-based diff
-  const m = oldLines.length;
-  const n = newLines.length;
-  const dp: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
-
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      if (oldLines[i - 1] === newLines[j - 1]) {
-        dp[i][j] = dp[i - 1][j - 1] + 1;
+    for (const line of lines) {
+      if (change.added) {
+        if (!currentHunk) {
+          currentHunk = { oldStart: oldLine, oldLines: 0, newStart: newLine, newLines: 0, lines: [] };
+          hunks.push(currentHunk);
+        }
+        currentHunk.lines.push({ type: "add", oldNum: null, newNum: newLine++, content: line });
+        currentHunk.newLines++;
+      } else if (change.removed) {
+        if (!currentHunk) {
+          currentHunk = { oldStart: oldLine, oldLines: 0, newStart: newLine, newLines: 0, lines: [] };
+          hunks.push(currentHunk);
+        }
+        currentHunk.lines.push({ type: "del", oldNum: oldLine++, newNum: null, content: line });
+        currentHunk.oldLines++;
       } else {
-        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+        if (currentHunk) currentHunk = null;
+        oldLine++;
+        newLine++;
       }
     }
   }
 
-  // Backtrack to build diff
-  let i = m, j = n;
-  const rawDiff: Array<{ type: "add" | "del" | "ctx"; content: string }> = [];
-
-  while (i > 0 || j > 0) {
-    if (i > 0 && j > 0 && oldLines[i - 1] === newLines[j - 1]) {
-      rawDiff.unshift({ type: "ctx", content: oldLines[i - 1] });
-      i--; j--;
-    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
-      rawDiff.unshift({ type: "add", content: newLines[j - 1] });
-      j--;
+  // Merge nearby hunks (within 3 lines)
+  if (hunks.length <= 1) return hunks;
+  const merged: DiffHunk[] = [hunks[0]];
+  for (let i = 1; i < hunks.length; i++) {
+    const prev = merged[merged.length - 1];
+    const curr = hunks[i];
+    const gap = curr.oldStart - (prev.oldStart + prev.oldLines);
+    if (gap <= 6) {
+      prev.oldLines = (curr.oldStart + curr.oldLines) - prev.oldStart;
+      prev.newLines = (curr.newStart + curr.newLines) - prev.newStart;
+      prev.lines.push(...curr.lines);
     } else {
-      rawDiff.unshift({ type: "del", content: oldLines[i - 1] });
-      i--;
+      merged.push(curr);
     }
   }
+  return merged;
+}
 
-  // Assign line numbers
-  let oldLine = 1, newLine = 1;
-  for (const d of rawDiff) {
-    if (d.type === "ctx") {
-      result.push({ type: "ctx", oldNum: oldLine++, newNum: newLine++, content: d.content });
-    } else if (d.type === "add") {
-      result.push({ type: "add", oldNum: null, newNum: newLine++, content: d.content });
-    } else {
-      result.push({ type: "del", oldNum: oldLine++, newNum: null, content: d.content });
-    }
+function computeWordDiff(oldLine: string, newLine: string): { oldWords: Change[]; newWords: Change[] } {
+  const changes = diffWords(oldLine, newLine);
+  const oldWords: Change[] = [];
+  const newWords: Change[] = [];
+  for (const change of changes) {
+    if (change.removed) oldWords.push(change);
+    else if (change.added) newWords.push(change);
+    else { oldWords.push(change); newWords.push(change); }
   }
-
-  return result;
+  return { oldWords, newWords };
 }
 
 // Collapsed context: show only N lines of context around changes
@@ -3047,8 +3058,13 @@ const ChangedFileRow = React.memo(function ChangedFileRow({
 
   const diffLines = useMemo(() => {
     if (!hasDiff || !edit) return null;
-    const raw = computeLineDiff(edit.oldText, edit.newText);
-    return collapseDiffContext(raw, 2);
+    const hunks = computeGitDiff(edit.oldText, edit.newText);
+    // Flatten hunks to lines for the existing renderer
+    const allLines: DiffLine[] = [];
+    for (const hunk of hunks) {
+      allLines.push(...hunk.lines);
+    }
+    return collapseDiffContext(allLines, 2);
   }, [hasDiff, edit?.oldText, edit?.newText]);
 
   return (

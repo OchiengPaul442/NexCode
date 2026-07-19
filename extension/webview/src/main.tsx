@@ -789,17 +789,27 @@ function activityStatusClass(status: ActivityStatus): string {
 
 
 
-const modelCapabilities: Record<string, { inputs: string[]; reasoning: boolean; context: string }> = {
-  'qwen2.5-coder:14b': { inputs: ['text'], reasoning: false, context: '32K' },
-  'qwen2.5-coder:7b': { inputs: ['text'], reasoning: false, context: '32K' },
-  'deepseek-v4-flash': { inputs: ['text'], reasoning: true, context: '128K' },
-  'deepseek-v4-pro': { inputs: ['text'], reasoning: true, context: '128K' },
-  'mimo-v2.5': { inputs: ['text'], reasoning: true, context: '128K' },
-  'mimo-v2.5-pro': { inputs: ['text'], reasoning: true, context: '128K' },
-  'glm-5.2': { inputs: ['text'], reasoning: true, context: '200K' },
-  'glm-5.1': { inputs: ['text'], reasoning: true, context: '200K' },
-  'kimi-k2.7-code': { inputs: ['text'], reasoning: false, context: '128K' },
-  'kimi-k2.6': { inputs: ['text'], reasoning: false, context: '128K' },
+const modelCapabilities: Record<string, { inputs: string[]; reasoning: boolean; context: string; provider?: string }> = {
+  // Ollama local models
+  'qwen2.5-coder:14b': { inputs: ['text'], reasoning: false, context: '32K', provider: 'ollama' },
+  'qwen2.5-coder:7b': { inputs: ['text'], reasoning: false, context: '32K', provider: 'ollama' },
+  'qwen2.5-coder:3b': { inputs: ['text'], reasoning: false, context: '32K', provider: 'ollama' },
+  'qwen3:8b': { inputs: ['text'], reasoning: true, context: '32K', provider: 'ollama' },
+  'deepseek-r1:8b': { inputs: ['text'], reasoning: true, context: '64K', provider: 'ollama' },
+  // Cloud models (OpenAI-compatible)
+  'deepseek-v4-flash': { inputs: ['text'], reasoning: true, context: '128K', provider: 'openai-compatible' },
+  'deepseek-v4-pro': { inputs: ['text'], reasoning: true, context: '128K', provider: 'openai-compatible' },
+  'mimo-v2.5': { inputs: ['text'], reasoning: true, context: '128K', provider: 'openai-compatible' },
+  'mimo-v2.5-pro': { inputs: ['text'], reasoning: true, context: '128K', provider: 'openai-compatible' },
+  'glm-5.2': { inputs: ['text'], reasoning: true, context: '200K', provider: 'openai-compatible' },
+  'glm-5.1': { inputs: ['text'], reasoning: true, context: '200K', provider: 'openai-compatible' },
+  'kimi-k2.7-code': { inputs: ['text'], reasoning: false, context: '128K', provider: 'openai-compatible' },
+  'kimi-k2.6': { inputs: ['text'], reasoning: false, context: '128K', provider: 'openai-compatible' },
+  'minimax-m3': { inputs: ['text'], reasoning: false, context: '128K', provider: 'openai-compatible' },
+  'gpt-4o': { inputs: ['text', 'image'], reasoning: false, context: '128K', provider: 'openai-compatible' },
+  'gpt-4o-mini': { inputs: ['text', 'image'], reasoning: false, context: '128K', provider: 'openai-compatible' },
+  'claude-3.5-sonnet': { inputs: ['text', 'image'], reasoning: false, context: '200K', provider: 'openai-compatible' },
+  'claude-3-opus': { inputs: ['text', 'image'], reasoning: true, context: '200K', provider: 'openai-compatible' },
 };
 
 interface ModelEffortInfo {
@@ -902,6 +912,7 @@ function ToolbarSelect({
   className,
   buttonClassName,
   menuClassName,
+  searchable = false,
 }: {
   value: string;
   options: ToolbarSelectOption[];
@@ -910,12 +921,16 @@ function ToolbarSelect({
   className?: string;
   buttonClassName?: string;
   menuClassName?: string;
+  searchable?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (!open) {
+      setSearch("");
       return;
     }
 
@@ -939,11 +954,26 @@ function ToolbarSelect({
     };
   }, [open]);
 
+  // Focus search input when dropdown opens
+  useEffect(() => {
+    if (open && searchable && searchInputRef.current) {
+      searchInputRef.current.focus();
+    }
+  }, [open, searchable]);
+
   const selected = options.find((option) => option.value === value) ??
     options[0] ?? {
       value,
       label: value,
     };
+
+  // Filter options based on search
+  const filteredOptions = searchable && search.trim()
+    ? options.filter((option) =>
+        option.label.toLowerCase().includes(search.toLowerCase()) ||
+        option.value.toLowerCase().includes(search.toLowerCase())
+      )
+    : options;
 
   return (
     <div
@@ -974,7 +1004,25 @@ function ToolbarSelect({
           role="listbox"
           aria-label={label}
         >
-          {options.map((option) => (
+          {/* Search bar for model selector */}
+          {searchable && (
+            <div className="nk-toolbar-select-search">
+              <Search size={12} className="nk-toolbar-select-search-icon" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                className="nk-toolbar-select-search-input"
+                placeholder="Search models..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  // Prevent dropdown close on keypress
+                  e.stopPropagation();
+                }}
+              />
+            </div>
+          )}
+          {filteredOptions.map((option) => (
             <button
               key={option.value}
               className={`nk-toolbar-select-option ${option.value === selected.value ? "is-selected" : ""}`}
@@ -998,12 +1046,17 @@ function ToolbarSelect({
               {option.meta && (
                 <div className="nk-toolbar-select-option-meta">
                   <span>{option.meta.inputs.join(', ')}</span>
-                  {option.meta.reasoning && <span>Reasoning</span>}
-                  <span>{option.meta.context}</span>
+                  {option.meta.reasoning && <span className="nk-meta-reasoning">Reasoning</span>}
+                  <span className="nk-meta-context">{option.meta.context}</span>
                 </div>
               )}
             </button>
           ))}
+          {filteredOptions.length === 0 && (
+            <div className="nk-toolbar-select-empty">
+              No models found
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -1997,6 +2050,328 @@ function ResponseSummary({ message }: { message: ChatMessage }) {
   );
 }
 
+// ─── Inline Tool Execution (OpenCode-style) ──────────────────────────────────
+
+// Group consecutive tool executions by type for compact display
+function groupToolExecutions(tools: ToolExecution[]): Array<{
+  type: string;
+  label: string;
+  count: number;
+  executions: ToolExecution[];
+  hasError: boolean;
+}> {
+  const groups: Array<{
+    type: string;
+    label: string;
+    count: number;
+    executions: ToolExecution[];
+    hasError: boolean;
+  }> = [];
+
+  for (const exec of tools) {
+    const normalizedType = (() => {
+      switch (exec.toolName) {
+        case "terminal": return "shell";
+        case "write":
+        case "append": return "edit";
+        case "search":
+        case "web-search": return "search";
+        case "read": return "read";
+        case "patch": return "patch";
+        case "delete": return "delete";
+        default: return exec.toolName;
+      }
+    })();
+
+    const label = (() => {
+      switch (normalizedType) {
+        case "shell": return "Shell";
+        case "edit": return "Edit";
+        case "search": return "Search";
+        case "read": return "Read";
+        case "patch": return "Patch";
+        case "delete": return "Delete";
+        default: return normalizedType;
+      }
+    })();
+
+    const lastGroup = groups[groups.length - 1];
+    if (lastGroup && lastGroup.type === normalizedType) {
+      lastGroup.count++;
+      lastGroup.executions.push(exec);
+      if (exec.status === "error") lastGroup.hasError = true;
+    } else {
+      groups.push({
+        type: normalizedType,
+        label,
+        count: 1,
+        executions: [exec],
+        hasError: exec.status === "error",
+      });
+    }
+  }
+
+  return groups;
+}
+
+// Extract file path from tool execution
+function extractFilePath(exec: ToolExecution): string | null {
+  switch (exec.toolName) {
+    case "write":
+    case "append":
+    case "patch": {
+      const match = exec.command.match(/^(.+?)\s*::/);
+      return match ? match[1].trim() : null;
+    }
+    case "read":
+    case "delete":
+      return exec.command.trim() || null;
+    default:
+      return null;
+  }
+}
+
+// Single grouped tool line (e.g., "10 searches" or "Edit drivers.ts +34 -0")
+function ToolGroupLine({
+  group,
+  onOpenFile,
+  onToggleExpand,
+  isExpanded,
+}: {
+  group: ReturnType<typeof groupToolExecutions>[0];
+  onOpenFile?: (filePath: string) => void;
+  onToggleExpand: () => void;
+  isExpanded: boolean;
+}) {
+  // Get unique files from executions
+  const files = useMemo(() => {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const exec of group.executions) {
+      const fp = extractFilePath(exec);
+      if (fp && !seen.has(fp)) {
+        seen.add(fp);
+        result.push(fp);
+      }
+    }
+    return result;
+  }, [group.executions]);
+
+  const mainFile = files[0];
+  const fileName = mainFile ? mainFile.split(/[/\\]/).pop() ?? mainFile : null;
+
+  // Calculate stats for edit groups
+  const editStats = useMemo(() => {
+    if (group.type !== "edit" && group.type !== "patch") return null;
+    let additions = 0;
+    let deletions = 0;
+    for (const exec of group.executions) {
+      if (exec.toolName === "write" || exec.toolName === "append") {
+        additions += (exec.message ?? "").split("\n").length || 1;
+      }
+      if (exec.toolName === "patch") {
+        additions += 1;
+        deletions += 1;
+      }
+    }
+    return { additions, deletions };
+  }, [group]);
+
+  const handleClick = () => {
+    if (mainFile && onOpenFile) {
+      onOpenFile(mainFile);
+    }
+  };
+
+  const countText = group.count > 1 ? `${group.count} ` : "";
+  const suffix = group.count > 1
+    ? `${group.type === "shell" ? "commands" : group.type === "search" ? "searches" : group.type === "read" ? "reads" : "operations"}`
+    : "";
+
+  return (
+    <div className="nk-tool-group">
+      <span className="nk-tool-group-content">
+        <span className="nk-tool-group-label">
+          {group.label}
+        </span>
+        {fileName && (
+          <span
+            className="nk-tool-group-file"
+            onClick={handleClick}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") handleClick();
+            }}
+          >
+            {fileName}
+          </span>
+        )}
+        {editStats && (
+          <span className="nk-tool-group-stats">
+            {editStats.additions > 0 && <span className="nk-tool-group-add">+{editStats.additions}</span>}
+            {editStats.deletions > 0 && <span className="nk-tool-group-del">-{editStats.deletions}</span>}
+          </span>
+        )}
+        {group.hasError && <span className="nk-tool-group-error">failed</span>}
+        {group.count > 1 && <span className="nk-tool-group-count">{countText}{suffix}</span>}
+      </span>
+      {group.executions.length > 0 && (
+        <button
+          className="nk-tool-group-expand"
+          onClick={onToggleExpand}
+          title={isExpanded ? "Collapse" : "Expand"}
+        >
+          <ChevronRight
+            size={10}
+            style={{ transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s" }}
+          />
+        </button>
+      )}
+    </div>
+  );
+}
+
+// Expanded detail view with git-style diff
+function ToolGroupDetail({
+  group,
+  onOpenFile,
+}: {
+  group: ReturnType<typeof groupToolExecutions>[0];
+  onOpenFile?: (filePath: string) => void;
+}) {
+  return (
+    <div className="nk-tool-detail">
+      {group.executions.map((exec, i) => {
+        const filePath = extractFilePath(exec);
+        const fileName = filePath ? filePath.split(/[/\\]/).pop() ?? filePath : null;
+        const statusColor = exec.status === "success"
+          ? "var(--vscode-terminal-ansiGreen, #4ec9b0)"
+          : exec.status === "error"
+            ? "var(--vscode-terminal-ansiRed, #f48771)"
+            : "var(--vscode-descriptionForeground, #8b8b9a)";
+
+        return (
+          <div key={i} className="nk-tool-detail-row">
+            <span className="nk-tool-detail-status" style={{ color: statusColor }}>
+              {exec.status === "success" ? "✓" : exec.status === "error" ? "✗" : "○"}
+            </span>
+            <span className="nk-tool-detail-cmd">
+              {exec.command.length > 80 ? exec.command.slice(0, 80) + "..." : exec.command}
+            </span>
+            {exec.durationMs != null && (
+              <span className="nk-tool-detail-dur">
+                {exec.durationMs < 1000 ? `${exec.durationMs}ms` : `${(exec.durationMs / 1000).toFixed(1)}s`}
+              </span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Message Content (interleaved text + tool executions) ─────────────────────
+function MessageContent({
+  message,
+  isStreaming,
+  onOpenFile,
+  onFrame,
+}: {
+  message: ChatMessage;
+  isStreaming: boolean;
+  onOpenFile?: (filePath: string) => void;
+  onFrame?: () => void;
+}) {
+  const tools = message.toolExecutions ?? [];
+  const text = message.text || "";
+  const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
+
+  // Clean <think> tags from text
+  const cleanText = text
+    .replace(/<think>[\s\S]*?<\/think>/g, "")
+    .replace(/<think>[\s\S]*$/g, "")
+    .trim();
+
+  // Group tools by type
+  const toolGroups = useMemo(() => groupToolExecutions(tools), [tools]);
+
+  const toggleGroup = (index: number) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  };
+
+  // If no tools, render text only
+  if (tools.length === 0) {
+    return (
+      <div className="nk-message-content">
+        <StreamingMessage
+          text={cleanText}
+          streaming={isStreaming}
+          markdown
+          className="markdown-body text-[13px] leading-relaxed"
+          showCursor
+          showThinkingOverlay={!(message.reasoning.length > 0 && isStreaming)}
+          thinkingLabel={
+            message.reasoning.length > 0
+              ? message.reasoning[message.reasoning.length - 1]
+                  .replace(/<think>[\s\S]*?<\/think>/g, "")
+                  .replace(/<think>[\s\S]*$/g, "")
+                  .trim() || "Working..."
+              : "Working..."
+          }
+          onFrame={onFrame}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="nk-message-content">
+      {/* Main text */}
+      {cleanText && (
+        <StreamingMessage
+          text={cleanText}
+          streaming={isStreaming}
+          markdown
+          className="markdown-body text-[13px] leading-relaxed"
+          showCursor={false}
+          showThinkingOverlay={false}
+          onFrame={onFrame}
+        />
+      )}
+
+      {/* Grouped tool executions - plain text style, no boxes */}
+      <div className="nk-tool-groups">
+        {toolGroups.map((group, i) => (
+          <div key={i} className="nk-tool-group-wrapper">
+            <ToolGroupLine
+              group={group}
+              onOpenFile={onOpenFile}
+              onToggleExpand={() => toggleGroup(i)}
+              isExpanded={expandedGroups.has(i)}
+            />
+            {expandedGroups.has(i) && (
+              <ToolGroupDetail
+                group={group}
+                onOpenFile={onOpenFile}
+              />
+            )}
+          </div>
+        ))}
+      </div>
+
+      {isStreaming && (
+        <span className="nk-streaming-cursor" aria-hidden="true" />
+      )}
+    </div>
+  );
+}
+
 // ─── Message Bubble ──────────────────────────────────────────────────────────
 function MessageBubble({
   message,
@@ -2101,62 +2476,13 @@ function MessageBubble({
                 </pre>
               </div>
             ) : (
-              <StreamingMessage
-                text={(message.text || "").replace(/<think>[\s\S]*?<\/think>/g, "").replace(/<think>[\s\S]*$/g, "").trim()}
-                streaming={Boolean(message.streaming || message.thinking)}
-                markdown
-                className="markdown-body text-[13px] leading-relaxed"
-                showCursor
-                showThinkingOverlay={!(message.reasoning.length > 0 && (message.streaming || message.thinking))}
-                thinkingLabel={
-                  message.reasoning.length > 0
-                    ? message.reasoning[message.reasoning.length - 1]
-                        .replace(/<think>[\s\S]*?<\/think>/g, "")
-                        .replace(/<think>[\s\S]*$/g, "")
-                        .trim() || "Working..."
-                    : "Working..."
-                }
-                statusLabel={
-                  (message.streaming || message.thinking) && (message.toolExecutions ?? []).length > 0
-                    ? (() => {
-                        const execs = message.toolExecutions!;
-                        const lastExec = execs[execs.length - 1];
-                        if (lastExec?.toolName === "terminal") return "shell";
-                        if (lastExec?.toolName === "read") return "exploring";
-                        if (lastExec?.toolName === "search" || lastExec?.toolName === "web-search") return "searching";
-                        if (lastExec?.toolName === "write" || lastExec?.toolName === "append" || lastExec?.toolName === "patch") return "editing";
-                        return "exploring";
-                      })()
-                    : undefined
-                }
-                toolCounts={
-                  (message.toolExecutions ?? []).length > 0
-                    ? (() => {
-                        const execs = message.toolExecutions!;
-                        const counts: { reads?: number; writes?: number; searches?: number; terminals?: number; patches?: number; deletes?: number } = {};
-                        for (const e of execs) {
-                          if (e.toolName === "read") counts.reads = (counts.reads ?? 0) + 1;
-                          else if (e.toolName === "write" || e.toolName === "append") counts.writes = (counts.writes ?? 0) + 1;
-                          else if (e.toolName === "search" || e.toolName === "web-search") counts.searches = (counts.searches ?? 0) + 1;
-                          else if (e.toolName === "terminal") counts.terminals = (counts.terminals ?? 0) + 1;
-                          else if (e.toolName === "patch") counts.patches = (counts.patches ?? 0) + 1;
-                          else if (e.toolName === "delete") counts.deletes = (counts.deletes ?? 0) + 1;
-                        }
-                        return counts;
-                      })()
-                    : undefined
-                }
-                activeCommand={
-                  (message.streaming || message.thinking) && (message.toolExecutions ?? []).length > 0
-                    ? (() => {
-                        const execs = message.toolExecutions!;
-                        // Show the last terminal command (running or just completed)
-                        const lastTerminal = [...execs].reverse().find(e => e.toolName === "terminal");
-                        if (lastTerminal && lastTerminal.command.trim()) return lastTerminal.command;
-                        return undefined;
-                      })()
-                    : undefined
-                }
+              <MessageContent
+                message={message}
+                isStreaming={Boolean(message.streaming || message.thinking)}
+                onOpenFile={(filePath) => {
+                  const vscode = acquireVsCodeApi();
+                  vscode.postMessage({ type: "openFile", filePath });
+                }}
                 onFrame={onAnimatedFrame}
               />
             )}
@@ -2194,11 +2520,6 @@ function MessageBubble({
               </button>
             )}
           </div>
-        )}
-
-        {/* Tool executions - now collapsed into Activity section */}
-        {!isUser && (message.toolExecutions ?? []).length > 0 && (
-          <ActivitySection toolExecutions={message.toolExecutions!} />
         )}
 
         {/* Activity Todos - OpenCode-style task list */}
@@ -5037,6 +5358,7 @@ function App() {
                 label="Model"
                 className="nk-toolbar-select--model"
                 menuClassName="nk-toolbar-select-menu--model"
+                searchable
               />
               {(() => {
                 const effortInfo = getModelEffortInfo(activeSession.model);

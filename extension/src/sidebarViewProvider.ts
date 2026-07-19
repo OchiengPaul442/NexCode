@@ -345,6 +345,9 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
           ),
         );
         return;
+      case "openFile":
+        await this.handleOpenFile(message);
+        return;
       case "updateSetting":
         if (message.key && message.value !== undefined) {
           const secretKeys = ["openAIApiKey", "searchApiKey", "tavilyApiKey"];
@@ -1404,6 +1407,33 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       return;
     }
     vscode.window.showInformationMessage("NexCode: Task completed.");
+  }
+
+  private async handleOpenFile(message: unknown): Promise<void> {
+    const msg = message as { filePath?: string; line?: number; column?: number };
+    const filePath = msg.filePath;
+    if (!filePath) return;
+
+    try {
+      const uri = vscode.Uri.file(filePath);
+      const document = await vscode.workspace.openTextDocument(uri);
+      const editor = await vscode.window.showTextDocument(document, {
+        preserveFocus: true,
+        preview: true,
+      });
+
+      if (typeof msg.line === "number" && msg.line > 0) {
+        const line = Math.max(0, msg.line - 1);
+        const col = Math.max(0, (msg.column ?? 1) - 1);
+        editor.selection = new vscode.Selection(line, col, line, col);
+        editor.revealRange(
+          new vscode.Range(line, col, line, col),
+          vscode.TextEditorRevealType.InCenter,
+        );
+      }
+    } catch {
+      vscode.window.showErrorMessage(`Could not open file: ${filePath}`);
+    }
   }
 
   private postMessage(message: unknown): void {

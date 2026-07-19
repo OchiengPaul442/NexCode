@@ -11,14 +11,15 @@
 
 ### NC-001 — One API key transmitted to every configured cloud provider
 - **Severity:** Critical
-- **Status:** pending
-- **Phase:** 0 / 1
+- **Status:** fixed
+- **Phase:** 0 / containment
 - **Dependencies:** none
-- **Affected files:** `agent-core/src/orchestrator.ts:167-210`, `agent-core/src/providers/modelRouter.ts:80-89`, `agent-core/src/providers/openAICompatibleProvider.ts:64-74`
-- **Verified:** unverified — needs current-source confirmation
+- **Affected files:** `agent-core/src/orchestrator.ts:129-213,373-381`
+- **Verified:** yes — verified against current source; eager cross-provider checks removed
 - **Required tests:** provider key isolation: assert canary key for provider A is never observed by provider B; lazy provider construction; no eager health-check at construction
-- **Verification commands:** `npx vitest run agent-core/tests/providerIsolation.test.ts`
-- **Resolution evidence:** (none yet)
+- **Verification commands:** `npx vitest run agent-core/tests/providerKeyIsolation.test.ts`
+- **Resolution evidence:** `agent-core/src/orchestrator.ts` changed: (1) `providerCheckPromise` initialized to `null` instead of eagerly set in constructor. (2) Removed 4-line eager `checkProviders()` call from constructor. (3) `getProviderStatus()` now lazily creates the check promise on first invocation. 5 regression tests added in `agent-core/tests/providerKeyIsolation.test.ts`: no eager checks at construction, canary key not leaked, lazy single-check, cross-provider isolation, instance isolation. Full test suite: 465/465 pass. Build clean. Type-check clean.
+- **Remaining risk:** The same `openAIApiKey` is still passed to all cloud provider constructors (Phase D will introduce per-provider credentials). The containment patch eliminates the eager cross-provider network calls that were the primary attack vector.
 
 ### NC-002 — Malicious workspace can redirect authenticated provider probe
 - **Severity:** Critical

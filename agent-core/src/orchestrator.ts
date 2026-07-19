@@ -129,7 +129,7 @@ export class NexcodeOrchestrator {
   private readonly feedbackLogger: FeedbackLogger;
   private readonly reflection: ReflectionEngine;
   private readonly promptVersions: PromptVersionManager;
-  private providerCheckPromise: Promise<Record<string, { ok: boolean; error?: string; models?: string[] }>>;
+  private providerCheckPromise: Promise<Record<string, { ok: boolean; error?: string; models?: string[] }>> | null = null;
   private readonly mcpRegistry: McpRegistry;
   private readonly compressor = new ContextCompressor(8000);
   private readonly sessionCompressor = new SessionCompressor();
@@ -207,10 +207,6 @@ export class NexcodeOrchestrator {
       },
     );
 
-    this.providerCheckPromise = this.router.checkProviders().catch((err) => {
-      console.error("[nexcode] Provider check failed:", err);
-      return {};
-    });
     this.prompts = new PromptStore(this.config.promptsDir);
     this.memory = new MemoryManager(this.config.memoryDir);
     this.memory.initialize().catch((err) => {
@@ -375,6 +371,12 @@ export class NexcodeOrchestrator {
   }
 
   public async getProviderStatus(): Promise<Record<string, { ok: boolean; error?: string; models?: string[] }>> {
+    if (!this.providerCheckPromise) {
+      this.providerCheckPromise = this.router.checkProviders().catch((err) => {
+        console.error("[nexcode] Provider check failed:", err);
+        return {};
+      });
+    }
     return this.providerCheckPromise;
   }
 

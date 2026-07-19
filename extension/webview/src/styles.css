@@ -3190,6 +3190,20 @@ html, body {
 .nk-streaming-thinking {
   display: inline-block;
   min-width: 0;
+  background-image: linear-gradient(
+    110deg,
+    var(--vscode-descriptionForeground, #8b8b9a) 0%,
+    var(--vscode-foreground, #e0e0e0) 28%,
+    var(--vscode-descriptionForeground, #8b8b9a) 55%,
+    var(--vscode-foreground, #e0e0e0) 74%,
+    var(--vscode-descriptionForeground, #8b8b9a) 100%
+  );
+  background-size: 240% 100%;
+  background-position: 180% 50%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: nk-shimmer-text 2.2s linear infinite;
 }
 .nk-streaming-message .markdown-body {
   width: 100%;

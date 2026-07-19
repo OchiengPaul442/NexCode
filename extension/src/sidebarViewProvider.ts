@@ -153,6 +153,17 @@ interface WebviewListTasksMessage {
   type: "listTasks";
 }
 
+interface WebviewOpenFileMessage {
+  type: "openFile";
+  filePath: string;
+  line?: number;
+  column?: number;
+}
+
+interface WebviewTaskCompletedMessage {
+  type: "taskCompleted";
+}
+
 type InboundWebviewMessage =
   | WebviewSendPromptMessage
   | WebviewCancelPromptMessage
@@ -177,7 +188,9 @@ type InboundWebviewMessage =
   | WebviewSteerTaskMessage
   | WebviewCancelTaskMessage
   | WebviewListTasksMessage
-  | WebviewToolApprovalResponseMessage;
+  | WebviewToolApprovalResponseMessage
+  | WebviewOpenFileMessage
+  | WebviewTaskCompletedMessage;
 
 const MAX_ATTACHMENT_BYTES = 3_000_000;
 const MAX_ATTACHMENT_TEXT_CHARS = 750_000;
@@ -1401,7 +1414,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
   private showCompletionNotification(): void {
     // Only show notification if the sidebar is not focused
     const activeEditor = vscode.window.activeTextEditor;
-    const sidebarVisible = this._panel?.visible ?? false;
+    const sidebarVisible = this.view?.visible ?? false;
     if (sidebarVisible && !activeEditor) {
       // Sidebar is focused, no need for notification
       return;

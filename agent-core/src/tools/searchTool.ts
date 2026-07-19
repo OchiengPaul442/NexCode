@@ -1,7 +1,7 @@
 import { TerminalTool } from "./terminalTool";
 import { ToolResult } from "../types";
 
-type SearchProviderId = "tavily" | "serpapi" | "serper" | "bing" | "custom";
+type SearchProviderId = "tavily" | "serpapi" | "serper" | "bing" | "duckduckgo" | "custom";
 
 interface SearchToolOptions {
   searchProvider?: SearchProviderId;
@@ -218,6 +218,11 @@ export class SearchTool {
   }
 
   private async searchWithConfiguredProvider(query: string): Promise<ToolResult> {
+    // DuckDuckGo doesn't need an API key
+    if (this.searchProvider === "duckduckgo") {
+      return this.searchWithDuckDuckGo(query);
+    }
+
     const apiKey = this.searchApiKey || this.tavilyApiKey || process.env.SEARCH_API_KEY || process.env.TAVILY_API_KEY;
     
     if (!apiKey && this.searchProvider !== "custom") {

@@ -534,6 +534,7 @@ export async function* runAgentLoop(
 
     const finalResponse = await router.generate(messages, {
       model: model,
+      provider: provider as ProviderId | undefined,
       maxTokens: config.maxTokensPerTurn,
       signal,
       reasoningEffort,

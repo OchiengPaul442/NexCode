@@ -88,7 +88,7 @@ function playCompletionSound(): void {
 }
 
 // ── Git-style diff utility using the `diff` package ──────────────────────────
-import { diffLines, diffWords, type Change } from "diff";
+import { diffLines, type Change } from "diff";
 
 interface DiffHunk {
   oldStart: number;
@@ -156,18 +156,6 @@ function computeGitDiff(oldText: string, newText: string): DiffHunk[] {
     }
   }
   return merged;
-}
-
-function computeWordDiff(oldLine: string, newLine: string): { oldWords: Change[]; newWords: Change[] } {
-  const changes = diffWords(oldLine, newLine);
-  const oldWords: Change[] = [];
-  const newWords: Change[] = [];
-  for (const change of changes) {
-    if (change.removed) oldWords.push(change);
-    else if (change.added) newWords.push(change);
-    else { oldWords.push(change); newWords.push(change); }
-  }
-  return { oldWords, newWords };
 }
 
 // Collapsed context: show only N lines of context around changes
@@ -373,7 +361,7 @@ interface ToolbarSelectOption {
   meta?: { inputs: string[]; reasoning: boolean; context: string };
 }
 
-type SearchProviderId = "tavily" | "serpapi" | "serper" | "bing" | "custom";
+type SearchProviderId = "tavily" | "serpapi" | "serper" | "bing" | "duckduckgo" | "custom";
 
 interface SidebarSettings {
   provider?: ProviderId;
@@ -3355,6 +3343,7 @@ function getSearchProviderPlaceholder(provider: SearchProviderId): string {
     case "serpapi": return "Your SerpAPI key";
     case "serper": return "Your Serper key";
     case "bing": return "Your Bing API key";
+    case "duckduckgo": return "No API key needed";
     case "custom": return "Your API key";
     default: return "Your API key";
   }
@@ -3366,6 +3355,7 @@ function getSearchProviderHint(provider: SearchProviderId): string {
     case "serpapi": return "Get a key at serpapi.com";
     case "serper": return "Get a key at serper.dev";
     case "bing": return "Get a key at azure.microsoft.com/services/bing-search";
+    case "duckduckgo": return "Free, no API key required";
     case "custom": return "Enter your custom search API key";
     default: return "Enter your API key";
   }
@@ -4965,6 +4955,7 @@ function App() {
                         <option value="serpapi">SerpAPI</option>
                         <option value="serper">Serper</option>
                         <option value="bing">Bing Search</option>
+                        <option value="duckduckgo">DuckDuckGo (Free)</option>
                         <option value="custom">Custom API</option>
                       </select>
                     </div>
@@ -4975,6 +4966,7 @@ function App() {
                         type="password"
                         placeholder={getSearchProviderPlaceholder(settings.searchProvider ?? 'tavily')}
                         value={settings.searchApiKey ?? ''}
+                        disabled={settings.searchProvider === 'duckduckgo'}
                         onChange={(e) => {
                           useStore.getState().updateSetting('searchApiKey', e.target.value);
                           vscode.postMessage({ type: 'updateSetting', key: 'searchApiKey', value: e.target.value });

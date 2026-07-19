@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "project": "NexCode",
+  "status": "not_started",
+  "bootstrapRequired": true,
+  "iteration": 0,
+  "currentPhase": 0,
+  "totalFindings": 45,
+  "counts": {
+    "pending": 45,
+    "inProgress": 0,
+    "fixed": 0,
+    "blocked": 0,
+    "obsolete": 0,
+    "falsePositive": 0
+  },
+  "activeFindingIds": [],
+  "resolvedFindingIds": [],
+  "blockedFindingIds": [],
+  "lastCommit": null,
+  "lastSummary": "Autonomous remediation has not started.",
+  "lastVerification": {
+    "focusedTests": "not_run",
+    "typecheck": "not_run",
+    "lint": "not_run",
+    "build": "not_run",
+    "fullTests": "not_run",
+    "packaging": "not_run"
+  }
+}

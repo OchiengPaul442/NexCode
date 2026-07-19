@@ -1,0 +1,2 @@
+# OpenCode autonomous remediation runtime logs
+logs/opencode-remediation/*.log

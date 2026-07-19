@@ -81,14 +81,15 @@
 
 ### NC-007 — PowerShell search fallback is injection-prone
 - **Severity:** Critical
-- **Status:** pending
+- **Status:** fixed
 - **Phase:** 0 / E
 - **Dependencies:** none
 - **Affected files:** `agent-core/src/tools/searchTool.ts:117-149`
-- **Verified:** unverified
+- **Verified:** yes — verified against current source; PowerShell Select-String fallback replaced with Node.js filesystem walker
 - **Required tests:** search payloads cannot execute substitutions; ripgrep argv preferred; PowerShell fallback uses non-code channel
 - **Verification commands:** `npx vitest run agent-core/tests/searchInjection.test.ts`
-- **Resolution evidence:** (none yet)
+- **Resolution evidence:** `agent-core/src/tools/searchTool.ts` changed: (1) Removed `import { exec } from "child_process"` pattern. (2) Added `import * as fs from "fs"` and `import * as path from "path"` for pure Node.js search. (3) Replaced the PowerShell `Select-String` fallback with a new `searchWithNodeFallback()` method that uses `fs.promises.readdir` and `fs.promises.readFile` for recursive filesystem walking with case-insensitive literal substring matching — no shell, no PowerShell, no injection. (4) Replaced the Linux/Mac `grep` fallback with the same Node.js walker (grep interprets query as regex, not literal). (5) `findstr` kept on Windows as it uses execFile argv (safe). (6) Query truncated to 100 chars in diagnostic output to limit exposure. (7) `TerminalTool.getWorkspaceRoot()` public getter added. 19 regression tests in `agent-core/tests/searchInjection.test.ts` covering: PowerShell never invoked, Node.js walker finds content, case-insensitive matching, nested directories, no results for non-matching, injection payloads ($env:USERPROFILE, $(Get-Process), backtick escapes, single-quoted PS, pipe/semicolon, node -e), query truncation, node_modules skipped, .git skipped, max result limit, empty workspace, binary files, rg argv safety, output format. 778/778 tests pass. Build clean. Type-check clean.
+- **Remaining risk:** None — the injection vector (PowerShell `-Command` interpolation) has been fully eliminated. The Node.js walker is pure code with no shell involvement.
 
 ### NC-008 — Auto/bypass approval modes undermine user consent
 - **Severity:** Critical

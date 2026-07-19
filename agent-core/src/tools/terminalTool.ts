@@ -464,6 +464,10 @@ export function normalizeTerminalCommand(command: string): string {
 export class TerminalTool {
   public constructor(private readonly workspaceRoot: string) {}
 
+  public getWorkspaceRoot(): string {
+    return this.workspaceRoot;
+  }
+
   public async run(command: string, timeoutMs = 30_000): Promise<ToolResult> {
     const normalizedCommand = normalizeTerminalCommand(command);
     const validationError = this.validateCommand(normalizedCommand);

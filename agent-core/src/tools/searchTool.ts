@@ -1,5 +1,7 @@
 import { TerminalTool } from "./terminalTool";
 import { ToolResult } from "../types";
+import * as fs from "fs";
+import * as path from "path";
 
 type SearchProviderId = "tavily" | "serpapi" | "serper" | "bing" | "duckduckgo" | "custom";
 
@@ -124,50 +126,46 @@ export class SearchTool {
         return findstrResult;
       }
 
-      // PowerShell Select-String as last resort (comprehensive but slower)
-      const escapedQuery = query.replace(/"/g, '""');
-      const psResult = await this.terminal.runSafe(
-        "powershell",
-        ["-NoProfile", "-Command", `Get-ChildItem -Recurse -File | Select-String -Pattern "${escapedQuery}" -SimpleMatch | Select-Object -First 50 | ForEach-Object { "$($_.Path):$($_.LineNumber):$($_.Line.Trim())" }`],
-      );
-      if (psResult.ok && psResult.output) {
-        return psResult;
+      // Node.js filesystem walker — no shell involved, no injection risk
+      const nodeResult = await this.searchWithNodeFallback(query);
+      if (nodeResult.ok) {
+        return nodeResult;
       }
 
       return {
         ok: false,
         output: [
           "Workspace search failed.",
-          "Tried: ripgrep (rg), findstr, PowerShell Select-String.",
+          "Tried: ripgrep (rg), findstr, built-in search.",
           "",
           "Install ripgrep for best results:",
           "  winget install BurntSushi.ripgrep.MSVC",
           "  scoop install ripgrep",
           "  choco install ripgrep",
           "",
-          `Searched for: ${query}`,
+          `Searched for: ${query.slice(0, 100)}`,
         ].join("\n"),
       };
     }
 
-    // Linux/Mac: try grep as fallback
-    const grepResult = await this.terminal.runSafe("grep", ["-R", "-n", "-i", query, "."]);
-    if (grepResult.ok) {
-      return grepResult;
+    // Linux/Mac: Node.js filesystem walker — no shell, no regex interpretation
+    const nodeResult = await this.searchWithNodeFallback(query);
+    if (nodeResult.ok) {
+      return nodeResult;
     }
 
     return {
       ok: false,
       output: [
         "Workspace search failed.",
-        "Tried: ripgrep (rg), grep.",
+        "Tried: ripgrep (rg), built-in search.",
         "",
-        "Install ripgrep (recommended) or ensure grep is in your PATH:",
+        "Install ripgrep (recommended):",
         "  macOS:   brew install ripgrep",
         "  Ubuntu:  sudo apt install ripgrep",
         "  Fedora:  sudo dnf install ripgrep",
         "",
-        `Searched for: ${query}`,
+        `Searched for: ${query.slice(0, 100)}`,
       ].join("\n"),
     };
   }
@@ -843,6 +841,96 @@ export class SearchTool {
     }
 
     return results;
+  }
+
+  /**
+   * Pure Node.js filesystem search — no shell, no injection risk.
+   * Recursively walks the workspace, reads files matching known extensions,
+   * and performs case-insensitive literal substring matching.
+   */
+  private async searchWithNodeFallback(query: string): Promise<ToolResult> {
+    const MAX_RESULTS = 50;
+    const MAX_DEPTH = 12;
+    const MAX_FILE_SIZE = 1_024 * 1024; // 1MB per file
+    const results: string[] = [];
+    const queryLower = query.toLowerCase();
+    const workspaceRoot = this.terminal.getWorkspaceRoot();
+
+    const searchableExtensions = new Set([
+      ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
+      ".json", ".md", ".css", ".html", ".htm",
+      ".yaml", ".yml", ".toml", ".xml",
+      ".py", ".rb", ".go", ".rs", ".java", ".sh", ".bash",
+      ".env", ".gitignore", ".dockerignore", "Dockerfile",
+    ]);
+
+    const skipDirs = new Set([
+      "node_modules", ".git", ".svn", ".hg",
+      "dist", "build", ".next", ".cache",
+      "__pycache__", ".pytest_cache",
+    ]);
+
+    const searchDir = async (dir: string, depth: number): Promise<void> => {
+      if (depth > MAX_DEPTH || results.length >= MAX_RESULTS) return;
+
+      let entries: fs.Dirent[];
+      try {
+        entries = await fs.promises.readdir(dir, { withFileTypes: true });
+      } catch {
+        return; // Skip unreadable directories
+      }
+
+      for (const entry of entries) {
+        if (results.length >= MAX_RESULTS) return;
+
+        if (entry.name.startsWith(".") && entry.name !== ".env" && entry.name !== ".gitignore" && entry.name !== ".dockerignore") {
+          continue;
+        }
+
+        if (entry.isDirectory()) {
+          if (!skipDirs.has(entry.name)) {
+            await searchDir(path.join(dir, entry.name), depth + 1);
+          }
+          continue;
+        }
+
+        if (!entry.isFile()) continue;
+
+        const ext = path.extname(entry.name);
+        const baseName = path.basename(entry.name);
+        if (!searchableExtensions.has(ext) && !searchableExtensions.has(baseName)) continue;
+
+        const filePath = path.join(dir, entry.name);
+        let content: string;
+        try {
+          const stat = await fs.promises.stat(filePath);
+          if (stat.size > MAX_FILE_SIZE) continue;
+          content = await fs.promises.readFile(filePath, "utf-8");
+        } catch {
+          continue; // Skip unreadable files
+        }
+
+        const lines = content.split("\n");
+        for (let i = 0; i < lines.length; i++) {
+          if (results.length >= MAX_RESULTS) break;
+          if (lines[i].toLowerCase().includes(queryLower)) {
+            const relPath = path.relative(workspaceRoot, filePath);
+            results.push(`${relPath}:${i + 1}:${lines[i].trimEnd()}`);
+          }
+        }
+      }
+    };
+
+    await searchDir(workspaceRoot, 0);
+
+    if (results.length === 0) {
+      return { ok: false, output: "No results found." };
+    }
+
+    return {
+      ok: true,
+      output: results.join("\n"),
+    };
   }
 
   private compact(value: string, maxLength: number): string {

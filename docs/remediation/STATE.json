@@ -3,28 +3,28 @@
   "project": "NexCode",
   "status": "in_progress",
   "bootstrapRequired": false,
-  "iteration": 5,
+  "iteration": 6,
   "currentPhase": 0,
   "totalFindings": 45,
   "counts": {
-    "pending": 40,
+    "pending": 39,
     "inProgress": 0,
-    "fixed": 5,
+    "fixed": 6,
     "blocked": 0,
     "obsolete": 0,
     "falsePositive": 0
   },
   "activeFindingIds": [],
-  "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004", "NC-005"],
+  "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004", "NC-005", "NC-007"],
   "blockedFindingIds": [],
-  "lastCommit": "94aeab5",
-  "lastSummary": "NC-005 fixed: Webview messages now validated at runtime before the extension host acts on them. (1) validateWebviewMessage() checks type discriminator is a recognized string, validates required fields per message type (prompt non-empty, editId non-empty, filePath non-null-bytes, setting key in allowlist, taskId/requestId/approved present and correct types), enforces size limits (1MB message, 500K prompt, 4K file path, 100K setting value). (2) handleOpenFile() now validates filePath against workspace root via validateOpenFilePath() — rejects paths outside workspace, traversal, and null bytes. (3) updateSetting now rejects any key not in a hardcoded allowlist of 13 safe settings (defaultModel, defaultProvider, openAIBaseUrl, ollamaBaseUrl, autoApproveWrite, toolApproval, maxConcurrentTasks, showReasoning, theme, searchProvider, searchBaseUrl, mcpServers). Secret keys (openAIApiKey, searchApiKey, tavilyApiKey) are explicitly excluded. 71 new regression tests in agent-core/tests/webviewValidation.test.ts. 759/759 tests pass. Build clean. Type-check clean.",
+  "lastCommit": "TBD",
+  "lastSummary": "NC-007 fixed: PowerShell Select-String search fallback (injection-prone) replaced with a pure Node.js filesystem walker that uses fs.promises.readdir and fs.promises.readFile for recursive walking with case-insensitive literal substring matching. No shell, no PowerShell, no injection. (1) searchWithNodeFallback() — new private method on SearchTool that recursively walks workspace, reads files matching known extensions, skips node_modules/.git/dist/build, performs case-insensitive literal substring matching, returns file:line:content format, limited to 50 results with 1MB per-file size limit and 12-level depth limit. (2) PowerShell Select-String -Command invocation completely removed. (3) Linux/Mac grep fallback also replaced (grep interprets query as regex, not literal). (4) findstr kept on Windows (uses execFile argv, safe). (5) Query truncated to 100 chars in diagnostic output. (6) TerminalTool.getWorkspaceRoot() public getter added. 19 regression tests in agent-core/tests/searchInjection.test.ts. 778/778 tests pass. Build clean. Type-check clean.",
   "lastVerification": {
-    "focusedTests": "PASS — 71/71 webviewValidation tests pass",
+    "focusedTests": "PASS — 19/19 searchInjection tests pass",
     "typecheck": "PASS — agent-core, extension, and webview tsc --noEmit all clean",
     "lint": "PASS — no lint configured beyond tsc (NC-030)",
     "build": "PASS — full npm run build clean",
-    "fullTests": "PASS — 759/759 unit tests pass",
+    "fullTests": "PASS — 778/778 unit tests pass",
     "packaging": "SKIPPED — not attempted this iteration"
   }
 }

@@ -386,3 +386,86 @@ Append one section per autonomous iteration. Never rewrite prior entries.
 | `extension/src/sidebarViewProvider.ts` | Add runtime validation, setting key allowlist, openFile containment | +35, -15 |
 | `agent-core/tests/webviewValidation.test.ts` | New regression test file | +488 |
 
+---
+
+## Iteration 5 — NC-007: Replace PowerShell search injection with Node.js walker
+
+**Date:** 20 July 2026
+**Finding IDs:** NC-007 (Critical)
+**Phase:** 0 — Containment patch
+
+### What was done
+
+1. **Verified NC-007 against current source code:**
+   - `agent-core/src/tools/searchTool.ts:127-135` — confirmed the PowerShell `Select-String` fallback interpolates the query into a `-Command` script string via template literal. The `escapedQuery = query.replace(/"/g, '""')` only doubles double-quotes but does NOT neutralize PowerShell `$()` subexpressions, backtick escapes (`\`n`, `\`r`), `$env:USERPROFILE`, or variable expansion.
+   - Confirmed that `runSafe` uses `execFile` (no shell), but PowerShell itself interprets the `-Command` argument as PowerShell source code. A query like `$env:USERPROFILE` or `` `Get-Process` `` would execute as PowerShell code.
+   - Also confirmed the Linux/Mac `grep` fallback interprets the query as a regex pattern (not a security injection risk, but not a literal match either).
+
+2. **Implemented fix (2 production files changed):**
+   - `agent-core/src/tools/searchTool.ts` (+105, -17):
+     - Added `import * as fs from "fs"` and `import * as path from "path"`.
+     - Removed the PowerShell `Select-String` `-Command` fallback entirely.
+     - Added `searchWithNodeFallback()` — a pure Node.js filesystem walker that uses `fs.promises.readdir` and `fs.promises.readFile` for recursive workspace walking with case-insensitive literal substring matching. No shell, no PowerShell, no injection.
+     - Walker properties: skips `node_modules/.git/dist/build/__pycache__`, max 50 results, 1MB per-file size limit, 12-level depth limit, skips dotfiles (except `.env`, `.gitignore`, `.dockerignore`), searches common code file extensions.
+     - Replaced the Linux/Mac `grep` fallback with the same Node.js walker (grep interprets query as regex, not literal).
+     - Query truncated to 100 chars in diagnostic error output.
+   - `agent-core/src/tools/terminalTool.ts` (+4):
+     - Added `public getWorkspaceRoot(): string` getter so `SearchTool` can access the workspace root for the Node.js walker.
+
+3. **Added regression tests (1 new file, 19 tests):**
+   - `agent-core/tests/searchInjection.test.ts`:
+     - Node.js walker finds matching content without shell (basic search).
+     - Case-insensitive matching.
+     - Nested directory search.
+     - No results for non-matching query.
+     - PowerShell is NEVER invoked — hooks `runSafe` to assert no PowerShell call.
+     - `$env:USERPROFILE` payload does not execute as PowerShell code.
+     - `$(Get-Process)` payload does not execute.
+     - Backtick escape payload does not execute.
+     - Single-quoted PowerShell payload treated as literal text.
+     - Pipe and semicolon payload does not cause command chaining.
+     - `node -e` payload does not execute.
+     - Query truncated in error diagnostics (100 char limit).
+     - Node.js walker skips `node_modules` directory.
+     - Node.js walker skips `.git` directory.
+     - Node.js walker respects max result limit (50).
+     - Node.js walker handles empty workspace.
+     - Node.js walker handles binary/unreadable files gracefully.
+     - `rg` fallback path also prevents injection via argv.
+     - Output uses `file:line:content` format.
+
+4. **Validated:**
+   - 19/19 new searchInjection tests pass.
+   - 5/5 existing searchToolInjection tests pass.
+   - 778/778 full unit tests pass.
+   - `tsc --noEmit` clean in agent-core, extension, and webview.
+   - `npm run build` clean.
+
+### Validation
+
+| Check | Result | Notes |
+|---|---|---|
+| Focused tests (NC-007) | PASS | 19/19 searchInjection tests pass |
+| Existing search tests | PASS | 5/5 searchToolInjection tests pass |
+| Full test suite | PASS | 778/778 unit tests pass |
+| Type check (agent-core) | PASS | `tsc --noEmit` clean |
+| Type check (extension) | PASS | `tsc --noEmit` clean |
+| Type check (webview) | PASS | `tsc --noEmit` clean |
+| Build | PASS | Full `npm run build` clean |
+| No secrets in diff | PASS | No API keys, tokens, or secrets in the diff |
+| No test suppression | PASS | All existing tests retained and passing |
+
+### Remaining risks
+
+- None. The injection vector (PowerShell `-Command` interpolation) has been fully eliminated. The Node.js walker is pure code with no shell involvement.
+- The `findstr` fallback on Windows uses `execFile` with argv (safe from injection).
+- The `rg` (ripgrep) primary path uses `execFile` with argv (safe from injection).
+
+### Files changed
+
+| File | Change | Lines |
+|---|---|---|
+| `agent-core/src/tools/searchTool.ts` | Replace PowerShell/grep fallbacks with Node.js walker | +105, -17 |
+| `agent-core/src/tools/terminalTool.ts` | Add public getWorkspaceRoot() getter | +4 |
+| `agent-core/tests/searchInjection.test.ts` | New regression test file | +290 |
+

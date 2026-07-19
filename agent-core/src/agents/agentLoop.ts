@@ -4,6 +4,7 @@ import {
   OrchestratorEvent,
   ToolCallRequestTool,
   ReasoningEffort,
+  ProviderId,
 } from "../types";
 import { ModelRouter } from "../providers/modelRouter";
 import { ToolRegistry } from "../tools/toolRegistry";
@@ -232,6 +233,7 @@ export async function* runAgentLoop(
 
         response = await router.generate(retryMessages, {
           model: model,
+          provider: provider as ProviderId | undefined,
           tools: retryTools,
           maxTokens: config.maxTokensPerTurn,
           signal,

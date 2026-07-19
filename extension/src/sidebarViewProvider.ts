@@ -962,10 +962,13 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
           }
 
           if (currentApproval === "auto") {
-            // Low-risk write tools are safe enough to auto-approve.
-            // Note: read-only tools (read, search, git-*) and safe terminal commands
-            // never reach this callback because DefaultToolApprovalPolicy.requiresApproval()
-            // already returns false for them.
+            // Use the policy's isAutoExecutable() to determine auto-approve eligibility
+            // This covers safe tools (read, search, web-search, git-*) and low-risk writes
+            const policy = this.orchestrator?.getToolApprovalPolicy?.();
+            if (policy && policy.isAutoExecutable(toolName, arg)) {
+              return true;
+            }
+            // Fallback: auto-approve low-risk write tools
             const autoApproveInAutoMode = ["write", "append", "patch"];
             if (autoApproveInAutoMode.includes(toolName)) {
               return true;

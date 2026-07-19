@@ -89,6 +89,10 @@ export class ToolRegistry {
     return this.approvalPolicy.isAutoExecutable(toolName, arg);
   }
 
+  public getApprovalPolicy(): import('./toolApprovalPolicy').ToolApprovalPolicy {
+    return this.approvalPolicy;
+  }
+
   private emitAudit(
     toolName: string,
     arg: string,

@@ -3226,6 +3226,16 @@ function App() {
       return;
     }
 
+    // Create placeholder assistant message immediately for instant loading feedback
+    const placeholder = useStore
+      .getState()
+      .beginAssistantMessage(request.sessionId, {
+        provider: request.provider as ProviderId | undefined,
+        model: request.model,
+        mode: request.mode as AgentMode | undefined,
+      });
+    pendingRef.current = placeholder;
+
     useStore.getState().setBusy(true);
     vscode.postMessage({
       type: "sendPrompt",
@@ -3849,20 +3859,30 @@ function App() {
               return;
             }
 
-            pendingRef.current = useStore
-              .getState()
-              .beginAssistantMessage(startSessionId, {
-                provider:
-                  typeof payload.provider === "string"
-                    ? (payload.provider as ProviderId)
-                    : undefined,
-                model:
-                  typeof payload.model === "string" ? payload.model : undefined,
-                mode:
-                  typeof payload.mode === "string"
-                    ? (payload.mode as AgentMode)
-                    : undefined,
-              });
+            // If a placeholder was created at dispatch time, reuse it
+            const existing = pendingRef.current;
+            if (existing && existing.sessionId === startSessionId) {
+              // Placeholder already exists, just update its metadata
+              useStore
+                .getState()
+                .updateAssistantTrace(startSessionId, existing.messageId, [], []);
+            } else {
+              // No placeholder (e.g. queued task), create one now
+              pendingRef.current = useStore
+                .getState()
+                .beginAssistantMessage(startSessionId, {
+                  provider:
+                    typeof payload.provider === "string"
+                      ? (payload.provider as ProviderId)
+                      : undefined,
+                  model:
+                    typeof payload.model === "string" ? payload.model : undefined,
+                  mode:
+                    typeof payload.mode === "string"
+                      ? (payload.mode as AgentMode)
+                      : undefined,
+                });
+            }
           }
           return;
         case "status": {

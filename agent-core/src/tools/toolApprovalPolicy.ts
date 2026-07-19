@@ -11,9 +11,9 @@ export type ApprovalCallback = (
   arg: string,
 ) => Promise<boolean>;
 
-const SAFE_TOOLS = ["read", "search", "git-status", "git-diff", "git-branch", "git-log", "git-show", "workspace-stats"];
+const SAFE_TOOLS = ["read", "search", "git-status", "git-diff", "git-branch", "git-log", "git-show", "workspace-stats", "web-search", "search-web", "online-search"];
 const LOW_RISK_WRITE_TOOLS = ["write", "append", "patch"];
-const DESTRUCTIVE_TOOLS = ["delete", "delete-contents", "move", "terminal", "mcp", "batch_edit", "web-search", "search-web", "online-search", "git-stage", "git-unstage", "git-commit", "git-create-branch", "test"];
+const DESTRUCTIVE_TOOLS = ["delete", "delete-contents", "move", "terminal", "mcp", "batch_edit", "git-stage", "git-unstage", "git-commit", "git-create-branch", "test"];
 
 export class DefaultToolApprovalPolicy implements ToolApprovalPolicy {
   private readonly bypassTools: Set<string>;

@@ -223,6 +223,10 @@ export class NexcodeOrchestrator {
     return this.mcpRegistry.call(call);
   }
 
+  public getToolApprovalPolicy() {
+    return this.tools.getApprovalPolicy();
+  }
+
   public async enhancePrompt(
     request: PromptEnhancementRequest,
   ): Promise<PromptEnhancementResult> {

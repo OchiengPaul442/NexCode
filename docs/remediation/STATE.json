@@ -17,7 +17,7 @@
   "activeFindingIds": [],
   "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004"],
   "blockedFindingIds": [],
-  "lastCommit": "pending",
+  "lastCommit": "c93bd36",
   "lastSummary": "NC-004 fixed: Terminal safety boundary changed to deny-by-default. validateCommand() now rejects any command not matching SAFE_PATTERNS (ls, pwd, echo, cat, head, tail, wc, git status/diff/log/branch/show, npm test, cargo check/build/test/clippy/fmt, go build/test/fmt/vet, PowerShell/dir/cd/type/where/findstr equivalents). Previously, any command not caught by the denylist was silently allowed through a real shell. Unknown commands (curl, wget, docker, nc, ruby, perl, make, etc.) now fail closed. 159 new regression tests in agent-core/tests/terminalDenyByDefault.test.ts. 688/688 tests pass. Build clean. Type-check clean.",
   "lastVerification": {
     "focusedTests": "PASS — 159/159 terminalDenyByDefault tests pass",

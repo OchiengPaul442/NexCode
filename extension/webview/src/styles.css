@@ -2465,8 +2465,9 @@ html, body {
 .nk-scroll-bottom-btn {
   position: sticky;
   bottom: 8px;
-  margin-left: auto;
-  margin-right: 8px;
+  left: 12px;
+  align-self: flex-end;
+  margin-right: 12px;
   width: 24px;
   height: 24px;
   border-radius: 999px;

@@ -105,35 +105,132 @@ function tryParseTextAsToolCall(text: string): ToolCallRequest[] | null {
   const content = fenceMatch ? fenceMatch[1] : text;
 
   const trimmed = content.trim();
-  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return null;
 
-  try {
-    const parsed = JSON.parse(trimmed);
-    const items = Array.isArray(parsed) ? parsed : [parsed];
-    const calls: ToolCallRequest[] = [];
+  // Try JSON format first
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      const items = Array.isArray(parsed) ? parsed : [parsed];
+      const calls: ToolCallRequest[] = [];
 
-    for (const item of items) {
-      if (
-        item &&
-        typeof item.name === "string" &&
-        item.arguments &&
-        typeof item.arguments === "object"
-      ) {
-        calls.push({
-          id: `call_text_${Date.now()}_${calls.length}`,
-          type: "function",
-          function: {
-            name: item.name,
-            arguments: JSON.stringify(item.arguments),
-          },
-        });
+      for (const item of items) {
+        if (
+          item &&
+          typeof item.name === "string" &&
+          item.arguments &&
+          typeof item.arguments === "object"
+        ) {
+          calls.push({
+            id: `call_text_${Date.now()}_${calls.length}`,
+            type: "function",
+            function: {
+              name: item.name,
+              arguments: JSON.stringify(item.arguments),
+            },
+          });
+        }
       }
+
+      return calls.length > 0 ? calls : null;
+    } catch {
+      // Fall through to XML parsing
+    }
+  }
+
+  // Try XML format: <terminal><command>...</command></terminal>
+  // or <tool><name>terminal</name><args>...</args></tool>
+  const xmlPatterns = [
+    // Pattern: <toolName><param>value</param></toolName>
+    /<(terminal|read|write|patch|delete|search|web-search|git-status|git-diff|test)>\s*<(?:command|path|content|query|arg|args)>([\s\S]*?)<\/(?:command|path|content|query|arg|args)>\s*<\/\1>/gi,
+    // Pattern: <tool name="..."><param>value</param></tool>
+    /<tool\s+name="(terminal|read|write|patch|delete|search|web-search|git-status|git-diff|test)"[^>]*>\s*<(?:command|path|content|query|arg|args)>([\s\S]*?)<\/(?:command|path|content|query|arg|args)>\s*<\/tool>/gi,
+  ];
+
+  for (const pattern of xmlPatterns) {
+    const calls: ToolCallRequest[] = [];
+    let match;
+    while ((match = pattern.exec(trimmed)) !== null) {
+      const toolName = match[1].toLowerCase();
+      const argValue = match[2].trim();
+      
+      // Build arguments based on tool type
+      const args: Record<string, string> = {};
+      if (toolName === "terminal" || toolName === "test") {
+        args.command = argValue;
+      } else if (toolName === "read" || toolName === "delete") {
+        args.path = argValue;
+      } else if (toolName === "write") {
+        // Try to parse "path :: content" format
+        const sepIdx = argValue.indexOf("::");
+        if (sepIdx !== -1) {
+          args.path = argValue.slice(0, sepIdx).trim();
+          args.content = argValue.slice(sepIdx + 2).trim();
+        } else {
+          args.path = argValue;
+        }
+      } else if (toolName === "search" || toolName === "web-search") {
+        args.query = argValue;
+      } else if (toolName === "patch") {
+        const sepIdx = argValue.indexOf("::");
+        if (sepIdx !== -1) {
+          args.path = argValue.slice(0, sepIdx).trim();
+          args.patch = argValue.slice(sepIdx + 2).trim();
+        } else {
+          args.path = argValue;
+        }
+      } else {
+        args.command = argValue;
+      }
+
+      calls.push({
+        id: `call_xml_${Date.now()}_${calls.length}`,
+        type: "function",
+        function: {
+          name: toolName,
+          arguments: JSON.stringify(args),
+        },
+      });
     }
 
-    return calls.length > 0 ? calls : null;
-  } catch {
-    return null;
+    if (calls.length > 0) return calls;
   }
+
+  // Try /tool command format: /tool terminal <command>
+  const slashToolMatch = trimmed.match(/^\/tool\s+(terminal|read|write|patch|delete|search|web-search|git-status|git-diff|test)\s+(.+)$/i);
+  if (slashToolMatch) {
+    const toolName = slashToolMatch[1].toLowerCase();
+    const argValue = slashToolMatch[2].trim();
+    const args: Record<string, string> = {};
+    
+    if (toolName === "terminal" || toolName === "test") {
+      args.command = argValue;
+    } else if (toolName === "read" || toolName === "delete") {
+      args.path = argValue;
+    } else if (toolName === "write") {
+      const sepIdx = argValue.indexOf("::");
+      if (sepIdx !== -1) {
+        args.path = argValue.slice(0, sepIdx).trim();
+        args.content = argValue.slice(sepIdx + 2).trim();
+      } else {
+        args.path = argValue;
+      }
+    } else if (toolName === "search" || toolName === "web-search") {
+      args.query = argValue;
+    } else {
+      args.command = argValue;
+    }
+
+    return [{
+      id: `call_slash_${Date.now()}`,
+      type: "function",
+      function: {
+        name: toolName,
+        arguments: JSON.stringify(args),
+      },
+    }];
+  }
+
+  return null;
 }
 
 function buildReducedRetryMessages(messages: ChatMessage[]): ChatMessage[] {
@@ -177,7 +274,7 @@ export async function* runAgentLoop(
     inputSchema: def.inputSchema,
   }));
   let consecutiveNudges = 0;
-  const MAX_NUDGES = 2;
+  const MAX_NUDGES = 3;
   // Track failed tool calls to detect repeated failures on the same command pattern
   const recentFailures: Array<{ pattern: string; message: string; turn: number }> = [];
   const MAX_RECENT_FAILURES = 10;

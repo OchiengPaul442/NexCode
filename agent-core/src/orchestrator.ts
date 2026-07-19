@@ -154,6 +154,9 @@ export class NexcodeOrchestrator {
         openAIApiKey: options.openAIApiKey ?? process.env.OPENAI_API_KEY,
       },
       toolDefaults: {
+        searchProvider: options.searchProvider,
+        searchApiKey: options.searchApiKey,
+        searchBaseUrl: options.searchBaseUrl,
         tavilyApiKey: options.tavilyApiKey ?? process.env.TAVILY_API_KEY,
         tavilyBaseUrl: options.tavilyBaseUrl ?? "https://api.tavily.com/search",
       },
@@ -1360,9 +1363,9 @@ export class NexcodeOrchestrator {
     ];
 
     const config: AgentLoopConfig = {
-      maxTurns: 15,
-      maxTokensPerTurn: 4096,
-      timeoutMs: 300000,
+      maxTurns: parseInt(process.env.NEXCODE_MAX_TURNS || "30", 10),
+      maxTokensPerTurn: parseInt(process.env.NEXCODE_MAX_TOKENS || "4096", 10),
+      timeoutMs: parseInt(process.env.NEXCODE_TIMEOUT_MS || "600000", 10),
     };
 
     yield {

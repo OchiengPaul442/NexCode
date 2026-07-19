@@ -2425,6 +2425,57 @@ function MessageContent({
   );
 }
 
+// ─── Sources Section (collapsible) ───────────────────────────────────────────
+const SourcesSection = React.memo(function SourcesSection({
+  sources,
+}: {
+  sources: Array<{ title: string; url: string; snippet?: string }>;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const VISIBLE_COUNT = 5;
+  const hasMore = sources.length > VISIBLE_COUNT;
+  const displaySources = expanded ? sources : sources.slice(0, VISIBLE_COUNT);
+
+  if (sources.length === 0) return null;
+
+  return (
+    <div className="nk-sources">
+      <button
+        className="nk-sources-header"
+        onClick={() => setExpanded(!expanded)}
+        type="button"
+      >
+        <Globe size={12} className="nk-sources-icon" />
+        <span className="nk-sources-title">Sources</span>
+        <span className="nk-sources-count">{sources.length}</span>
+        <ChevronRight
+          size={10}
+          className="nk-sources-chevron"
+          style={{ transform: expanded ? "rotate(90deg)" : "rotate(0deg)" }}
+        />
+      </button>
+      {expanded && (
+        <div className="nk-sources-list">
+          {displaySources.map((src, i) => (
+            <a
+              key={i}
+              className="nk-source-item"
+              href={src.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={src.snippet ?? src.title}
+            >
+              <span className="nk-source-index">{i + 1}</span>
+              <span className="nk-source-title">{src.title}</span>
+              <ExternalLink size={10} className="nk-source-link-icon" />
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+});
+
 // ─── Message Bubble ──────────────────────────────────────────────────────────
 function MessageBubble({
   message,
@@ -2580,7 +2631,7 @@ function MessageBubble({
           <ActivityTodosSection todos={message.activityTodos!} />
         )}
 
-        {/* Web search sources */}
+        {/* Web search sources - collapsible */}
         {!isUser && (() => {
           const allSources = (message.toolExecutions ?? [])
             .flatMap(exec => exec.sources ?? []);
@@ -2593,30 +2644,7 @@ function MessageBubble({
             return true;
           });
           if (unique.length === 0) return null;
-          return (
-            <div className="nk-sources">
-              <div className="nk-sources-header">
-                <Globe size={12} className="nk-sources-icon" />
-                <span className="nk-sources-title">Sources</span>
-              </div>
-              <div className="nk-sources-list">
-                {unique.map((src, i) => (
-                  <a
-                    key={i}
-                    className="nk-source-item"
-                    href={src.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title={src.snippet ?? src.title}
-                  >
-                    <span className="nk-source-index">{i + 1}</span>
-                    <span className="nk-source-title">{src.title}</span>
-                    <ExternalLink size={10} className="nk-source-link-icon" />
-                  </a>
-                ))}
-              </div>
-            </div>
-          );
+          return <SourcesSection sources={unique} />;
         })()}
 
         {/* Debug */}

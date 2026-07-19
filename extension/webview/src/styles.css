@@ -3526,47 +3526,70 @@ html, body {
   color: var(--vscode-editor-foreground, #d4d4d4);
 }
 
-/* ── Web Search Sources ────────────────────────────────────────────────────── */
+/* ── Web Search Sources (collapsible) ──────────────────────────────────────── */
 .nk-sources {
   margin-top: 8px;
-  padding: 8px 0;
-  border-top: 1px solid var(--vscode-widget-border, #333);
 }
 
 .nk-sources-header {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-bottom: 6px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+  transition: background 0.1s;
+}
+
+.nk-sources-header:hover {
+  background: var(--vscode-list-hoverBackground, rgba(255,255,255,0.05));
 }
 
 .nk-sources-icon {
   color: var(--vscode-descriptionForeground, #8b8b9a);
+  flex-shrink: 0;
 }
 
 .nk-sources-title {
   font-size: 11px;
   font-weight: 600;
   color: var(--vscode-descriptionForeground, #8b8b9a);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+}
+
+.nk-sources-count {
+  font-size: 10px;
+  color: var(--vscode-descriptionForeground, #8b8b9a);
+  background: var(--vscode-editorWidget-background, #1e1e2e);
+  padding: 1px 5px;
+  border-radius: 8px;
+}
+
+.nk-sources-chevron {
+  color: var(--vscode-descriptionForeground, #8b8b9a);
+  margin-left: auto;
+  transition: transform 0.15s;
 }
 
 .nk-sources-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
+  padding: 4px 0 4px 20px;
 }
 
 .nk-source-item {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 6px;
-  border-radius: 4px;
+  padding: 3px 6px;
+  border-radius: 3px;
   text-decoration: none;
   color: var(--vscode-textLink-foreground, #3794ff);
-  font-size: 12px;
+  font-size: 11px;
   transition: background 0.1s;
 }
 
@@ -3576,9 +3599,9 @@ html, body {
 
 .nk-source-index {
   font-size: 10px;
-  font-weight: 600;
   color: var(--vscode-descriptionForeground, #8b8b9a);
   min-width: 14px;
+  text-align: right;
 }
 
 .nk-source-title {
@@ -3591,6 +3614,12 @@ html, body {
 .nk-source-link-icon {
   color: var(--vscode-descriptionForeground, #8b8b9a);
   flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.nk-source-item:hover .nk-source-link-icon {
+  opacity: 1;
 }
 
 /* ── Details / debug ──────────────────────────────────────────────────────── */

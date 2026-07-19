@@ -3321,6 +3321,16 @@ html, body {
   font-weight: 500;
 }
 
+.nk-tool-group-summary {
+  color: var(--vscode-terminal-foreground, #cccccc);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 400px;
+  opacity: 0.8;
+}
+
 .nk-tool-group-file {
   color: var(--vscode-textLink-foreground, #3794ff);
   cursor: pointer;

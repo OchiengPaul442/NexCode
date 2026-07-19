@@ -2171,6 +2171,42 @@ function ToolGroupLine({
   const mainFile = files[0];
   const fileName = mainFile ? mainFile.split(/[/\\]/).pop() ?? mainFile : null;
 
+  // Get summary of what the tool is doing
+  const summary = useMemo(() => {
+    if (group.executions.length === 0) return null;
+    const firstExec = group.executions[0];
+
+    switch (group.type) {
+      case "shell": {
+        // Show the command being run
+        const cmd = firstExec.command;
+        const display = cmd.length > 60 ? cmd.slice(0, 60) + "..." : cmd;
+        return display;
+      }
+      case "search": {
+        // Show the search query
+        const query = firstExec.command;
+        return query.length > 50 ? query.slice(0, 50) + "..." : query;
+      }
+      case "read": {
+        // Show what's being read
+        return mainFile ? mainFile.split(/[/\\]/).pop() : null;
+      }
+      case "edit": {
+        // Show the file being edited
+        return mainFile ? mainFile.split(/[/\\]/).pop() : null;
+      }
+      case "patch": {
+        return mainFile ? mainFile.split(/[/\\]/).pop() : null;
+      }
+      case "delete": {
+        return mainFile ? mainFile.split(/[/\\]/).pop() : null;
+      }
+      default:
+        return null;
+    }
+  }, [group, mainFile]);
+
   // Calculate stats for edit groups
   const editStats = useMemo(() => {
     if (group.type !== "edit" && group.type !== "patch") return null;
@@ -2205,18 +2241,8 @@ function ToolGroupLine({
         <span className="nk-tool-group-label">
           {group.label}
         </span>
-        {fileName && (
-          <span
-            className="nk-tool-group-file"
-            onClick={handleClick}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") handleClick();
-            }}
-          >
-            {fileName}
-          </span>
+        {summary && (
+          <span className="nk-tool-group-summary">{summary}</span>
         )}
         {editStats && (
           <span className="nk-tool-group-stats">

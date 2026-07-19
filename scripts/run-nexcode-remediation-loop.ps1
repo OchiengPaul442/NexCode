@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$Model = "",
     [int]$MaxIterations = 80,
@@ -53,9 +53,37 @@ foreach ($relative in $requiredFiles) {
     }
 }
 
-$opencode = Get-Command opencode -ErrorAction SilentlyContinue
-if (-not $opencode) {
+$opencodeCommand = Get-Command opencode -ErrorAction SilentlyContinue
+if (-not $opencodeCommand) {
     Fail "OpenCode is not installed or is not available on PATH."
+}
+
+# Prefer the native Windows binary instead of the npm-generated opencode.ps1
+# wrapper. Windows PowerShell can otherwise turn native stderr into a
+# NativeCommandError and hide the actual OpenCode output.
+$OpenCodeExecutable = $null
+
+$nativeCommand = Get-Command opencode.exe -ErrorAction SilentlyContinue
+if ($nativeCommand -and (Test-Path $nativeCommand.Source)) {
+    $OpenCodeExecutable = $nativeCommand.Source
+}
+
+if (-not $OpenCodeExecutable -and $opencodeCommand.Source) {
+    $wrapperDirectory = Split-Path -Parent $opencodeCommand.Source
+    $candidate = Join-Path $wrapperDirectory "node_modules\opencode-ai\bin\opencode.exe"
+    if (Test-Path $candidate) {
+        $OpenCodeExecutable = $candidate
+    }
+}
+
+if (-not $OpenCodeExecutable) {
+    Fail "Could not locate the native opencode.exe binary. Run 'Get-Command opencode -All' and reinstall OpenCode if necessary."
+}
+
+Write-Host "Using OpenCode binary: $OpenCodeExecutable" -ForegroundColor DarkGray
+
+if ([string]::IsNullOrWhiteSpace($Model)) {
+    Fail "A model is required. Pass -Model 'provider/model'."
 }
 
 $branch = (& git branch --show-current).Trim()
@@ -117,6 +145,8 @@ End after one batch and print the required NEXCODE_LOOP_RESULT marker.
     $iterationLog = Join-Path $logDir ("iteration-{0:D3}-{1}.log" -f $i, $timestamp)
 
     $arguments = @(
+        "--print-logs",
+        "--log-level", "INFO",
         "run",
         "--auto",
         "--agent", "nexcode-remediator",
@@ -135,12 +165,32 @@ End after one batch and print the required NEXCODE_LOOP_RESULT marker.
     $arguments += $prompt
 
     try {
-        & opencode @arguments 2>&1 | Tee-Object -FilePath $iterationLog
+        # Windows PowerShell 5.1 may promote native stderr to ErrorRecord objects.
+        # Temporarily keep native stderr non-terminating and stringify it for logs.
+        $previousErrorActionPreference = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+
+        if (Test-Path variable:PSNativeCommandUseErrorActionPreference) {
+            $previousNativePreference = $PSNativeCommandUseErrorActionPreference
+            $PSNativeCommandUseErrorActionPreference = $false
+        }
+
+        & $OpenCodeExecutable @arguments 2>&1 |
+            ForEach-Object { $_.ToString() } |
+            Tee-Object -FilePath $iterationLog
+
         $exitCode = $LASTEXITCODE
     }
     catch {
         $exitCode = 1
         $_ | Out-String | Tee-Object -FilePath $iterationLog -Append
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+
+        if (Test-Path variable:previousNativePreference) {
+            $PSNativeCommandUseErrorActionPreference = $previousNativePreference
+        }
     }
 
     if ($exitCode -ne 0) {

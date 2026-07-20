@@ -17,7 +17,7 @@
   "activeFindingIds": [],
   "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004", "NC-005", "NC-006", "NC-007", "NC-008", "NC-009", "NC-010", "NC-016", "NC-017", "NC-018", "NC-019", "NC-020", "NC-021", "NC-022", "NC-024", "NC-028", "NC-034", "NC-035"],
   "blockedFindingIds": [],
-  "lastCommit": "pending",
+  "lastCommit": "5cfe3fd",
   "lastSummary": "NC-034 fixed: Three dead/disconnected source modules removed. (1) agent-core/src/agents/subagent.ts deleted — comment-only placeholder for removed SubAgentManager, no imports anywhere. (2) agent-core/src/tools/batchEditor.ts deleted — unused BatchEditor class, no imports or instantiation anywhere. (3) extension/webview/src/components/StreamingText.tsx deleted — unused React component, not imported by any other component. (4) 9 regression tests in deadModuleRemoval.test.ts: file existence checks (3), no barrel exports (2), no imports in agent-core source (2), no imports in webview source (1), no other dead code references (1). 1075/1075 unit tests pass. Build clean. All type-checks clean.",
   "lastVerification": {
     "focusedTests": "PASS — 9/9 deadModuleRemoval tests pass",

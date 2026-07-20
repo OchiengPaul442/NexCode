@@ -1,9 +1,147 @@
-import { exec, execFile, spawn } from "child_process";
+import { exec, execFile, spawn, ChildProcess } from "child_process";
 import { promisify } from "util";
 import { ToolResult } from "../types";
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
+
+/**
+ * Kill a child process tree cross-platform.
+ * On POSIX, sends SIGTERM to the process group (negative PID) when detached.
+ * On Windows, uses taskkill /T to terminate the tree.
+ * Falls back to child.kill() if tree kill fails.
+ */
+function killProcessTree(child: ChildProcess): void {
+  const pid = child.pid;
+  if (!pid) {
+    child.kill();
+    return;
+  }
+
+  try {
+    if (IS_WINDOWS) {
+      // taskkill /T /F /PID terminates the entire process tree on Windows
+      const { execSync } = require("child_process") as typeof import("child_process");
+      execSync(`taskkill /T /F /PID ${pid}`, { stdio: "ignore" });
+    } else {
+      // On POSIX, kill the process group (negative PID) to catch all children.
+      // If the child was spawned with detached:true, it has its own process group.
+      // Otherwise, try killing -pid anyway — it may fail silently, and child.kill() is the fallback.
+      try {
+        process.kill(-pid, "SIGTERM");
+      } catch {
+        // Process group kill failed (not a group leader, or already exited)
+      }
+      // Also kill the direct child as fallback
+      child.kill("SIGTERM");
+    }
+  } catch {
+    // Fallback: kill the direct child process
+    child.kill();
+  }
+}
+
+/**
+ * Execute a command with abort signal support.
+ * Returns a promise that resolves with stdout/stderr or rejects on error.
+ * When the signal fires, the child process is killed.
+ */
+function execWithSignal(
+  command: string,
+  options: import("child_process").ExecOptions & { signal?: AbortSignal },
+): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    let onAbort: (() => void) | undefined;
+    let listenerAdded = false;
+
+    const cleanup = () => {
+      if (listenerAdded && options.signal && onAbort) {
+        options.signal.removeEventListener("abort", onAbort);
+        listenerAdded = false;
+      }
+    };
+
+    const child = exec(command, options, (error, stdout, stderr) => {
+      // Clean up abort listener in the callback path (close event may not fire for failed commands)
+      cleanup();
+      if (error) {
+        // Attach stdout/stderr to the error for callers that need them
+        (error as any).stdout = stdout;
+        (error as any).stderr = stderr;
+        reject(error);
+      } else {
+        resolve({ stdout: stdout as string, stderr: stderr as string });
+      }
+    });
+
+    if (options.signal) {
+      if (options.signal.aborted) {
+        killProcessTree(child);
+        return;
+      }
+      onAbort = () => {
+        killProcessTree(child);
+      };
+      options.signal.addEventListener("abort", onAbort, { once: true });
+      listenerAdded = true;
+      // Also clean up on close (backup path; safe to call twice)
+      child.on("close", () => {
+        cleanup();
+      });
+    }
+  });
+}
+
+/**
+ * Execute a file with abort signal support.
+ * Returns a promise that resolves with stdout/stderr or rejects on error.
+ * When the signal fires, the child process is killed.
+ */
+function execFileWithSignal(
+  command: string,
+  args: string[],
+  options: import("child_process").ExecFileOptions & { signal?: AbortSignal },
+): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    let onAbort: (() => void) | undefined;
+    let listenerAdded = false;
+
+    const cleanup = () => {
+      if (listenerAdded && options.signal && onAbort) {
+        options.signal.removeEventListener("abort", onAbort);
+        listenerAdded = false;
+      }
+    };
+
+    const child = execFile(command, args, options, (error, stdout, stderr) => {
+      // Clean up abort listener in the callback path (close event may not fire for failed commands)
+      cleanup();
+      if (error) {
+        (error as any).stdout = stdout;
+        (error as any).stderr = stderr;
+        reject(error);
+      } else {
+        resolve({ stdout: stdout as string, stderr: stderr as string });
+      }
+    });
+
+    if (options.signal) {
+      if (options.signal.aborted) {
+        killProcessTree(child);
+        return;
+      }
+      onAbort = () => {
+        killProcessTree(child);
+      };
+      options.signal.addEventListener("abort", onAbort, { once: true });
+      listenerAdded = true;
+      // Also clean up on close (backup path; safe to call twice)
+      child.on("close", () => {
+        cleanup();
+      });
+    }
+  });
+}
 
 const MAX_COMMAND_LENGTH = 2_000;
 
@@ -468,7 +606,11 @@ export class TerminalTool {
     return this.workspaceRoot;
   }
 
-  public async run(command: string, timeoutMs = 30_000): Promise<ToolResult> {
+  /**
+   * Execute a terminal command.
+   * @param signal Optional AbortSignal. When fired, the child process tree is killed.
+   */
+  public async run(command: string, timeoutMs = 30_000, signal?: AbortSignal): Promise<ToolResult> {
     const normalizedCommand = normalizeTerminalCommand(command);
     const validationError = this.validateCommand(normalizedCommand);
     if (validationError) {
@@ -478,18 +620,27 @@ export class TerminalTool {
       };
     }
 
+    // Fast-fail if already aborted
+    if (signal?.aborted) {
+      return {
+        ok: false,
+        output: "Command cancelled: abort signal was already fired.",
+      };
+    }
+
     try {
-      const execOptions: import("child_process").ExecOptions = {
+      const execOptions: import("child_process").ExecOptions & { signal?: AbortSignal } = {
         cwd: this.workspaceRoot,
         timeout: timeoutMs,
         maxBuffer: 2 * 1024 * 1024,
+        signal,
       };
 
       if (IS_WINDOWS) {
         execOptions.shell = "powershell.exe";
       }
 
-      const { stdout, stderr } = await execAsync(normalizedCommand, execOptions);
+      const { stdout, stderr } = await execWithSignal(normalizedCommand, execOptions);
 
       return {
         ok: true,
@@ -504,6 +655,15 @@ export class TerminalTool {
       const stderr = typedError.stderr ?? "";
       const stdout = typedError.stdout ?? "";
       const message = typedError.message ?? "";
+
+      // If the error is from abort signal, report cancellation clearly
+      if (signal?.aborted || message.includes("aborted") || message.includes("killed")) {
+        return {
+          ok: false,
+          output: "Command cancelled by abort signal.",
+        };
+      }
+
       const rawOutput = `${stdout}${stderr}${message}`.trim();
       const hint = analyzeCommandFailure(normalizedCommand, stderr, stdout);
       return {
@@ -513,19 +673,33 @@ export class TerminalTool {
     }
   }
 
+  /**
+   * Execute a command safely (execFile, no shell interpretation).
+   * @param signal Optional AbortSignal. When fired, the child process tree is killed.
+   */
   public async runSafe(
     command: string,
     args: string[],
     timeoutMs = 30_000,
+    signal?: AbortSignal,
   ): Promise<ToolResult> {
+    // Fast-fail if already aborted
+    if (signal?.aborted) {
+      return {
+        ok: false,
+        output: "Command cancelled: abort signal was already fired.",
+      };
+    }
+
     try {
-      const execOptions: import("child_process").ExecFileOptions = {
+      const execOptions: import("child_process").ExecFileOptions & { signal?: AbortSignal } = {
         cwd: this.workspaceRoot,
         timeout: timeoutMs,
         maxBuffer: 2 * 1024 * 1024,
+        signal,
       };
 
-      const { stdout, stderr } = await execFileAsync(command, args, execOptions);
+      const { stdout, stderr } = await execFileWithSignal(command, args, execOptions);
 
       return {
         ok: true,
@@ -540,6 +714,15 @@ export class TerminalTool {
       const stderr = typedError.stderr ?? "";
       const stdout = typedError.stdout ?? "";
       const message = typedError.message ?? "";
+
+      // If the error is from abort signal, report cancellation clearly
+      if (signal?.aborted || message.includes("aborted") || message.includes("killed")) {
+        return {
+          ok: false,
+          output: "Command cancelled by abort signal.",
+        };
+      }
+
       const rawOutput = `${stdout}${stderr}${message}`.trim();
       const hint = analyzeCommandFailure(command, stderr, stdout);
       return {
@@ -549,9 +732,14 @@ export class TerminalTool {
     }
   }
 
+  /**
+   * Execute a terminal command and stream output chunks.
+   * @param signal Optional AbortSignal. When fired, the child process tree is killed.
+   */
   public async *stream(
     command: string,
     timeoutMs = 30_000,
+    signal?: AbortSignal,
   ): AsyncGenerator<string, ToolResult> {
     const normalizedCommand = normalizeTerminalCommand(command);
     const validationError = this.validateCommand(normalizedCommand);
@@ -559,6 +747,14 @@ export class TerminalTool {
       return {
         ok: false,
         output: `Command blocked by safety policy: ${validationError}`,
+      };
+    }
+
+    // Fast-fail if already aborted
+    if (signal?.aborted) {
+      return {
+        ok: false,
+        output: "Command cancelled: abort signal was already fired.",
       };
     }
 
@@ -578,6 +774,7 @@ export class TerminalTool {
     let resolveNext: (() => void) | null = null;
     let settled = false;
     let timedOut = false;
+    let cancelled = false;
     let exitCode: number | null = null;
     let output = "";
 
@@ -602,8 +799,28 @@ export class TerminalTool {
     const timeout = setTimeout(() => {
       timedOut = true;
       pushChunk(`\n[command timed out after ${timeoutMs}ms]\n`);
-      child.kill();
+      killProcessTree(child);
     }, timeoutMs);
+
+    // Abort signal handler: kill the process tree
+    const onAbort = () => {
+      cancelled = true;
+      pushChunk("\n[command cancelled by abort signal]\n");
+      killProcessTree(child);
+    };
+
+    if (signal) {
+      if (signal.aborted) {
+        cancelled = true;
+        killProcessTree(child);
+        clearTimeout(timeout);
+        return {
+          ok: false,
+          output: "Command cancelled: abort signal was already fired.",
+        };
+      }
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
 
     child.stdout?.on("data", (data: Buffer | string) => {
       pushChunk(data.toString());
@@ -617,16 +834,18 @@ export class TerminalTool {
       pushChunk(`\n${String(error)}\n`);
       settled = true;
       clearTimeout(timeout);
+      if (signal) signal.removeEventListener("abort", onAbort);
       wake();
     });
 
     child.on("close", (code) => {
       exitCode = code;
-      if (!timedOut && typeof code === "number" && code !== 0) {
+      if (!timedOut && !cancelled && typeof code === "number" && code !== 0) {
         pushChunk(`\n[process exited with code ${code}]\n`);
       }
       settled = true;
       clearTimeout(timeout);
+      if (signal) signal.removeEventListener("abort", onAbort);
       wake();
     });
 
@@ -651,12 +870,21 @@ export class TerminalTool {
       }
     } finally {
       clearTimeout(timeout);
+      if (signal) signal.removeEventListener("abort", onAbort);
       if (!settled) {
-        child.kill();
+        killProcessTree(child);
       }
     }
 
     const trimmedOutput = output.trim();
+
+    if (cancelled) {
+      return {
+        ok: false,
+        output: trimmedOutput || "Command cancelled by abort signal.",
+      };
+    }
+
     if (!timedOut && exitCode !== 0) {
       const hint = analyzeCommandFailure(normalizedCommand, trimmedOutput, "");
       return {

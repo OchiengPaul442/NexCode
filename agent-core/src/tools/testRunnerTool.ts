@@ -72,11 +72,11 @@ export class TestRunnerTool {
     return commandBuilder(input.filter);
   }
 
-  public run(input?: string | TestToolInput): Promise<ToolResult> {
-    return this.terminal.run(this.resolveCommand(input), 300_000);
+  public run(input?: string | TestToolInput, signal?: AbortSignal): Promise<ToolResult> {
+    return this.terminal.run(this.resolveCommand(input), 300_000, signal);
   }
 
-  public stream(input?: string | TestToolInput): AsyncGenerator<string, ToolResult> {
-    return this.terminal.stream(this.resolveCommand(input), 300_000);
+  public stream(input?: string | TestToolInput, signal?: AbortSignal): AsyncGenerator<string, ToolResult> {
+    return this.terminal.stream(this.resolveCommand(input), 300_000, signal);
   }
 }

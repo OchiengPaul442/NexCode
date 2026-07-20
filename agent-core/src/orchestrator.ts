@@ -680,7 +680,7 @@ export class NexcodeOrchestrator {
           message: "Collecting workspace statistics...",
         };
 
-        const result = await this.tools.runToolCall(workspaceStatsCommand);
+        const result = await this.tools.runToolCall(workspaceStatsCommand, request.abortSignal);
         const boundedOutput = clampText(
           result.output,
           MAX_TOOL_OUTPUT_CHARS,
@@ -1738,6 +1738,7 @@ export class NexcodeOrchestrator {
     model: string,
     diagnostics: string[],
     allowWebSearch: boolean,
+    abortSignal?: AbortSignal,
   ): AsyncGenerator<OrchestratorEvent, OrchestratorResponse> {
     const toolCommand = prompt.replace(/^\s*\/tool\s+/, "").trim();
 
@@ -1760,7 +1761,7 @@ export class NexcodeOrchestrator {
       };
     }
 
-    const result = await this.tools.runToolCall(toolCommand);
+    const result = await this.tools.runToolCall(toolCommand, abortSignal);
 
     if (result.requiresApproval) {
       const toolName = result.toolName ?? "";
@@ -1787,7 +1788,7 @@ export class NexcodeOrchestrator {
         }
         // Re-run the tool after approval
         this.tools.markApproved(toolName, pendingArg);
-        const approvedResult = await this.tools.runToolCall(toolCommand);
+        const approvedResult = await this.tools.runToolCall(toolCommand, abortSignal);
         const boundedOutput = clampText(
           approvedResult.output,
           MAX_TOOL_OUTPUT_CHARS,
@@ -1911,7 +1912,7 @@ export class NexcodeOrchestrator {
         provider,
         model,
         diagnostics,
-        this.tools.terminal.stream(terminalMatch[1].trim()),
+        this.tools.terminal.stream(terminalMatch[1].trim(), 30_000, abortSignal),
         abortSignal,
       );
     }
@@ -1995,7 +1996,7 @@ export class NexcodeOrchestrator {
         }
       }
 
-      const result = await this.tools.runToolCall(toolCommand);
+      const result = await this.tools.runToolCall(toolCommand, abortSignal);
       const boundedOutput = clampText(
         result.output,
         MAX_TOOL_OUTPUT_CHARS,
@@ -2040,6 +2041,7 @@ export class NexcodeOrchestrator {
       model,
       diagnostics,
       allowWebSearch,
+      abortSignal,
     );
   }
 

@@ -535,6 +535,7 @@ export async function* runAgentLoop(
       const toolStartTime = Date.now();
       let result = await tools.runToolCall(
         `${toolCall.function.name} ${argString}`,
+        signal,
       );
 
       if (result.requiresApproval) {
@@ -547,6 +548,7 @@ export async function* runAgentLoop(
             tools.markApproved(toolName, pendingArg);
             result = await tools.runToolCall(
               `${toolCall.function.name} ${argString}`,
+              signal,
             );
           } else {
             result = {

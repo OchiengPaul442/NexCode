@@ -169,7 +169,7 @@ export class ToolRegistry {
     return null;
   }
 
-  public async runToolCall(input: string): Promise<ToolResult> {
+  public async runToolCall(input: string, signal?: AbortSignal): Promise<ToolResult> {
     const auditStart = Date.now();
     const trimmed = input.trim();
     if (!trimmed) {
@@ -217,23 +217,23 @@ export class ToolRegistry {
         result = await this.search.webSearch(arg);
         break;
       case "terminal":
-        result = await this.terminal.run(arg);
+        result = await this.terminal.run(arg, 30_000, signal);
         break;
       case "git-status":
-        result = await this.git.status();
+        result = await this.git.status(signal);
         break;
       case "git-diff":
-        result = await this.git.diff();
+        result = await this.git.diff(signal);
         break;
       case "git-branch":
-        result = await this.git.branch();
+        result = await this.git.branch(signal);
         break;
       case "git-stage": {
         const stagePaths = this.parsePathList(arg);
         if (!stagePaths) {
           result = { ok: false, output: "Use: git-stage <path1> [path2] ..." };
         } else {
-          result = await this.git.stage(stagePaths);
+          result = await this.git.stage(stagePaths, signal);
         }
         break;
       }
@@ -242,24 +242,24 @@ export class ToolRegistry {
         if (!unstagePaths) {
           result = { ok: false, output: "Use: git-unstage <path1> [path2] ..." };
         } else {
-          result = await this.git.unstage(unstagePaths);
+          result = await this.git.unstage(unstagePaths, signal);
         }
         break;
       }
       case "git-commit":
-        result = await this.git.commit(arg);
+        result = await this.git.commit(arg, signal);
         break;
       case "git-create-branch":
-        result = await this.git.createBranch(arg);
+        result = await this.git.createBranch(arg, signal);
         break;
       case "git-log":
-        result = await this.git.log(arg ? parseInt(arg, 10) || 10 : 10);
+        result = await this.git.log(arg ? parseInt(arg, 10) || 10 : 10, signal);
         break;
       case "git-show":
-        result = await this.git.show(arg);
+        result = await this.git.show(arg, signal);
         break;
       case "test":
-        result = await this.test.run(arg);
+        result = await this.test.run(arg, signal);
         break;
       case "read":
         result = await this.filesystem.readFile(arg);
@@ -544,7 +544,7 @@ export class ToolRegistry {
     return result;
   }
 
-  public async runToolCallStructured(input: string): Promise<StructuredToolResult> {
+  public async runToolCallStructured(input: string, signal?: AbortSignal): Promise<StructuredToolResult> {
     const startTime = Date.now();
     const trimmed = input.trim();
     if (!trimmed) {
@@ -590,7 +590,7 @@ export class ToolRegistry {
       );
     }
 
-    const basic = await this.runToolCall(input);
+    const basic = await this.runToolCall(input, signal);
     const affectedFiles = this.extractAffectedFiles(toolName, arg);
 
     return createStructuredResult(

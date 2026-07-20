@@ -310,14 +310,15 @@
 
 ### NC-026 — Memory and audit persistence are race-prone and failures are swallowed
 - **Severity:** High
-- **Status:** pending
+- **Status:** fixed
 - **Phase:** I
 - **Dependencies:** NC-010 (concurrency)
-- **Affected files:** `agent-core/src/memory/shortTermMemory.ts`, `agent-core/src/memory/longTermMemory.ts`, `agent-core/src/self-improve/feedbackLogger.ts`, `agent-core/src/tools/auditLog.ts:25-53`
-- **Verified:** unverified
-- **Required tests:** serialized persistence per workspace; flush on deactivation/completion; degraded status surfaced; audit logs in extension storage
-- **Verification commands:** `npx vitest run agent-core/tests/persistence.test.ts`
-- **Resolution evidence:** (none yet)
+- **Affected files:** `agent-core/src/memory/shortTermMemory.ts`, `agent-core/src/memory/longTermMemory.ts`, `agent-core/src/memory/memoryManager.ts`, `agent-core/src/self-improve/feedbackLogger.ts`, `agent-core/src/tools/auditLog.ts`
+- **Verified:** yes — verified against current source; all persistence classes now have write queues, error surfacing, and shutdown methods
+- **Required tests:** serialized persistence per workspace; flush on deactivation/completion; degraded status surfaced; concurrent writes safe
+- **Verification commands:** `npx vitest run agent-core/tests/persistenceReliability.test.ts`
+- **Resolution evidence:** `9117a49` — (1) `FeedbackLogger`: added write queue serialization via promise chain, `onError` callback, `flush()`/`dispose()` methods, `disposed` guard, `getLastError()`/`hasPersistenceError()`/`resetErrorState()`. (2) `AuditLog`: added write queue serialization, atomic `splice(0)` before async write to prevent snapshot/splice race, re-queue entries on failure instead of data loss, `dispose()` clears timer and flushes, `getBufferedCount()`. (3) `ShortTermMemory`: added `onError` callback, `flush()`/`dispose()`, `disposed` guard, removed silent `.catch(() => {})` swallowing — errors now captured via `captureError()`. (4) `LongTermMemoryStore`: added `onError` callback, `flush()`/`dispose()`, `disposed` guard, errors in `readAll()`/`add()` surface instead of silent fallback. (5) `MemoryManager`: added `flush()`/`dispose()` delegating to both stores, `onError` callback propagation, `hasPersistenceError()`. (6) Backward-compatible constructors preserved. (7) 34 regression tests in `agent-core/tests/persistenceReliability.test.ts`. 1383/1383 tests pass. Build clean. All type-checks clean.
+- **Remaining risk:** Audit log is still stored in the workspace (`.nexcode/audit.jsonl`), meaning the agent can edit it. Phase I should consider moving to extension storage.
 
 ### NC-027 — Secret redaction is not sufficient for extensible multi-provider agent
 - **Severity:** High
@@ -448,14 +449,15 @@
 
 ### NC-038 — Generated webview artifacts are tracked
 - **Severity:** Medium
-- **Status:** pending
+- **Status:** fixed
 - **Phase:** J
 - **Dependencies:** none
 - **Affected files:** `extension/media/main.js`, `extension/media/main.css`, `.gitignore`
-- **Verified:** unverified
-- **Required tests:** generated files not in Git; CI enforces clean regeneration
-- **Verification commands:** `.gitignore` inspection, `git status` after build
-- **Resolution evidence:** (none yet)
+- **Verified:** yes — verified against current source; generated files removed from git tracking, added to .gitignore
+- **Required tests:** generated files not in Git; build scripts still reference output files; static assets remain tracked
+- **Verification commands:** `npx vitest run agent-core/tests/generatedArtifacts.test.ts`
+- **Resolution evidence:** `.gitignore` changed: added `extension/media/main.js` and `extension/media/main.css` entries (specific, not blanket `extension/media/*`). `git rm --cached` removed both generated files from tracking. Static assets (icon.png, activitybar-icon.svg, kiboko.svg, fonts) remain tracked. Build scripts (`build:webview:js`, `build:webview:css`) still reference the output files. 9 regression tests in `agent-core/tests/generatedArtifacts.test.ts`: .gitignore entries present (3), git tracking status verified (2), build scripts reference output (2), static assets still tracked (2). 1397/1397 tests pass. Build clean. All type-checks clean.
+- **Remaining risk:** CI/build pipelines that package from a fresh clone without running `npm run build:webview` first will not have these files. This is correct behavior — the build step generates them.
 
 ### NC-039 — Constructor side effects perform network and persistence work
 - **Severity:** Medium
@@ -492,14 +494,15 @@
 
 ### NC-042 — Exposing "reasoning" by default is the wrong UX contract
 - **Severity:** Medium
-- **Status:** pending
+- **Status:** fixed
 - **Phase:** J
 - **Dependencies:** none
-- **Affected files:** `extension/package.json:132-135`
-- **Verified:** unverified
-- **Required tests:** showReasoning defaults to false; structured progress shown instead
-- **Verification commands:** manifest inspection
-- **Resolution evidence:** (none yet)
+- **Affected files:** `extension/package.json:132-135`, `extension/src/sidebarViewProvider.ts:1237`
+- **Verified:** yes — verified against current source; showReasoning defaults to false in manifest and sidebar fallback
+- **Required tests:** showReasoning defaults to false; reasoning UI components still exist when explicitly enabled
+- **Verification commands:** `npx vitest run agent-core/tests/showReasoningDefault.test.ts`
+- **Resolution evidence:** `extension/package.json` changed: `nexcodeKiboko.showReasoning` default changed from `true` to `false`. Description updated to note disabled-by-default and explain that provider-specific reasoning artifacts are unstable internal model output. `extension/src/sidebarViewProvider.ts` changed: `config.get<boolean>("showReasoning", true)` fallback changed to `config.get<boolean>("showReasoning", false)`. 5 regression tests in `agent-core/tests/showReasoningDefault.test.ts`: manifest default is false (1), description mentions disabled (1), sidebar fallback is false (1), showReasoning in allowed setting keys (1), reasoning UI components still exist in webview (1). 1397/1397 tests pass. Build clean. All type-checks clean.
+- **Remaining risk:** None — changing the default is a safe behavioral change. Users who explicitly enable showReasoning still see reasoning. The webview ReasoningIndicator component is unchanged.
 
 ### NC-043 — Completed tasks accumulate indefinitely during normal use
 - **Severity:** Medium

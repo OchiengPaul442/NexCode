@@ -1234,7 +1234,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         lightweightWorker: config.get<string>("agentModels.lightweightWorker", ""),
         reasoningReviewer: config.get<string>("agentModels.reasoningReviewer", ""),
       },
-      showReasoning: config.get<boolean>("showReasoning", true),
+      showReasoning: config.get<boolean>("showReasoning", false),
       autoApplyChanges: config.get<boolean>("autoApplyChanges", false),
       allowWebSearch: config.get<boolean>("allowWebSearch", true),
       searchProvider: config.get<string>("searchProvider", "tavily"),

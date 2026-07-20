@@ -131,8 +131,8 @@
         },
         "nexcodeKiboko.showReasoning": {
           "type": "boolean",
-          "default": true,
-          "description": "Enable reasoning details panel in chat responses."
+          "default": false,
+          "description": "Show provider-specific reasoning/thinking details in chat responses. Disabled by default to avoid exposing unstable internal model artifacts."
         },
         "nexcodeKiboko.autoApplyChanges": {
           "type": "boolean",

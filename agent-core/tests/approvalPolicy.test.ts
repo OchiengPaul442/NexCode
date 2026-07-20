@@ -23,8 +23,13 @@ describe("NC-008: Approval policy — no bypass, no extension fallback", () => {
       // Read the package.json and verify the enum
       const fs = await import("fs");
       const path = await import("path");
+      const { execSync } = await import("child_process");
+      const repoRoot = execSync("git rev-parse --show-toplevel", {
+        encoding: "utf-8",
+        timeout: 5000,
+      }).trim();
       const pkgPath = path.join(
-        process.cwd(),
+        repoRoot,
         "extension",
         "package.json",
       );

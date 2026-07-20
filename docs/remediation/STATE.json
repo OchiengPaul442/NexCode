@@ -17,7 +17,7 @@
   "activeFindingIds": [],
   "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004", "NC-005", "NC-006", "NC-007", "NC-008", "NC-009", "NC-010", "NC-011", "NC-012", "NC-013", "NC-014", "NC-015", "NC-016", "NC-017", "NC-018", "NC-019", "NC-020", "NC-021", "NC-022", "NC-024", "NC-025", "NC-027", "NC-028", "NC-034", "NC-035"],
   "blockedFindingIds": [],
-  "lastCommit": "pending",
+  "lastCommit": "fcb98fb",
   "lastSummary": "NC-027 fixed: Secret redaction enhanced for extensible multi-provider agent. (1) redactByKnownValues() — value-based redaction with sorted-by-length to avoid partial matches, regex-safe escaping. (2) redactObject() — recursive structured object redaction with cycle detection via WeakSet, key-name-based redaction for secret fields, pattern-based redaction for string values, knownValues passthrough. (3) 18 new provider token patterns: GitHub (gho_, ghs_, ghr_), GitLab (glpat-, glptt-, glr_), npm, Slack (bot, user, app, webhook), Google (API key, OAuth secret), Hugging Face, OpenRouter, Anthropic, Azure storage keys, broadened connection strings (amqp, smtp, ftp, s3, gs, abs). (4) JWT structural detection — validates header decodes to JSON with 'alg' field before redacting. (5) High-entropy hex string detection with Shannon entropy threshold, UUID/hash false-positive exclusion. (6) Authorization header pattern. (7) 77 regression tests in secretRedaction.test.ts covering all patterns, value-based, structured, JWT, high-entropy, canary, edge cases, backward compat. 1349/1349 tests pass. Build clean. All type-checks clean.",
   "lastVerification": {
     "focusedTests": "PASS — 77/77 secretRedaction tests pass",

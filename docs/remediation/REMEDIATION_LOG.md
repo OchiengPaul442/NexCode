@@ -1075,3 +1075,81 @@ Append one section per autonomous iteration. Never rewrite prior entries.
 | `agent-core/tests/malformedToolCalls.test.ts` | New regression test file | +210 |
 | `agent-core/tests/batchEditSecurity.test.ts` | Update test to match new validation behavior | +4, -3 |
 
+---
+
+## Iteration 15 — NC-035: Configuration schema alignment
+
+**Date:** 20 July 2026
+**Finding IDs:** NC-035 (Medium)
+**Phase:** C — Runtime schema boundary
+
+### What was done
+
+1. **Verified NC-035 against current source code:**
+   - `extension/package.json` (lines 74-184) — 16 settings declared in `contributes.configuration.properties`.
+   - `extension/src/sidebarViewProvider.ts` (lines 1199-1244) — `getRuntimeSettings()` reads 20 settings from config.
+   - `agent-core/src/utils/webviewMessageValidation.ts` (lines 51-65) — `ALLOWED_SETTING_KEYS` contains 13 keys the webview can write.
+   - Discrepancies found:
+     - 4 settings read at runtime but NOT declared in package.json: `openAIBaseUrl`, `ollamaBaseUrl`, `searchProvider`, `searchBaseUrl`.
+     - 4 dead keys in ALLOWED_SETTING_KEYS with no package.json declaration and no runtime reads: `autoApproveWrite`, `maxConcurrentTasks`, `theme`, `mcpServers`.
+     - 4 restrictedConfigurations reference undeclared settings: `openAIBaseUrl`, `ollamaBaseUrl`, `searchProvider`, `searchBaseUrl`.
+
+2. **Implemented fix (3 files changed, 1 new file):**
+   - `extension/package.json` (+27):
+     - Added `nexcodeKiboko.openAIBaseUrl` (string, default "https://opencode.ai/zen/go/v1", description notes HTTPS requirement and untrusted workspace blocking per NC-002).
+     - Added `nexcodeKiboko.ollamaBaseUrl` (string, default "http://localhost:11434", description notes ollama-only usage).
+     - Added `nexcodeKiboko.searchProvider` (enum: tavily/serper/google/bing/duckduckgo, default "tavily").
+     - Added `nexcodeKiboko.searchBaseUrl` (string, default "", description notes custom endpoint).
+   - `agent-core/src/utils/webviewMessageValidation.ts` (-4):
+     - Removed `autoApproveWrite` from ALLOWED_SETTING_KEYS (dead key, no runtime reads, no package.json).
+     - Removed `maxConcurrentTasks` from ALLOWED_SETTING_KEYS (dead key, no runtime reads, no package.json).
+     - Removed `theme` from ALLOWED_SETTING_KEYS (dead key, no runtime reads, no package.json).
+     - Removed `mcpServers` from ALLOWED_SETTING_KEYS (message type, not a setting key, no package.json).
+   - `agent-core/tests/webviewValidation.test.ts` (+8, -1):
+     - Updated "allows known safe keys" test: removed `theme` assertion, added `searchProvider`, `searchBaseUrl`, `allowWorkspacePrompts` assertions.
+     - Added "does not include dead/removed keys" test: asserts `autoApproveWrite`, `maxConcurrentTasks`, `theme`, `mcpServers` are all rejected.
+   - `agent-core/tests/configSchemaAlignment.test.ts` (new, 11 tests):
+     - Every runtime-read setting is declared in package.json.
+     - Every webview-writable key is declared in package.json.
+     - No dead/phantom keys in allowlist.
+     - Every restricted configuration is declared.
+     - Provider endpoint URLs are in restrictedConfigurations.
+     - Secret keys are excluded from allowlist.
+     - openAIBaseUrl/ollamaBaseUrl/searchProvider/searchBaseUrl have correct types and defaults.
+     - Every declared setting has type and description.
+
+3. **Validated:**
+   - 11/11 new configSchemaAlignment tests pass.
+   - 76/76 webviewValidation tests pass (1 new test for dead keys).
+   - 948/948 full unit tests pass (3 pre-existing e2e failures unrelated).
+   - `tsc --noEmit` clean in agent-core, extension, and webview.
+   - `npm run build` clean.
+   - `git diff --check` clean (only line-ending warnings).
+
+### Validation
+
+| Check | Result | Notes |
+|---|---|---|
+| Focused tests (NC-035) | PASS | 11/11 configSchemaAlignment tests pass |
+| Webview validation tests | PASS | 76/76 pass (1 new dead key test) |
+| Full test suite | PASS | 948/948 unit tests pass; 3 pre-existing e2e failures |
+| Type check (agent-core) | PASS | `tsc --noEmit` clean |
+| Type check (extension) | PASS | `tsc --noEmit` clean |
+| Type check (webview) | PASS | `tsc --noEmit` clean |
+| Build | PASS | Full `npm run build` clean |
+| No secrets in diff | PASS | No API keys, tokens, or secrets in the diff |
+| No test suppression | PASS | All existing tests retained and passing |
+
+### Remaining risks
+
+- None. The configuration schema is now fully aligned: all runtime-read keys are declared, all allowlist keys are declared, dead keys have been removed, and restricted configurations are properly declared.
+
+### Files changed
+
+| File | Change | Lines |
+|---|---|---|
+| `extension/package.json` | Add openAIBaseUrl, ollamaBaseUrl, searchProvider, searchBaseUrl settings | +27 |
+| `agent-core/src/utils/webviewMessageValidation.ts` | Remove 4 dead keys from ALLOWED_SETTING_KEYS | -4 |
+| `agent-core/tests/webviewValidation.test.ts` | Update allowed keys test, add dead key rejection tests | +8, -1 |
+| `agent-core/tests/configSchemaAlignment.test.ts` | New regression test file | +185 |
+

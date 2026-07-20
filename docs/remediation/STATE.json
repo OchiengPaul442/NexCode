@@ -3,28 +3,28 @@
   "project": "NexCode",
   "status": "in_progress",
   "bootstrapRequired": false,
-  "iteration": 14,
+  "iteration": 15,
   "currentPhase": "C",
   "totalFindings": 45,
   "counts": {
-    "pending": 30,
+    "pending": 29,
     "inProgress": 0,
-    "fixed": 15,
+    "fixed": 16,
     "blocked": 0,
     "obsolete": 0,
     "falsePositive": 0
   },
   "activeFindingIds": [],
-  "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004", "NC-005", "NC-006", "NC-007", "NC-008", "NC-009", "NC-010", "NC-016", "NC-017", "NC-022", "NC-024", "NC-028"],
+  "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004", "NC-005", "NC-006", "NC-007", "NC-008", "NC-009", "NC-010", "NC-016", "NC-017", "NC-022", "NC-024", "NC-028", "NC-035"],
   "blockedFindingIds": [],
-  "lastCommit": "21bf65a",
-  "lastSummary": "NC-016 + NC-017 fixed: (1) NC-017: Malformed tool call heuristic repair now fails closed for privileged tools (write, append, patch, terminal, delete, delete-contents, move, batch_edit, mcp). Regex extraction only allowed for read-only tools. (2) NC-016: validateToolArg() now validates command-string format for tools with structured schemas (write, append, patch, move, batch_edit, mcp) when JSON.parse fails, instead of silently skipping validation. batch_edit rejects non-JSON args. 29 new regression tests in agent-core/tests/malformedToolCalls.test.ts. Updated batchEditSecurity.test.ts for new validation behavior. 936/936 unit tests pass. Build clean. All type-checks clean.",
+  "lastCommit": "pending",
+  "lastSummary": "NC-035 fixed: Configuration schema alignment. (1) Added 4 missing settings to extension/package.json: openAIBaseUrl (string, HTTPS default), ollamaBaseUrl (string, localhost:11434), searchProvider (enum: tavily/serper/google/bing/duckduckgo), searchBaseUrl (string). (2) Removed 4 dead keys from ALLOWED_SETTING_KEYS: autoApproveWrite, maxConcurrentTasks, theme, mcpServers — these had no package.json declaration and no runtime reads. (3) 11 new configSchemaAlignment tests validate: all runtime-read keys declared, all allowlist keys declared, no dead keys, restricted configs declared, endpoint URLs restricted, secrets excluded, all settings have type+description. (4) Updated webviewValidation.test.ts: removed theme assertion, added searchProvider/searchBaseUrl/allowWorkspacePrompts assertions, added dead key rejection tests. 948/948 unit tests pass. Build clean. All type-checks clean.",
   "lastVerification": {
-    "focusedTests": "PASS — 29/29 malformedToolCalls tests pass",
+    "focusedTests": "PASS — 11/11 configSchemaAlignment tests pass",
     "typecheck": "PASS — agent-core, extension, and webview tsc --noEmit all clean",
     "lint": "PASS — no lint configured beyond tsc (NC-030)",
     "build": "PASS — full npm run build clean",
-    "fullTests": "PASS — 936/936 unit tests pass (3 pre-existing e2e failures unrelated)",
+    "fullTests": "PASS — 948/948 unit tests pass (3 pre-existing e2e failures unrelated)",
     "packaging": "SKIPPED — not attempted this iteration"
   }
 }

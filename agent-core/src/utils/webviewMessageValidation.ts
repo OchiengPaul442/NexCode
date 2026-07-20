@@ -53,14 +53,10 @@ const ALLOWED_SETTING_KEYS = new Set([
   "ollamaBaseUrl",
   "defaultModel",
   "defaultProvider",
-  "autoApproveWrite",
   "toolApproval",
-  "maxConcurrentTasks",
   "showReasoning",
-  "theme",
   "searchProvider",
   "searchBaseUrl",
-  "mcpServers",
   "allowWorkspacePrompts",
 ]);
 

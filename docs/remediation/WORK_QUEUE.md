@@ -407,14 +407,15 @@
 
 ### NC-035 — Configuration schema and runtime usage disagree
 - **Severity:** Medium
-- **Status:** pending
+- **Status:** fixed
 - **Phase:** C
 - **Dependencies:** NC-005 (webview validation)
-- **Affected files:** `extension/package.json` vs `sidebarViewProvider.ts`
-- **Verified:** unverified
-- **Required tests:** every supported setting declared in manifest; scope, validation, defaults, trust restrictions defined; no arbitrary keys accepted
-- **Verification commands:** manifest audit, runtime key usage comparison
-- **Resolution evidence:** (none yet)
+- **Affected files:** `extension/package.json`, `agent-core/src/utils/webviewMessageValidation.ts`
+- **Verified:** yes — verified against current source; 4 missing settings added to package.json, 4 dead keys removed from ALLOWED_SETTING_KEYS
+- **Required tests:** every supported setting declared in manifest; scope, validation, defaults, trust restrictions defined; no arbitrary keys accepted; dead keys removed
+- **Verification commands:** `npx vitest run agent-core/tests/configSchemaAlignment.test.ts && npx vitest run agent-core/tests/webviewValidation.test.ts`
+- **Resolution evidence:** (1) Added 4 missing settings to `extension/package.json`: `openAIBaseUrl` (string, default "https://opencode.ai/zen/go/v1"), `ollamaBaseUrl` (string, default "http://localhost:11434"), `searchProvider` (enum: tavily/serper/google/bing/duckduckgo, default "tavily"), `searchBaseUrl` (string, default ""). (2) Removed 4 dead keys from `ALLOWED_SETTING_KEYS` in `agent-core/src/utils/webviewMessageValidation.ts`: `autoApproveWrite`, `maxConcurrentTasks`, `theme`, `mcpServers`. (3) 11 new regression tests in `agent-core/tests/configSchemaAlignment.test.ts` validate: all runtime-read keys declared in package.json, all allowlist keys declared, no dead keys, restricted configs declared, endpoint URLs restricted, secrets excluded, all settings have type+description. (4) Updated `agent-core/tests/webviewValidation.test.ts`: removed `theme` assertion, added `searchProvider`/`searchBaseUrl`/`allowWorkspacePrompts` assertions, added dead key rejection tests. 948/948 unit tests pass. Build clean. All type-checks clean.
+- **Remaining risk:** None — the schema alignment is complete. All runtime-read keys are declared, all allowlist keys are declared, and dead keys have been removed.
 
 ### NC-036 — Monolithic files obscure state and security boundaries
 - **Severity:** Medium

@@ -470,7 +470,9 @@ describe("NC-005: isAllowedSettingKey", () => {
     expect(isAllowedSettingKey("ollamaBaseUrl")).toBe(true);
     expect(isAllowedSettingKey("toolApproval")).toBe(true);
     expect(isAllowedSettingKey("showReasoning")).toBe(true);
-    expect(isAllowedSettingKey("theme")).toBe(true);
+    expect(isAllowedSettingKey("searchProvider")).toBe(true);
+    expect(isAllowedSettingKey("searchBaseUrl")).toBe(true);
+    expect(isAllowedSettingKey("allowWorkspacePrompts")).toBe(true);
   });
 
   it("rejects unknown keys", () => {
@@ -488,6 +490,15 @@ describe("NC-005: isAllowedSettingKey", () => {
     expect(isAllowedSettingKey("openAIApiKey")).toBe(false);
     expect(isAllowedSettingKey("searchApiKey")).toBe(false);
     expect(isAllowedSettingKey("tavilyApiKey")).toBe(false);
+  });
+
+  it("does not include dead/removed keys (NC-035)", () => {
+    // These keys were in the old allowlist but had no package.json declaration
+    // and no runtime reads. They have been removed per NC-035.
+    expect(isAllowedSettingKey("autoApproveWrite")).toBe(false);
+    expect(isAllowedSettingKey("maxConcurrentTasks")).toBe(false);
+    expect(isAllowedSettingKey("theme")).toBe(false);
+    expect(isAllowedSettingKey("mcpServers")).toBe(false);
   });
 });
 

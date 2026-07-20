@@ -181,6 +181,33 @@
           "type": "boolean",
           "default": false,
           "description": "Allow workspace prompt files to override built-in system prompts. Disabled by default for security — a malicious repository could otherwise inject arbitrary system instructions. Only enable in trusted workspaces where you explicitly want custom prompts."
+        },
+        "nexcodeKiboko.openAIBaseUrl": {
+          "type": "string",
+          "default": "https://opencode.ai/zen/go/v1",
+          "description": "Base URL for OpenAI-compatible API requests. Must be HTTPS except localhost for development. Custom endpoints are blocked in untrusted workspaces (NC-002)."
+        },
+        "nexcodeKiboko.ollamaBaseUrl": {
+          "type": "string",
+          "default": "http://localhost:11434",
+          "description": "Base URL for Ollama local model server. Only used when defaultProvider is 'ollama'."
+        },
+        "nexcodeKiboko.searchProvider": {
+          "type": "string",
+          "enum": [
+            "tavily",
+            "serper",
+            "google",
+            "bing",
+            "duckduckgo"
+          ],
+          "default": "tavily",
+          "description": "Web search provider for /tool web-search commands."
+        },
+        "nexcodeKiboko.searchBaseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Custom base URL for the search provider. Leave empty to use the provider's default endpoint."
         }
       }
     },

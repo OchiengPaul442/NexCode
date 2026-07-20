@@ -27,4 +27,9 @@ export {
   validateEditPreconditions,
   type EditValidationResult,
 } from "./utils/editValidation";
-export { checkPathWithinWorkspace } from "./utils/pathContainment";
+export {
+  checkPathWithinWorkspace,
+  isPathAbsoluteCrossPlatform,
+  containsNullBytes,
+  isPathSafeCrossPlatform,
+} from "./utils/pathContainment";

@@ -93,16 +93,8 @@ describe("NC-006 — Edit validation (path containment + stale content)", () => 
     });
 
     it("rejects path with null bytes", () => {
-      // Note: checkPathWithinWorkspace does not explicitly check for null bytes.
-      // This test documents the current behavior. If null-byte rejection is added
-      // to pathContainment.ts, this test should be updated to expect null.
       const result = checkPathWithinWorkspace(tmpDir, "file\x00.ts");
-      // On POSIX, null bytes in paths cause fs errors later; on Windows they're invalid.
-      // The function may or may not reject them — document actual behavior.
-      if (result !== null) {
-        // If it doesn't reject, that's a known gap (NC-020 territory)
-        expect(typeof result).toBe("string");
-      }
+      expect(result).toBeNull();
     });
 
     it("allows nested relative path", () => {

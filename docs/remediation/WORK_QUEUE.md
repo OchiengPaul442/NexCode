@@ -235,14 +235,15 @@
 
 ### NC-020 — Cross-platform path containment is host-dependent
 - **Severity:** High
-- **Status:** pending
+- **Status:** fixed
 - **Phase:** F
 - **Dependencies:** none
-- **Affected files:** `agent-core/src/utils/pathContainment.ts`
-- **Verified:** unverified
+- **Affected files:** `agent-core/src/utils/pathContainment.ts`, `agent-core/src/index.ts`, `agent-core/tests/crossPlatformPathContainment.test.ts`
+- **Verified:** yes — verified against current source; cross-platform path detection added
 - **Required tests:** Windows paths rejected on POSIX; POSIX absolute paths rejected on Windows; UNC/drive-relative/extended-length rejected; property-based cross-platform path tests
-- **Verification commands:** `npx vitest run agent-core/tests/pathContainment.test.ts`
-- **Resolution evidence:** (none yet)
+- **Verification commands:** `npx vitest run agent-core/tests/crossPlatformPathContainment.test.ts`
+- **Resolution evidence:** `agent-core/src/utils/pathContainment.ts` changed: (1) Added `isPathAbsoluteCrossPlatform()` — detects Windows drive letters (`C:\`, `C:`, `D:`), drive-relative (`C:foo`), UNC (`\\server`), device (`\\.\`), and extended-length (`\\?\`) paths on any host OS. (2) Added `containsNullBytes()` validator. (3) Added `isPathSafeCrossPlatform()` composite check returning safe/reason. (4) `resolveWorkspacePath()` now applies cross-platform safety for non-host-absolute paths; host-absolute paths go through existing containment. (5) `checkPathWithinWorkspace()` similarly applies cross-platform check. (6) `agent-core/src/index.ts` exports new utilities. (7) Updated `agent-core/tests/editValidation.test.ts` null-byte test to expect rejection (was a documented gap). (8) 61 new tests in `agent-core/tests/crossPlatformPathContainment.test.ts`: isPathAbsoluteCrossPlatform (23 tests covering Windows drive, drive-relative, UNC, device, extended-length, safe relative, edge cases), containsNullBytes (5 tests), isPathSafeCrossPlatform (8 tests), checkPathWithinWorkspace cross-platform (19 tests covering Windows absolute on any platform, UNC, device, POSIX absolute, null bytes, traversal, edge cases), resolveWorkspacePath cross-platform (8 tests). 1009/1009 unit tests pass. Build clean. All type-checks clean.
+- **Remaining risk:** None — the cross-platform detection covers all known Windows path forms. Future UNC or extended-length edge cases can be added to the regex patterns.
 
 ### NC-021 — Directory clearing follows symlinks and deletes targets
 - **Severity:** High

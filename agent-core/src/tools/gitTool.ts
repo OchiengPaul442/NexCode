@@ -1,5 +1,5 @@
-import { TerminalTool } from "./terminalTool";
-import { ToolResult } from "../types";
+import { type TerminalTool } from "./terminalTool";
+import { type ToolResult } from "../types";
 
 export class GitTool {
   public constructor(private readonly terminal: TerminalTool) {}
@@ -31,14 +31,14 @@ export class GitTool {
   }
 
   public commit(message: string, signal?: AbortSignal): Promise<ToolResult> {
-    if (!message || !message.trim()) {
+    if (!message?.trim()) {
       return Promise.resolve({ ok: false, output: "Commit message cannot be empty." });
     }
     return this.terminal.runSafe("git", ["commit", "-m", message], 30_000, signal);
   }
 
   public createBranch(name: string, signal?: AbortSignal): Promise<ToolResult> {
-    if (!name || !name.trim()) {
+    if (!name?.trim()) {
       return Promise.resolve({ ok: false, output: "Branch name cannot be empty." });
     }
     if (!/^[a-zA-Z0-9._\-/]+$/.test(name)) {
@@ -53,7 +53,7 @@ export class GitTool {
   }
 
   public show(ref: string, signal?: AbortSignal): Promise<ToolResult> {
-    if (!ref || !ref.trim()) {
+    if (!ref?.trim()) {
       return Promise.resolve({ ok: false, output: "Ref cannot be empty." });
     }
     return this.terminal.runSafe("git", ["show", ref], 30_000, signal);

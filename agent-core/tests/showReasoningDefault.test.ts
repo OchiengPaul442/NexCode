@@ -60,11 +60,13 @@ describe("NC-042: showReasoning defaults to false", () => {
 
   describe("sidebarViewProvider fallback", () => {
     it("getRuntimeSettings uses false as fallback for showReasoning", async () => {
+      // The getRuntimeSettings function was extracted to runtimeSettings.ts
       const srcPath = path.join(
         REPO_ROOT,
         "extension",
         "src",
-        "sidebarViewProvider.ts",
+        "sidebarViewProvider",
+        "runtimeSettings.ts",
       );
       const src = await fs.promises.readFile(srcPath, "utf-8");
 

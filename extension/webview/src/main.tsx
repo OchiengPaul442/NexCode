@@ -9,10 +9,7 @@ import { createRoot } from "react-dom/client";
 import { AnimatePresence, motion } from "framer-motion";
 // create import removed — Zustand store is now in ./store (NC-036)
 import {
-  PanelLeft,
-  Settings,
   Plus,
-  RefreshCw,
   Trash2,
   X,
   ChevronDown,
@@ -22,16 +19,11 @@ import {
   FileText,
   Image,
   FileSpreadsheet,
-  File,
-  Eraser,
   ArrowUp,
   ArrowDown,
-  Cpu,
-  Globe,
   Code2,
   MessageSquare,
   Compass,
-  GitBranch,
   Search,
   Terminal,
   Copy,
@@ -42,73 +34,39 @@ import {
   ListTodo,
   Edit,
   Radio,
-  Shield,
   Paperclip,
-  Activity,
 } from "lucide-react";
-import { StreamingMessage } from "./components/StreamingMessage";
-
-// ── NC-036: Imported from extracted modules ─────────────────────────────────
 import type {
   ProviderId,
   AgentMode,
   UiMode,
-  PermissionLevel,
-  EditStatus,
-  ActivityStatus,
   ProviderStatus,
   ProposedEdit,
   ActivityTodo,
   ActivityFile,
   ChatMessage,
-  ToolExecution,
   QueuedPrompt,
-  ReasoningEffort,
   Session,
   AttachmentChip,
-  SubAgentTask,
   QueuedTask,
   McpQuickResult,
   ToolbarSelectOption,
-  SearchProviderId,
-  SidebarSettings,
-  PersistedState,
   BackendConfig,
-  StoreState,
   BackendEvent,
-  ModelEffortInfo,
 } from "./types";
 import {
-  providerPresets,
-  LEGACY_SECRET_KEYS,
   stripSecretsFromSettings,
   makeId,
-  titleFromPrompt,
-  mapAgentModeToUi,
   mapUiModeToAgent,
-  createSession,
   sanitizeReasoningStatus,
-  formatAgentMode,
-  formatUiMode,
-  formatRelativeTime,
   getTimeAgo,
-  isRunningActivityStatus,
-  activityStatusLabel,
-  activityStatusClass,
   modelCapabilities,
-  modelEffortConfig,
   getModelEffortInfo,
   effortLabels,
-  hasThinkingCapability,
   estimateAttachmentKind,
   arrayBufferToBase64,
   parseSlashCommand,
   findRetryPromptForMessage,
-  inferContextWindow,
-  formatTokenCount,
-  getSearchProviderPlaceholder,
-  getSearchProviderHint,
-  getSearchProviderUrlPlaceholder,
 } from "./utils";
 import {
   useStore,
@@ -155,106 +113,7 @@ function playCompletionSound(): void {
   }
 }
 
-// ── Git-style diff utility using the `diff` package ──────────────────────────
-import { diffLines, type Change } from "diff";
-
-interface DiffHunk {
-  oldStart: number;
-  oldLines: number;
-  newStart: number;
-  newLines: number;
-  lines: DiffLine[];
-}
-
-interface DiffLine {
-  type: "add" | "del" | "ctx";
-  oldNum: number | null;
-  newNum: number | null;
-  content: string;
-}
-
-function computeGitDiff(oldText: string, newText: string): DiffHunk[] {
-  const changes: Change[] = diffLines(oldText, newText);
-  const hunks: DiffHunk[] = [];
-  let currentHunk: DiffHunk | null = null;
-  let oldLine = 1;
-  let newLine = 1;
-
-  for (const change of changes) {
-    const lines = change.value.split("\n").filter((_, i, arr) =>
-      i < arr.length - 1 || arr[i] !== "",
-    );
-
-    for (const line of lines) {
-      if (change.added) {
-        if (!currentHunk) {
-          currentHunk = { oldStart: oldLine, oldLines: 0, newStart: newLine, newLines: 0, lines: [] };
-          hunks.push(currentHunk);
-        }
-        currentHunk.lines.push({ type: "add", oldNum: null, newNum: newLine++, content: line });
-        currentHunk.newLines++;
-      } else if (change.removed) {
-        if (!currentHunk) {
-          currentHunk = { oldStart: oldLine, oldLines: 0, newStart: newLine, newLines: 0, lines: [] };
-          hunks.push(currentHunk);
-        }
-        currentHunk.lines.push({ type: "del", oldNum: oldLine++, newNum: null, content: line });
-        currentHunk.oldLines++;
-      } else {
-        if (currentHunk) currentHunk = null;
-        oldLine++;
-        newLine++;
-      }
-    }
-  }
-
-  // Merge nearby hunks (within 3 lines)
-  if (hunks.length <= 1) return hunks;
-  const merged: DiffHunk[] = [hunks[0]];
-  for (let i = 1; i < hunks.length; i++) {
-    const prev = merged[merged.length - 1];
-    const curr = hunks[i];
-    const gap = curr.oldStart - (prev.oldStart + prev.oldLines);
-    if (gap <= 6) {
-      prev.oldLines = (curr.oldStart + curr.oldLines) - prev.oldStart;
-      prev.newLines = (curr.newStart + curr.newLines) - prev.newStart;
-      prev.lines.push(...curr.lines);
-    } else {
-      merged.push(curr);
-    }
-  }
-  return merged;
-}
-
-// Collapsed context: show only N lines of context around changes
-function collapseDiffContext(lines: DiffLine[], contextSize = 3): DiffLine[] {
-  if (lines.length <= contextSize * 2 + 4) return lines;
-
-  const changeIndices = new Set<number>();
-  lines.forEach((l, i) => {
-    if (l.type !== "ctx") {
-      for (let k = Math.max(0, i - contextSize); k <= Math.min(lines.length - 1, i + contextSize); k++) {
-        changeIndices.add(k);
-      }
-    }
-  });
-
-  const result: DiffLine[] = [];
-  let lastIdx = -1;
-
-  for (let i = 0; i < lines.length; i++) {
-    if (changeIndices.has(i)) {
-      if (lastIdx >= 0 && i - lastIdx > 1) {
-        const hiddenCount = i - lastIdx - 1;
-        result.push({ type: "ctx", oldNum: null, newNum: null, content: `${hiddenCount} unmodified line${hiddenCount !== 1 ? "s" : ""}` });
-      }
-      result.push(lines[i]);
-      lastIdx = i;
-    }
-  }
-
-  return result;
-}
+// ── Git-style diff utility — extracted to ./utils/diffUtils ──────────────────
 
 declare const acquireVsCodeApi: <T = unknown>() => {
   postMessage: (message: unknown) => void;
@@ -487,623 +346,18 @@ function ToolbarSelect({
 
 // NC-036: useStore, vscode, getActiveSession are now imported from ./store
 
-// ─── Token Ring ──────────────────────────────────────────────────────────────
-// NC-036: inferContextWindow and formatTokenCount are now imported from ./utils
+// ── ResponseDisplay components — extracted to ./components/ResponseDisplay ────
+import {
+  AttachIcon,
+  ActivityTodosSection,
+  ResponseSummary,
+  SourcesSection,
+} from "./components/ResponseDisplay";
 
-function TokenRing({
-  sessionMessages,
-  draftText,
-  model,
-}: {
-  sessionMessages: ChatMessage[];
-  draftText: string;
-  model: string;
-}) {
-  const max = useMemo(() => inferContextWindow(model), [model]);
-  const sessionTokens = useMemo(() => {
-    let total = 0;
-    for (const msg of sessionMessages) {
-      total += Math.ceil((msg.text?.length ?? 0) / 4);
-    }
-    return total;
-  }, [sessionMessages]);
-  const draftTokens = Math.ceil(draftText.length / 4);
-  const totalTokens = sessionTokens + draftTokens;
-  const pct = Math.min(totalTokens / max, 1);
-  const r = 6;
-  const circ = 2 * Math.PI * r;
-  const dash = circ * pct;
-  const color = pct > 0.85 ? "#f87171" : pct > 0.65 ? "#fb923c" : "#0284c7";
-
-  return (
-    <div
-      className="nk-token-ring-wrap"
-      title={`Context usage: ${totalTokens}/${max} tokens`}
-    >
-      <svg width="16" height="16" viewBox="0 0 16 16" className="shrink-0">
-        <circle
-          cx="8"
-          cy="8"
-          r={r}
-          fill="none"
-          stroke="#2a2a30"
-          strokeWidth="2"
-        />
-        <circle
-          cx="8"
-          cy="8"
-          r={r}
-          fill="none"
-          stroke={color}
-          strokeWidth="2"
-          strokeDasharray={`${dash} ${circ}`}
-          strokeLinecap="round"
-          transform="rotate(-90 8 8)"
-          style={{ transition: "stroke-dasharray 0.25s ease" }}
-        />
-      </svg>
-      <span className="nk-token-ring-label">
-        {formatTokenCount(totalTokens)}/{formatTokenCount(max)}
-      </span>
-    </div>
-  );
-}
-
-// ─── Attachment Icon ──────────────────────────────────────────────────────────
-function AttachIcon({ kind }: { kind: "text" | "image" | "binary" }) {
-  if (kind === "image") return <Image size={12} />;
-  if (kind === "text") return <FileText size={12} />;
-  return <File size={12} />;
-}
-
-// ─── Status Dot ──────────────────────────────────────────────────────────────
-function StatusDot({
-  connected,
-  latencyMs,
-  error,
-}: {
-  connected: boolean;
-  latencyMs?: number;
-  error?: string;
-}) {
-  return (
-    <div
-      title={
-        connected
-          ? `Connected${latencyMs ? ` (${latencyMs}ms)` : ""}`
-          : (error ?? "Disconnected")
-      }
-      className="flex items-center gap-1"
-    >
-      <span
-        className="inline-block w-2 h-2 rounded-full"
-        style={{ background: connected ? "#22c55e" : "#f85149" }}
-      />
-      {latencyMs !== undefined && connected && (
-        <span className="text-[10px]" style={{ color: "#6b6b75" }}>
-          {latencyMs}ms
-        </span>
-      )}
-    </div>
-  );
-}
-
-// ─── Response Summary ────────────────────────────────────────────────────────
-function formatTime(seconds: number): string {
-  if (seconds < 60) return `${seconds}s`;
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins}m ${secs}s`;
-}
-
-function ActivityTodosSection({ todos }: { todos: ActivityTodo[] }) {
-  const [expanded, setExpanded] = useState(false);
-  const completed = todos.filter((t) => t.status === "completed").length;
-  const total = todos.length;
-  const inProgress = todos.find((t) => t.status === "in-progress");
-
-  return (
-    <div style={{
-      marginTop: "8px",
-      border: "1px solid var(--vscode-widget-border, #454545)",
-      borderRadius: "4px",
-      overflow: "hidden",
-      fontSize: "12px",
-    }}>
-      {/* Header - clickable to expand/collapse */}
-      <div
-        onClick={() => setExpanded(!expanded)}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "6px 10px",
-          background: "var(--vscode-sideBar-background, #252526)",
-          borderBottom: expanded ? "1px solid var(--vscode-widget-border, #454545)" : "none",
-          cursor: "pointer",
-          userSelect: "none",
-        }}
-      >
-        <span style={{ fontWeight: 600, color: "var(--vscode-foreground, #cccccc)" }}>
-          {completed} of {total} todos completed
-        </span>
-        <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-          {inProgress && (
-            <span style={{ color: "var(--vscode-descriptionForeground, #8b8b9a)", fontSize: "11px" }}>
-              {inProgress.title}
-            </span>
-          )}
-          <ChevronRight
-            size={12}
-            style={{
-              color: "var(--vscode-descriptionForeground, #8b8b9a)",
-              transform: expanded ? "rotate(90deg)" : "rotate(0deg)",
-              transition: "transform 0.15s ease",
-            }}
-          />
-        </span>
-      </div>
-      {/* Expanded todo list */}
-      {expanded && (
-        <div style={{ padding: "4px 0" }}>
-          {todos.map((todo) => (
-            <div
-              key={todo.id}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-                padding: "4px 10px",
-                color: todo.status === "completed"
-                  ? "var(--vscode-descriptionForeground, #8b8b9a)"
-                  : "var(--vscode-foreground, #cccccc)",
-              }}
-            >
-              <span style={{ flexShrink: 0, width: "14px", textAlign: "center" }}>
-                {todo.status === "completed" && <CheckCircle2 size={12} style={{ color: "var(--vscode-terminal-ansiGreen, #4ec9b0)" }} />}
-                {todo.status === "in-progress" && <Radio size={12} style={{ color: "var(--vscode-terminal-ansiYellow, #dcdcaa)" }} />}
-                {todo.status === "not-started" && <Square size={10} style={{ color: "var(--vscode-descriptionForeground, #8b8b9a)" }} />}
-              </span>
-              <span style={{
-                textDecoration: todo.status === "completed" ? "line-through" : "none",
-                opacity: todo.status === "completed" ? 0.7 : 1,
-              }}>
-                {todo.title}
-              </span>
-              {todo.detail && (
-                <span style={{ color: "var(--vscode-descriptionForeground, #8b8b9a)", fontSize: "10px", marginLeft: "auto" }}>
-                  {todo.detail}
-                </span>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ResponseSummary({ message }: { message: ChatMessage }) {
-  if (message.streaming || message.thinking) return null;
-  if (!message.text) return null;
-
-  const elapsed =
-    message.endTime && message.startTime
-      ? Math.floor((message.endTime - message.startTime) / 1000)
-      : 0;
-
-  return (
-    <div className="nk-response-summary">
-      <div className="nk-response-meta">
-        {message.provider && <span>{message.provider}</span>}
-        {message.model && <span>· {message.model}</span>}
-        {elapsed > 0 && <span>· {formatTime(elapsed)}</span>}
-        {message.tokenUsage && (
-          <span>· {formatTokenCount(message.tokenUsage.total)} tokens</span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── Inline Tool Execution (OpenCode-style) ──────────────────────────────────
-
-// Group consecutive tool executions by type for compact display
-function groupToolExecutions(tools: ToolExecution[]): Array<{
-  type: string;
-  label: string;
-  count: number;
-  executions: ToolExecution[];
-  hasError: boolean;
-}> {
-  const groups: Array<{
-    type: string;
-    label: string;
-    count: number;
-    executions: ToolExecution[];
-    hasError: boolean;
-  }> = [];
-
-  for (const exec of tools) {
-    const normalizedType = (() => {
-      switch (exec.toolName) {
-        case "terminal": return "shell";
-        case "write":
-        case "append": return "edit";
-        case "search":
-        case "web-search": return "search";
-        case "read": return "read";
-        case "patch": return "patch";
-        case "delete": return "delete";
-        default: return exec.toolName;
-      }
-    })();
-
-    const label = (() => {
-      switch (normalizedType) {
-        case "shell": return "Shell";
-        case "edit": return "Edit";
-        case "search": return "Search";
-        case "read": return "Read";
-        case "patch": return "Patch";
-        case "delete": return "Delete";
-        default: return normalizedType;
-      }
-    })();
-
-    const lastGroup = groups[groups.length - 1];
-    if (lastGroup && lastGroup.type === normalizedType) {
-      lastGroup.count++;
-      lastGroup.executions.push(exec);
-      if (exec.status === "error") lastGroup.hasError = true;
-    } else {
-      groups.push({
-        type: normalizedType,
-        label,
-        count: 1,
-        executions: [exec],
-        hasError: exec.status === "error",
-      });
-    }
-  }
-
-  return groups;
-}
-
-// Extract file path from tool execution
-function extractFilePath(exec: ToolExecution): string | null {
-  switch (exec.toolName) {
-    case "write":
-    case "append":
-    case "patch": {
-      const match = exec.command.match(/^(.+?)\s*::/);
-      return match ? match[1].trim() : null;
-    }
-    case "read":
-    case "delete":
-      return exec.command.trim() || null;
-    default:
-      return null;
-  }
-}
-
-// Single grouped tool line (e.g., "10 searches" or "Edit drivers.ts +34 -0")
-function ToolGroupLine({
-  group,
-  onOpenFile,
-  onToggleExpand,
-  isExpanded,
-}: {
-  group: ReturnType<typeof groupToolExecutions>[0];
-  onOpenFile?: (filePath: string) => void;
-  onToggleExpand: () => void;
-  isExpanded: boolean;
-}) {
-  // Get unique files from executions
-  const files = useMemo(() => {
-    const seen = new Set<string>();
-    const result: string[] = [];
-    for (const exec of group.executions) {
-      const fp = extractFilePath(exec);
-      if (fp && !seen.has(fp)) {
-        seen.add(fp);
-        result.push(fp);
-      }
-    }
-    return result;
-  }, [group.executions]);
-
-  const mainFile = files[0];
-  const fileName = mainFile ? mainFile.split(/[/\\]/).pop() ?? mainFile : null;
-
-  // Get summary of what the tool is doing
-  const summary = useMemo(() => {
-    if (group.executions.length === 0) return null;
-    const firstExec = group.executions[0];
-
-    switch (group.type) {
-      case "shell": {
-        // Show the command being run
-        const cmd = firstExec.command;
-        const display = cmd.length > 60 ? cmd.slice(0, 60) + "..." : cmd;
-        return display;
-      }
-      case "search": {
-        // Show the search query
-        const query = firstExec.command;
-        return query.length > 50 ? query.slice(0, 50) + "..." : query;
-      }
-      case "read": {
-        // Show what's being read
-        return mainFile ? mainFile.split(/[/\\]/).pop() : null;
-      }
-      case "edit": {
-        // Show the file being edited
-        return mainFile ? mainFile.split(/[/\\]/).pop() : null;
-      }
-      case "patch": {
-        return mainFile ? mainFile.split(/[/\\]/).pop() : null;
-      }
-      case "delete": {
-        return mainFile ? mainFile.split(/[/\\]/).pop() : null;
-      }
-      default:
-        return null;
-    }
-  }, [group, mainFile]);
-
-  // Calculate stats for edit groups
-  const editStats = useMemo(() => {
-    if (group.type !== "edit" && group.type !== "patch") return null;
-    let additions = 0;
-    let deletions = 0;
-    for (const exec of group.executions) {
-      if (exec.toolName === "write" || exec.toolName === "append") {
-        additions += (exec.message ?? "").split("\n").length || 1;
-      }
-      if (exec.toolName === "patch") {
-        additions += 1;
-        deletions += 1;
-      }
-    }
-    return { additions, deletions };
-  }, [group]);
-
-  const handleClick = () => {
-    if (mainFile && onOpenFile) {
-      onOpenFile(mainFile);
-    }
-  };
-
-  const countText = group.count > 1 ? `${group.count} ` : "";
-  const suffix = group.count > 1
-    ? `${group.type === "shell" ? "commands" : group.type === "search" ? "searches" : group.type === "read" ? "reads" : "operations"}`
-    : "";
-
-  return (
-    <div className="nk-tool-group">
-      <span className="nk-tool-group-content">
-        <span className="nk-tool-group-label">
-          {group.label}
-        </span>
-        {summary && (
-          <span className="nk-tool-group-summary">{summary}</span>
-        )}
-        {editStats && (
-          <span className="nk-tool-group-stats">
-            {editStats.additions > 0 && <span className="nk-tool-group-add">+{editStats.additions}</span>}
-            {editStats.deletions > 0 && <span className="nk-tool-group-del">-{editStats.deletions}</span>}
-          </span>
-        )}
-        {group.hasError && <span className="nk-tool-group-error">failed</span>}
-        {group.count > 1 && <span className="nk-tool-group-count">{countText}{suffix}</span>}
-      </span>
-      {group.executions.length > 0 && (
-        <button
-          className="nk-tool-group-expand"
-          onClick={onToggleExpand}
-          title={isExpanded ? "Collapse" : "Expand"}
-        >
-          <ChevronRight
-            size={10}
-            style={{ transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s" }}
-          />
-        </button>
-      )}
-    </div>
-  );
-}
-
-// Expanded detail view with git-style diff
-function ToolGroupDetail({
-  group,
-  onOpenFile,
-}: {
-  group: ReturnType<typeof groupToolExecutions>[0];
-  onOpenFile?: (filePath: string) => void;
-}) {
-  return (
-    <div className="nk-tool-detail">
-      {group.executions.map((exec, i) => {
-        const filePath = extractFilePath(exec);
-        const fileName = filePath ? filePath.split(/[/\\]/).pop() ?? filePath : null;
-        const statusColor = exec.status === "success"
-          ? "var(--vscode-terminal-ansiGreen, #4ec9b0)"
-          : exec.status === "error"
-            ? "var(--vscode-terminal-ansiRed, #f48771)"
-            : "var(--vscode-descriptionForeground, #8b8b9a)";
-
-        return (
-          <div key={i} className="nk-tool-detail-row">
-            <span className="nk-tool-detail-status" style={{ color: statusColor }}>
-              {exec.status === "success" ? "✓" : exec.status === "error" ? "✗" : "○"}
-            </span>
-            <span className="nk-tool-detail-cmd">
-              {exec.command.length > 80 ? exec.command.slice(0, 80) + "..." : exec.command}
-            </span>
-            {exec.durationMs != null && (
-              <span className="nk-tool-detail-dur">
-                {exec.durationMs < 1000 ? `${exec.durationMs}ms` : `${(exec.durationMs / 1000).toFixed(1)}s`}
-              </span>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// ─── Message Content (interleaved text + tool executions) ─────────────────────
-function MessageContent({
-  message,
-  isStreaming,
-  onOpenFile,
-  onFrame,
-}: {
-  message: ChatMessage;
-  isStreaming: boolean;
-  onOpenFile?: (filePath: string) => void;
-  onFrame?: () => void;
-}) {
-  const tools = message.toolExecutions ?? [];
-  const text = message.text || "";
-  const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
-
-  // Clean <think> tags from text
-  const cleanText = text
-    .replace(/<think>[\s\S]*?<\/think>/g, "")
-    .replace(/<think>[\s\S]*$/g, "")
-    .trim();
-
-  // Group tools by type
-  const toolGroups = useMemo(() => groupToolExecutions(tools), [tools]);
-
-  const toggleGroup = (index: number) => {
-    setExpandedGroups(prev => {
-      const next = new Set(prev);
-      if (next.has(index)) next.delete(index);
-      else next.add(index);
-      return next;
-    });
-  };
-
-  // If no tools, render text only
-  if (tools.length === 0) {
-    return (
-      <div className="nk-message-content">
-        <StreamingMessage
-          text={cleanText}
-          streaming={isStreaming}
-          markdown
-          className="markdown-body text-[13px] leading-relaxed"
-          showCursor
-          showThinkingOverlay={!(message.reasoning.length > 0 && isStreaming)}
-          thinkingLabel={
-            message.reasoning.length > 0
-              ? message.reasoning[message.reasoning.length - 1]
-                  .replace(/<think>[\s\S]*?<\/think>/g, "")
-                  .replace(/<think>[\s\S]*$/g, "")
-                  .trim() || "Working..."
-              : "Working..."
-          }
-          onFrame={onFrame}
-        />
-      </div>
-    );
-  }
-
-  return (
-    <div className="nk-message-content">
-      {/* Main text */}
-      {cleanText && (
-        <StreamingMessage
-          text={cleanText}
-          streaming={isStreaming}
-          markdown
-          className="markdown-body text-[13px] leading-relaxed"
-          showCursor={false}
-          showThinkingOverlay={false}
-          onFrame={onFrame}
-        />
-      )}
-
-      {/* Grouped tool executions - plain text style, no boxes */}
-      <div className="nk-tool-groups">
-        {toolGroups.map((group, i) => (
-          <div key={i} className="nk-tool-group-wrapper">
-            <ToolGroupLine
-              group={group}
-              onOpenFile={onOpenFile}
-              onToggleExpand={() => toggleGroup(i)}
-              isExpanded={expandedGroups.has(i)}
-            />
-            {expandedGroups.has(i) && (
-              <ToolGroupDetail
-                group={group}
-                onOpenFile={onOpenFile}
-              />
-            )}
-          </div>
-        ))}
-      </div>
-
-      {isStreaming && (
-        <span className="nk-streaming-cursor" aria-hidden="true" />
-      )}
-    </div>
-  );
-}
-
-// ─── Sources Section (collapsible) ───────────────────────────────────────────
-const SourcesSection = React.memo(function SourcesSection({
-  sources,
-}: {
-  sources: Array<{ title: string; url: string; snippet?: string }>;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const VISIBLE_COUNT = 5;
-  const hasMore = sources.length > VISIBLE_COUNT;
-  const displaySources = expanded ? sources : sources.slice(0, VISIBLE_COUNT);
-
-  if (sources.length === 0) return null;
-
-  return (
-    <div className="nk-sources">
-      <button
-        className="nk-sources-header"
-        onClick={() => setExpanded(!expanded)}
-        type="button"
-      >
-        <Globe size={12} className="nk-sources-icon" />
-        <span className="nk-sources-title">Sources</span>
-        <span className="nk-sources-count">{sources.length}</span>
-        <ChevronRight
-          size={10}
-          className="nk-sources-chevron"
-          style={{ transform: expanded ? "rotate(90deg)" : "rotate(0deg)" }}
-        />
-      </button>
-      {expanded && (
-        <div className="nk-sources-list">
-          {displaySources.map((src, i) => (
-            <a
-              key={i}
-              className="nk-source-item"
-              href={src.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              title={src.snippet ?? src.title}
-            >
-              <span className="nk-source-index">{i + 1}</span>
-              <span className="nk-source-title">{src.title}</span>
-              <ExternalLink size={10} className="nk-source-link-icon" />
-            </a>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-});
+// ── ToolExecutionDisplay components — extracted to ./components/ToolExecutionDisplay
+import {
+  MessageContent,
+} from "./components/ToolExecutionDisplay";
 
 // ─── Message Bubble ──────────────────────────────────────────────────────────
 function MessageBubble({
@@ -1257,7 +511,7 @@ function MessageBubble({
 
         {/* Activity Todos - OpenCode-style task list */}
         {!isUser && (message.activityTodos ?? []).length > 0 && (
-          <ActivityTodosSection todos={message.activityTodos!} />
+          <ActivityTodosSection todos={message.activityTodos} />
         )}
 
         {/* Web search sources - collapsible */}
@@ -1433,632 +687,31 @@ function MessageBubble({
   );
 }
 
-function ParallelIndicator({ count }: { count: number }) {
-  if (count <= 1) return null;
+// ── BackgroundAgents — extracted to ./components/BackgroundAgents
+import {
+  ParallelIndicator,
+  SubagentIndicator,
+  BackgroundAgents,
+} from "./components/BackgroundAgents";
 
-  return (
-    <div className="nk-parallel-indicator">
-      <span className="nk-parallel-icon">⚡</span>
-      <span>Running {count} tasks in parallel</span>
-    </div>
-  );
-}
+// ── ChangedFilesSummary — extracted to ./components/ChangedFilesSummary
+import {
+  ChangedFilesSummary,
+} from "./components/ChangedFilesSummary";
 
-function SubagentIndicator({
-  description,
-  status,
-}: {
-  description: string;
-  status: string;
-}) {
-  return (
-    <div className="nk-subagent-indicator">
-      <span className="nk-subagent-dot" />
-      <span className="nk-subagent-text">{description}</span>
-      <span className="nk-subagent-status">{status}</span>
-    </div>
-  );
-}
+// ── ToolApprovalDialog — extracted to ./components/ToolApprovalDialog
+import {
+  ToolApprovalDialog,
+  type ToolApprovalRequest,
+} from "./components/ToolApprovalDialog";
 
-function BackgroundAgents({ agents, waveInfo }: { agents: SubAgentTask[]; waveInfo?: { current: number; total: number } | null }) {
-  if (agents.length === 0) return null;
+// ── SettingsDropdown — extracted to ./components/SettingsDropdown
+import { SettingsDropdown } from "./components/SettingsDropdown";
 
-  const running = agents.filter((a) => a.status === "running");
-  const completed = agents.filter((a) => a.status === "completed");
-  const failed = agents.filter((a) => a.status === "failed");
 
-  return (
-    <div className="nk-bg-agents nk-bg-agents--enhanced">
-      {/* Wave deployment text */}
-      {waveInfo && waveInfo.current > 1 && completed.length > 0 && (
-        <div className="nk-bg-agents-wave-text">
-          Excellent! First {completed.length} agent{completed.length !== 1 ? "s" : ""} have reported. Now deploying Wave {waveInfo.current}: {running.length} more agent{running.length !== 1 ? "s" : ""} for remaining areas:
-        </div>
-      )}
-
-      <div className="nk-bg-agents-header">
-        <div className="nk-bg-agents-title-row">
-          <span className="nk-bg-agents-title">Agents</span>
-          <span className="nk-bg-agents-count-badge">
-            {agents.length} total
-          </span>
-        </div>
-        {waveInfo && (
-          <div className="nk-bg-agents-wave-info">
-            <span className="nk-bg-agents-wave-label">Wave {waveInfo.current}/{waveInfo.total}</span>
-            <div className="nk-bg-agents-wave-progress">
-              <div 
-                className="nk-bg-agents-wave-progress-fill"
-                style={{ width: `${(completed.length / agents.length) * 100}%` }}
-              />
-            </div>
-          </div>
-        )}
-      </div>
-      
-      <div className="nk-bg-agents-stats">
-        {running.length > 0 && (
-          <span className="nk-bg-agents-stat nk-bg-agents-stat--running">
-            <span className="nk-bg-agents-stat-dot nk-bg-agents-stat-dot--running" />
-            {running.length} running
-          </span>
-        )}
-        {completed.length > 0 && (
-          <span className="nk-bg-agents-stat nk-bg-agents-stat--completed">
-            <span className="nk-bg-agents-stat-dot nk-bg-agents-stat-dot--completed" />
-            {completed.length} completed
-          </span>
-        )}
-        {failed.length > 0 && (
-          <span className="nk-bg-agents-stat nk-bg-agents-stat--failed">
-            <span className="nk-bg-agents-stat-dot nk-bg-agents-stat-dot--failed" />
-            {failed.length} failed
-          </span>
-        )}
-      </div>
-
-      <div className="nk-bg-agents-list">
-        {agents.map((agent) => (
-          <div
-            key={agent.id}
-            className={`nk-bg-agent-card nk-bg-agent-card--${agent.status}`}
-          >
-            <div className="nk-bg-agent-card-header">
-              <div className="nk-bg-agent-card-icon">
-                {agent.status === "running" && (
-                  <span className="nk-bg-agent-card-spinner" />
-                )}
-                {agent.status === "completed" && (
-                  <span className="nk-bg-agent-card-check">✓</span>
-                )}
-                {agent.status === "failed" && (
-                  <span className="nk-bg-agent-card-x">✗</span>
-                )}
-                {agent.status !== "running" && agent.status !== "completed" && agent.status !== "failed" && (
-                  <span className="nk-bg-agent-card-pending">☐</span>
-                )}
-              </div>
-              <div className="nk-bg-agent-card-info">
-                <span className="nk-bg-agent-card-type">General</span>
-                <span className="nk-bg-agent-card-desc">{agent.description}</span>
-              </div>
-            </div>
-            {agent.status === "running" && (
-              <div className="nk-bg-agent-card-progress">
-                <div className="nk-bg-agent-card-progress-bar">
-                  <div className="nk-bg-agent-card-progress-fill" />
-                </div>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ToolStatusIndicator({
-  toolName,
-  command,
-  status,
-  message,
-  durationMs,
-  filesChanged,
-}: {
-  toolName: string;
-  command: string;
-  status: "success" | "error" | "awaiting-approval";
-  message?: string;
-  durationMs?: number;
-  filesChanged?: string[];
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const isRunning = status === "awaiting-approval";
-  const isError = status === "error";
-  const isSuccess = status === "success";
-  const borderColor = isSuccess ? "var(--vscode-terminal-ansiGreen, #4ec9b0)" : isError ? "var(--vscode-terminal-ansiRed, #f48771)" : "var(--vscode-terminal-ansiYellow, #dcdcaa)";
-
-  const toolIcon = (() => {
-    switch (toolName.toLowerCase()) {
-      case "terminal": return <Terminal size={13} />;
-      case "read": return <FileText size={13} />;
-      case "write": case "append": return <Pencil size={13} />;
-      case "delete": case "delete-contents": return <Trash2 size={13} />;
-      case "move": return <RotateCcw size={13} />;
-      case "search": case "web-search": return <Search size={13} />;
-      case "batch_edit": return <ListTodo size={13} />;
-      case "git-status": case "git-diff": case "git-branch": return <GitBranch size={13} />;
-      case "test": return <Shield size={13} />;
-      default: return <Code2 size={13} />;
-    }
-  })();
-
-  const toolLabel = toolName === "terminal" ? "Shell" : toolName;
-  const durationStr = durationMs != null ? durationMs < 1000 ? `${durationMs}ms` : `${(durationMs / 1000).toFixed(1)}s` : null;
-  const hasOutput = message && message.trim().length > 0;
-  const truncatedCmd = command.length > 100 ? command.slice(0, 100) + "..." : command;
-
-  // Parse file changes from command for write/append operations
-  const fileChangeInfo = (() => {
-    if (filesChanged && filesChanged.length > 0) {
-      return { additions: filesChanged.length, deletions: 0 };
-    }
-    return null;
-  })();
-
-  return (
-    <div className="nk-tool-card">
-      {/* Header - always visible, clickable to expand */}
-      <div
-        className="nk-tool-card-header"
-        onClick={() => hasOutput && setExpanded(!expanded)}
-      >
-        {/* Icon + Tool name */}
-        <span className="nk-tool-card-icon">{toolIcon}</span>
-        <span className="nk-tool-card-label">{toolLabel}</span>
-
-        {/* Command preview */}
-        <code className="nk-tool-card-command">
-          {truncatedCmd}
-        </code>
-
-        {/* File change indicators */}
-        {fileChangeInfo && (fileChangeInfo.additions > 0 || fileChangeInfo.deletions > 0) && (
-          <span className="nk-tool-card-changes">
-            {fileChangeInfo.additions > 0 && (
-              <span className="nk-tool-card-additions">+{fileChangeInfo.additions}</span>
-            )}
-            {fileChangeInfo.deletions > 0 && (
-              <span className="nk-tool-card-deletions">-{fileChangeInfo.deletions}</span>
-            )}
-          </span>
-        )}
-
-        {/* Status + duration */}
-        <span className="nk-tool-card-status">
-          {durationStr && <span className="nk-tool-card-duration">{durationStr}</span>}
-          {isRunning && (
-            <span className="nk-tool-card-spinner" />
-          )}
-          {isSuccess && <span className="nk-tool-card-done">done</span>}
-          {isError && <span className="nk-tool-card-failed">failed</span>}
-          {hasOutput && (
-            <ChevronRight
-              size={12}
-              className="nk-tool-card-chevron"
-              style={{
-                transform: expanded ? "rotate(90deg)" : "rotate(0deg)",
-              }}
-            />
-          )}
-        </span>
-      </div>
-
-      {/* Expanded output */}
-      {expanded && hasOutput && (
-        <div className="nk-tool-card-output">
-          <pre className="nk-tool-card-pre">
-            {message!.length > 2000 ? message!.slice(0, 2000) + "\n... (truncated)" : message}
-          </pre>
-          {filesChanged && filesChanged.length > 0 && (
-            <div className="nk-tool-card-files">
-              {filesChanged.map((f, i) => (
-                <span key={i} className="nk-tool-card-file-chip">
-                  {f}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ChangedFilesSummary({ 
-  files, 
-  totalAdditions, 
-  totalDeletions,
-  proposedEdits,
-}: { 
-  files: Array<{ path: string; additions?: number; deletions?: number }>;
-  totalAdditions?: number;
-  totalDeletions?: number;
-  proposedEdits?: ProposedEdit[];
-}) {
-  const [listExpanded, setListExpanded] = useState(false);
-  const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
-
-  if (files.length === 0) return null;
-
-  const additions = totalAdditions ?? files.reduce((sum, f) => sum + (f.additions ?? 0), 0);
-  const deletions = totalDeletions ?? files.reduce((sum, f) => sum + (f.deletions ?? 0), 0);
-  const VISIBLE_COUNT = 8;
-  const hasOverflow = files.length > VISIBLE_COUNT;
-  const displayFiles = listExpanded ? files : files.slice(0, VISIBLE_COUNT);
-  const hiddenCount = files.length - VISIBLE_COUNT;
-
-  const toggleFile = (path: string) => {
-    setExpandedFiles(prev => {
-      const next = new Set(prev);
-      if (next.has(path)) next.delete(path);
-      else next.add(path);
-      return next;
-    });
-  };
-
-  // Build a map from file path to proposed edit (for inline diff)
-  // Use flexible matching: check if paths end with each other (handles absolute vs relative)
-  const editMap = useMemo(() => {
-    const map = new Map<string, ProposedEdit>();
-    if (proposedEdits) {
-      for (const edit of proposedEdits) {
-        map.set(edit.filePath, edit);
-      }
-    }
-    return map;
-  }, [proposedEdits]);
-
-  // Helper to find an edit for a given file path (flexible matching)
-  const findEditForFile = (filePath: string): ProposedEdit | undefined => {
-    // Exact match first
-    if (editMap.has(filePath)) return editMap.get(filePath);
-    // Check if any edit path ends with this file path or vice versa
-    for (const [editPath, edit] of editMap) {
-      if (filePath.endsWith(editPath) || editPath.endsWith(filePath)) return edit;
-      // Also check just the filename
-      const editBase = editPath.split(/[/\\]/).pop() ?? "";
-      const fileBase = filePath.split(/[/\\]/).pop() ?? "";
-      if (editBase && fileBase && editBase === fileBase) return edit;
-    }
-    return undefined;
-  };
-
-  return (
-    <div className="nk-changeset">
-      {/* Header */}
-      <div className="nk-changeset-header">
-        <span className="nk-changeset-title">
-          <span className="nk-changeset-count">
-            {files.length} Changed file{files.length !== 1 ? "s" : ""}
-          </span>
-          {additions > 0 && <span className="nk-changeset-add">+{additions}</span>}
-          {deletions > 0 && <span className="nk-changeset-del">-{deletions}</span>}
-        </span>
-        {hasOverflow && (
-          <button
-            className="nk-changeset-toggle"
-            onClick={() => setListExpanded(!listExpanded)}
-          >
-            {listExpanded ? "Show less" : `+${hiddenCount} more`}
-          </button>
-        )}
-      </div>
-
-      {/* File list */}
-      <div className="nk-changeset-files">
-        {displayFiles.map((file) => (
-          <ChangedFileRow
-            key={file.path}
-            file={file}
-            edit={findEditForFile(file.path)}
-            isExpanded={expandedFiles.has(file.path)}
-            onToggle={toggleFile}
-          />
-        ))}
-      </div>
-
-      {/* Overflow footer */}
-      {!listExpanded && hasOverflow && (
-        <button
-          className="nk-changeset-overflow"
-          onClick={() => setListExpanded(true)}
-        >
-          +{hiddenCount} more file{hiddenCount !== 1 ? "s" : ""}
-        </button>
-      )}
-    </div>
-  );
-}
-
-const ChangedFileRow = React.memo(function ChangedFileRow({
-  file,
-  edit,
-  isExpanded,
-  onToggle,
-}: {
-  file: { path: string; additions?: number; deletions?: number };
-  edit?: ProposedEdit;
-  isExpanded: boolean;
-  onToggle: (path: string) => void;
-}) {
-  const hasDiff = !!(edit?.oldText && edit?.newText);
-
-  const diffLines = useMemo(() => {
-    if (!hasDiff || !edit) return null;
-    const hunks = computeGitDiff(edit.oldText, edit.newText);
-    // Flatten hunks to lines for the existing renderer
-    const allLines: DiffLine[] = [];
-    for (const hunk of hunks) {
-      allLines.push(...hunk.lines);
-    }
-    return collapseDiffContext(allLines, 2);
-  }, [hasDiff, edit?.oldText, edit?.newText]);
-
-  return (
-    <div className="nk-changeset-file">
-      {/* File row */}
-      <div
-        className="nk-changeset-file-row"
-        role={hasDiff ? "button" : undefined}
-        tabIndex={hasDiff ? 0 : undefined}
-        aria-expanded={hasDiff ? isExpanded : undefined}
-        onKeyDown={hasDiff ? (e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            onToggle(file.path);
-          }
-        } : undefined}
-        onClick={() => hasDiff && onToggle(file.path)}
-      >
-        <span className="nk-changeset-file-icon">
-          <FileText size={12} />
-        </span>
-        <span className="nk-changeset-file-path">{file.path}</span>
-        <span className="nk-changeset-file-stats">
-          {file.additions != null && file.additions > 0 && (
-            <span className="nk-changeset-file-add">+{file.additions}</span>
-          )}
-          {file.deletions != null && file.deletions > 0 && (
-            <span className="nk-changeset-file-del">-{file.deletions}</span>
-          )}
-        </span>
-        {hasDiff && (
-          <ChevronRight
-            size={11}
-            className="nk-changeset-file-chevron"
-            style={{ transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)" }}
-          />
-        )}
-      </div>
-
-      {/* Inline diff */}
-      {isExpanded && diffLines && (
-        <div className="nk-changeset-diff">
-          {diffLines.map((line, i) => (
-            <div
-              key={i}
-              className={`nk-changeset-diff-line nk-changeset-diff-line--${line.type}`}
-            >
-              <span className="nk-changeset-diff-gutter">
-                <span className="nk-changeset-diff-oldnum">{line.oldNum ?? ""}</span>
-                <span className="nk-changeset-diff-newnum">{line.newNum ?? ""}</span>
-              </span>
-              <span className="nk-changeset-diff-prefix">
-                {line.type === "add" ? "+" : line.type === "del" ? "-" : " "}
-              </span>
-              <span className="nk-changeset-diff-text">{line.content}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-});
-
-const ActivitySection = React.memo(function ActivitySection({
-  toolExecutions,
-}: {
-  toolExecutions: ToolExecution[];
-}) {
-  const [expanded, setExpanded] = useState(false);
-  if (toolExecutions.length === 0) return null;
-
-  const successCount = toolExecutions.filter(e => e.status === "success").length;
-  const errorCount = toolExecutions.filter(e => e.status === "error").length;
-  const totalDuration = toolExecutions.reduce((sum, e) => sum + (e.durationMs ?? 0), 0);
-  const durationStr = totalDuration < 1000 ? `${totalDuration}ms` : totalDuration < 60000 ? `${(totalDuration / 1000).toFixed(1)}s` : `${Math.floor(totalDuration / 60000)}m ${Math.floor((totalDuration % 60000) / 1000)}s`;
-
-  // Group tools by type for compact display
-  const grouped = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const exec of toolExecutions) {
-      // Normalize tool names for consistent grouping
-      let name = exec.toolName;
-      if (name === "terminal") name = "shell";
-      else if (name === "append") name = "write";
-      else if (name === "web-search") name = "search";
-      counts[name] = (counts[name] ?? 0) + 1;
-    }
-    return counts;
-  }, [toolExecutions]);
-
-  const groupedParts = Object.entries(grouped)
-    .map(([name, count]) => `${count} ${name}${count !== 1 ? "s" : ""}`)
-    .join("  ");
-
-  return (
-    <div className="nk-activity">
-      {/* Compact header - always visible */}
-      <div
-        className="nk-activity-header"
-        role="button"
-        tabIndex={0}
-        aria-expanded={expanded}
-        onClick={() => setExpanded(!expanded)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            setExpanded(!expanded);
-          }
-        }}
-      >
-        <span className="nk-activity-header-left">
-          <Activity size={12} className="nk-activity-icon" />
-          <span className="nk-activity-title">Activity</span>
-          <span className="nk-activity-meta">
-            {groupedParts}
-            <span className="nk-activity-sep">&middot;</span>
-            {durationStr}
-          </span>
-          {successCount > 0 && (
-            <span className="nk-activity-ok">{successCount} ok</span>
-          )}
-          {errorCount > 0 && (
-            <span className="nk-activity-fail">{errorCount} failed</span>
-          )}
-        </span>
-        <ChevronRight
-          size={12}
-          className="nk-activity-chevron"
-          style={{ transform: expanded ? "rotate(90deg)" : "rotate(0deg)" }}
-        />
-      </div>
-
-      {/* Expanded detail list */}
-      {expanded && (
-        <div className="nk-activity-body">
-          {toolExecutions.map((exec, i) => {
-            const icon = (() => {
-              switch (exec.toolName) {
-                case "terminal": return <Terminal size={11} />;
-                case "read": return <FileText size={11} />;
-                case "write": case "append": return <Pencil size={11} />;
-                case "delete": return <Trash2 size={11} />;
-                case "search": case "web-search": return <Search size={11} />;
-                case "patch": return <Code2 size={11} />;
-                default: return <Code2 size={11} />;
-              }
-            })();
-            const label = exec.toolName === "terminal" ? "Shell" : exec.toolName;
-            const dur = exec.durationMs != null
-              ? exec.durationMs < 1000 ? `${exec.durationMs}ms` : `${(exec.durationMs / 1000).toFixed(1)}s`
-              : null;
-            const statusIcon = exec.status === "success" ? "✓" : exec.status === "error" ? "✗" : "⏳";
-            const statusColor = exec.status === "success"
-              ? "var(--vscode-terminal-ansiGreen, #4ec9b0)"
-              : exec.status === "error"
-                ? "var(--vscode-terminal-ansiRed, #f48771)"
-                : "var(--vscode-terminal-ansiYellow, #dcdcaa)";
-            // Truncate command for display
-            const cmd = exec.command.length > 60 ? exec.command.slice(0, 60) + "..." : exec.command;
-
-            return (
-              <div key={i} className="nk-activity-row">
-                <span className="nk-activity-row-status" style={{ color: statusColor }}>{statusIcon}</span>
-                <span className="nk-activity-row-icon">{icon}</span>
-                <span className="nk-activity-row-label">{label}</span>
-                <span className="nk-activity-row-cmd" title={exec.command}>{cmd}</span>
-                {dur && <span className="nk-activity-row-dur">{dur}</span>}
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-});
 
 const MemoizedReasoningIndicator = React.memo(ReasoningIndicator);
 const MemoizedMessageBubble = React.memo(MessageBubble);
-
-interface ToolApprovalRequest {
-  requestId: string;
-  toolName: string;
-  command: string;
-}
-
-function ToolApprovalDialog({
-  request,
-  onApprove,
-  onDeny,
-}: {
-  request: ToolApprovalRequest;
-  onApprove: () => void;
-  onDeny: () => void;
-}) {
-  const [countdown, setCountdown] = useState(30);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          onDeny();
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [onDeny]);
-
-  const riskLevel = (() => {
-    const lowerTool = request.toolName.toLowerCase();
-    if (lowerTool === "terminal" || lowerTool === "batch_edit") return "high";
-    if (lowerTool === "write" || lowerTool === "append" || lowerTool === "delete" || lowerTool === "move") return "medium";
-    return "low";
-  })();
-
-  const riskColor = riskLevel === "high" ? "#f87171" : riskLevel === "medium" ? "#fbbf24" : "#34d399";
-  const truncatedCmd = request.command.length > 120 ? request.command.slice(0, 120) + "..." : request.command;
-
-  return (
-    <div className="nk-approval-dialog">
-      <div className="nk-approval-header">
-        <Shield size={16} style={{ color: riskColor }} />
-        <span className="nk-approval-title">Tool Approval Required</span>
-        <span className="nk-approval-countdown" style={{ color: countdown <= 10 ? "#f87171" : undefined }}>
-          {countdown}s
-        </span>
-      </div>
-      <div className="nk-approval-body">
-        <div className="nk-approval-row">
-          <span className="nk-approval-label">Tool</span>
-          <span className="nk-approval-value">{request.toolName}</span>
-        </div>
-        <div className="nk-approval-row">
-          <span className="nk-approval-label">Risk</span>
-          <span className="nk-approval-value" style={{ color: riskColor }}>
-            {riskLevel.toUpperCase()}
-          </span>
-        </div>
-        <div className="nk-approval-row nk-approval-row--full">
-          <span className="nk-approval-label">Command</span>
-          <pre className="nk-approval-command">{truncatedCmd}</pre>
-        </div>
-      </div>
-      <div className="nk-approval-actions">
-        <button className="nk-btn-ghost nk-approval-deny" onClick={onDeny}>
-          <X size={12} /> Deny
-        </button>
-        <button className="nk-btn-accent nk-approval-approve" onClick={onApprove}>
-          <Check size={12} /> Approve
-        </button>
-      </div>
-    </div>
-  );
-}
 
 // ─── Search Provider Helpers ─────────────────────────────────────────────────
 // NC-036: getSearchProviderPlaceholder, getSearchProviderHint, getSearchProviderUrlPlaceholder
@@ -2084,13 +737,13 @@ function App() {
   const [deleteTargetSessionId, setDeleteTargetSessionId] = useState<
     string | null
   >(null);
-  const [queuedPrompts, setQueuedPrompts] = useState<QueuedPrompt[]>([]);
+  const [_queuedPrompts, setQueuedPrompts] = useState<QueuedPrompt[]>([]);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [followStream, setFollowStream] = useState(true);
-  const [enhanceBusy, setEnhanceBusy] = useState(false);
+  const [_enhanceBusy, setEnhanceBusy] = useState(false);
   const [enhanceFeedback, setEnhanceFeedback] = useState<string | null>(null);
-  const [mcpServers, setMcpServers] = useState<string[]>([]);
+  const [_mcpServers, setMcpServers] = useState<string[]>([]);
   const [mcpToolsByServer, setMcpToolsByServer] = useState<
     Record<string, string[]>
   >({});
@@ -2101,9 +754,9 @@ function App() {
   const [localApiKey, setLocalApiKey] = useState("");
   const [localSearchApiKey, setLocalSearchApiKey] = useState("");
   const [mcpSelectedTool, setMcpSelectedTool] = useState("");
-  const [mcpQuickInput, setMcpQuickInput] = useState("");
-  const [mcpInvokeBusy, setMcpInvokeBusy] = useState(false);
-  const [mcpInvokeResult, setMcpInvokeResult] = useState<McpQuickResult | null>(
+  const [mcpQuickInput, _setMcpQuickInput] = useState("");
+  const [_mcpInvokeBusy, setMcpInvokeBusy] = useState(false);
+  const [_mcpInvokeResult, setMcpInvokeResult] = useState<McpQuickResult | null>(
     null,
   );
   const [bannerNotice, setBannerNotice] = useState<{
@@ -2157,7 +810,7 @@ function App() {
     return [...new Set(providerModels)];
   }, [activeSession, modelSuggestions]);
 
-  const mcpToolsForSelectedServer = useMemo(
+  const _mcpToolsForSelectedServer = useMemo(
     () => mcpToolsByServer[mcpSelectedServer] ?? [],
     [mcpSelectedServer, mcpToolsByServer],
   );
@@ -2184,7 +837,7 @@ function App() {
       }));
   }, [activeSession, modelSuggestions]);
 
-  const modeOptions = useMemo<ToolbarSelectOption[]>(
+  const _modeOptions = useMemo<ToolbarSelectOption[]>(
     () => [
       {
         value: "agent",
@@ -2460,7 +1113,7 @@ function App() {
     [activeSession, submitPrompt],
   );
 
-  const handleEnhancePrompt = useCallback(() => {
+  const _handleEnhancePrompt = useCallback(() => {
     if (!activeSession) {
       return;
     }
@@ -2483,7 +1136,7 @@ function App() {
     });
   }, [activeSession, settings.temperature]);
 
-  const handleMcpRefresh = useCallback(() => {
+  const _handleMcpRefresh = useCallback(() => {
     vscode.postMessage({ type: "listMcpServers" });
     if (mcpSelectedServerRef.current) {
       vscode.postMessage({
@@ -2493,7 +1146,7 @@ function App() {
     }
   }, []);
 
-  const handleMcpServerChange = useCallback((server: string) => {
+  const _handleMcpServerChange = useCallback((server: string) => {
     setMcpSelectedServer(server);
     setMcpInvokeResult(null);
     if (!server) {
@@ -2504,11 +1157,11 @@ function App() {
     vscode.postMessage({ type: "listMcpTools", server });
   }, []);
 
-  const handleMcpToolChange = useCallback((tool: string) => {
+  const _handleMcpToolChange = useCallback((tool: string) => {
     setMcpSelectedTool(tool);
   }, []);
 
-  const handleMcpInvoke = useCallback(() => {
+  const _handleMcpInvoke = useCallback(() => {
     if (!mcpSelectedServer || !mcpSelectedTool) {
       return;
     }
@@ -2542,7 +1195,8 @@ function App() {
     input.onchange = (e) => {
       const files = (e.target as HTMLInputElement).files;
       if (files) {
-        Array.from(files).forEach(async (file) => {
+        Array.from(files).forEach((file) => {
+          void (async () => {
           const kind = estimateAttachmentKind(file);
           const id = makeId("att");
           if (kind === "text" && file.size <= 700_000) {
@@ -2570,7 +1224,7 @@ function App() {
               },
             });
           }
-        });
+        })(); });
       }
     };
     input.click();
@@ -3034,9 +1688,9 @@ function App() {
               contextUtilization: number;
             };
           };
-          const edits = (resp.proposedEdits ?? []).map((e) => ({
+          const edits: ProposedEdit[] = (resp.proposedEdits ?? []).map((e) => ({
             ...e,
-            status: "pending" as EditStatus,
+            status: "pending" as const,
           }));
           useStore
             .getState()
@@ -3098,7 +1752,7 @@ function App() {
           else showNotice("error", message || "Request failed.");
           return;
         }
-        case "end":
+        case "end": {
           useStore.getState().setBusy(false);
           useStore.getState().resetParallel();
           pendingRef.current = null;
@@ -3117,6 +1771,7 @@ function App() {
             dispatchPromptRequest(queued);
           }
           return;
+        }
         case "editApplied": {
           const editId = String(payload.editId ?? "");
           if (editId)
@@ -3498,7 +2153,7 @@ function App() {
     }
   }
 
-  function onProviderChange(provider: ProviderId): void {
+  function _onProviderChange(provider: ProviderId): void {
     useStore.getState().updateActiveSession({ provider, model: "" });
     vscode.postMessage({ type: "refreshProviderStatus", provider });
     vscode.postMessage({ type: "requestModelSuggestions", provider });
@@ -3510,13 +2165,13 @@ function App() {
     useStore.getState().updateActiveSession({ mode });
   }
 
-  const modeDescriptions: Record<UiMode, string> = {
+  const _modeDescriptions: Record<UiMode, string> = {
     agent: "Build - Full coding assistant",
     ask: "Ask - Quick questions",
     plan: "Plan - Architecture planning",
   };
 
-  const cycleMode = useCallback(() => {
+  const _cycleMode = useCallback(() => {
     const modes: UiMode[] = ["agent", "ask", "plan"];
     const currentMode = activeSession?.mode ?? "agent";
     const currentIndex = modes.indexOf(currentMode);
@@ -3528,7 +2183,7 @@ function App() {
     return <div className="nk-empty">Initializing…</div>;
   }
 
-  const providerHealth = providerStatus[activeSession.provider];
+  const _providerHealth = providerStatus[activeSession.provider];
 
   return (
     <div className="nk-shell">
@@ -3536,253 +2191,17 @@ function App() {
       <header className="nk-header">
         <span className="nk-header-title">Tasks</span>
         <div className="nk-header-actions" ref={settingsDropdownRef}>
-          <div className="nk-settings-dropdown-wrap">
-            <button
-              className="nk-icon-btn"
-              title="Settings"
-              onClick={() => setSettingsDropdownOpen(!settingsDropdownOpen)}
-            >
-              <Settings size={14} />
-            </button>
-            {settingsDropdownOpen && (
-              <div className="nk-settings-dropdown">
-                {/* Provider Selection */}
-                <div className="nk-settings-section">
-                  <div className="nk-settings-label">Provider</div>
-                  <select
-                    className="nk-settings-select"
-                    value={activeSession.provider}
-                    onChange={(e) => {
-                      const provider = e.target.value as ProviderId;
-                      useStore.getState().updateActiveSession({ provider, model: "" });
-                      vscode.postMessage({ type: "refreshProviderStatus", provider });
-                      vscode.postMessage({ type: "requestModelSuggestions", provider });
-                    }}
-                  >
-                    <option value="ollama">Ollama (Local)</option>
-                    <option value="openai-compatible">OpenAI Compatible</option>
-                    <option value="huggingface">Hugging Face</option>
-                    <option value="openrouter">OpenRouter</option>
-                    <option value="together">Together AI</option>
-                    <option value="fireworks">Fireworks AI</option>
-                    <option value="groq">GroqCloud</option>
-                    <option value="nvidia">NVIDIA NIM</option>
-                    <option value="baseten">Baseten</option>
-                  </select>
-                </div>
-
-                {/* Model Selection */}
-                <div className="nk-settings-section">
-                  <div className="nk-settings-label">Model</div>
-                  <select
-                    className="nk-settings-select"
-                    value={activeSession.model}
-                    onChange={(e) => {
-                      useStore.getState().updateActiveSession({ model: e.target.value });
-                    }}
-                  >
-                    {modelsForActiveProvider.length === 0 ? (
-                      <option value={activeSession.model}>
-                        {activeSession.model}
-                      </option>
-                    ) : (
-                      modelsForActiveProvider.map((m) => (
-                        <option key={m} value={m}>
-                          {m}
-                        </option>
-                      ))
-                    )}
-                  </select>
-                </div>
-
-                {/* Ollama Settings - only show when provider is ollama */}
-                {activeSession.provider === 'ollama' && (
-                  <div className="nk-settings-section">
-                    <div className="nk-settings-label">Ollama Base URL</div>
-                    <input
-                      className="nk-settings-input"
-                      type="text"
-                      placeholder="http://localhost:11434"
-                      value={settings.ollamaBaseUrl ?? 'http://localhost:11434'}
-                      onChange={(e) => {
-                        useStore.getState().updateSetting('ollamaBaseUrl', e.target.value);
-                      }}
-                    />
-                  </div>
-                )}
-
-                {/* Cloud Provider Settings - show for all cloud providers */}
-                {activeSession.provider !== 'ollama' && (() => {
-                  const preset = providerPresets[activeSession.provider] ?? providerPresets['openai-compatible'];
-                  return (
-                    <>
-                      <div className="nk-settings-section">
-                        <div className="nk-settings-label">API Base URL</div>
-                        <input
-                          className="nk-settings-input"
-                          type="text"
-                          placeholder={preset.baseUrl || "https://api.example.com/v1"}
-                          value={settings.openAIBaseUrl ?? ''}
-                          onChange={(e) => {
-                            useStore.getState().updateSetting('openAIBaseUrl', e.target.value);
-                          }}
-                        />
-                      </div>
-                      <div className="nk-settings-section">
-                        <div className="nk-settings-label">
-                          API Key
-                          {settings.openAIApiKeyConfigured && (
-                            <span style={{ marginLeft: 8, fontSize: '0.85em', opacity: 0.7 }}>(configured)</span>
-                          )}
-                        </div>
-                        <input
-                          className="nk-settings-input"
-                          type="password"
-                          placeholder={settings.openAIApiKeyConfigured ? "Key stored securely — type to replace" : preset.apiKeyPlaceholder}
-                          value={localApiKey}
-                          onChange={(e) => {
-                            setLocalApiKey(e.target.value);
-                          }}
-                          onBlur={() => {
-                            // NC-003: Send the secret to the extension host on blur.
-                            // Never store it in the Zustand store or webview state.
-                            if (localApiKey.trim()) {
-                              useStore.getState().sendSecret('openAIApiKey', localApiKey);
-                              setLocalApiKey('');
-                            }
-                          }}
-                        />
-                        <div className="nk-settings-hint">
-                          {preset.hint}
-                        </div>
-                      </div>
-                    </>
-                  );
-                })()}
-
-                {/* Web Search Settings - show when web search is enabled */}
-                {settings.enableWebSearch && (
-                  <>
-                    <div className="nk-settings-section">
-                      <div className="nk-settings-label">Search Provider</div>
-                      <select
-                        className="nk-settings-select"
-                        value={settings.searchProvider ?? 'tavily'}
-                        onChange={(e) => {
-                          const provider = e.target.value as SearchProviderId;
-                          useStore.getState().updateSetting('searchProvider', provider);
-                        }}
-                      >
-                        <option value="tavily">Tavily</option>
-                        <option value="serpapi">SerpAPI</option>
-                        <option value="serper">Serper</option>
-                        <option value="bing">Bing Search</option>
-                        <option value="duckduckgo">DuckDuckGo (Free)</option>
-                        <option value="custom">Custom API</option>
-                      </select>
-                    </div>
-                    {settings.searchProvider !== 'duckduckgo' && (
-                      <div className="nk-settings-section">
-                        <div className="nk-settings-label">
-                          Search API Key
-                          {settings.searchApiKeyConfigured && (
-                            <span style={{ marginLeft: 8, fontSize: '0.85em', opacity: 0.7 }}>(configured)</span>
-                          )}
-                        </div>
-                        <input
-                          className="nk-settings-input"
-                          type="password"
-                          placeholder={settings.searchApiKeyConfigured ? "Key stored securely — type to replace" : getSearchProviderPlaceholder(settings.searchProvider ?? 'tavily')}
-                          value={localSearchApiKey}
-                          onChange={(e) => {
-                            setLocalSearchApiKey(e.target.value);
-                          }}
-                          onBlur={() => {
-                            // NC-003: Send the secret to the extension host on blur.
-                            // Never store it in the Zustand store or webview state.
-                            if (localSearchApiKey.trim()) {
-                              useStore.getState().sendSecret('searchApiKey', localSearchApiKey);
-                              setLocalSearchApiKey('');
-                            }
-                          }}
-                        />
-                        <div className="nk-settings-hint">
-                          {getSearchProviderHint(settings.searchProvider ?? 'tavily')}
-                        </div>
-                      </div>
-                    )}
-                    {settings.searchProvider === 'duckduckgo' && (
-                      <div className="nk-settings-section">
-                        <div className="nk-settings-hint">
-                          {getSearchProviderHint(settings.searchProvider ?? 'tavily')}
-                        </div>
-                      </div>
-                    )}
-                    {(settings.searchProvider === 'custom' || settings.searchProvider === 'serpapi' || settings.searchProvider === 'serper' || settings.searchProvider === 'bing') && (
-                      <div className="nk-settings-section">
-                        <div className="nk-settings-label">Search API Base URL</div>
-                        <input
-                          className="nk-settings-input"
-                          type="text"
-                          placeholder={getSearchProviderUrlPlaceholder(settings.searchProvider ?? 'tavily')}
-                          value={settings.searchBaseUrl ?? ''}
-                          onChange={(e) => {
-                            useStore.getState().updateSetting('searchBaseUrl', e.target.value);
-                          }}
-                        />
-                      </div>
-                    )}
-                  </>
-                )}
-
-                {/* Permission Mode */}
-                <div className="nk-settings-section">
-                  <div className="nk-settings-label">Permission Mode</div>
-                  <select
-                    className="nk-settings-select"
-                    value={settings.requireTerminalApproval ? "ask" : "auto"}
-                    onChange={(e) => {
-                      const mode = e.target.value;
-                      if (mode === "auto") {
-                        useStore.getState().updateSetting("autoApprove", false);
-                        useStore.getState().updateSetting("requireTerminalApproval", false);
-                        vscode.postMessage({ type: "updateSetting", key: "toolApproval", value: "auto" });
-                      } else {
-                        useStore.getState().updateSetting("autoApprove", false);
-                        useStore.getState().updateSetting("requireTerminalApproval", true);
-                        vscode.postMessage({ type: "updateSetting", key: "toolApproval", value: "ask" });
-                      }
-                    }}
-                  >
-                    <option value="ask">Ask — require approval for destructive tools</option>
-                    <option value="auto">Auto — approve safe tools automatically</option>
-                  </select>
-                </div>
-
-                {/* Links */}
-                <div className="nk-settings-section nk-settings-links">
-                  <div
-                    className="nk-settings-link"
-                    onClick={() => {
-                      vscode.postMessage({ type: "openSettings" });
-                      setSettingsDropdownOpen(false);
-                    }}
-                  >
-                    All Settings
-                  </div>
-                  <div
-                    className="nk-settings-link"
-                    onClick={() => {
-                      vscode.postMessage({ type: "openShortcuts" });
-                      setSettingsDropdownOpen(false);
-                    }}
-                  >
-                    Keyboard Shortcuts
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+          <SettingsDropdown
+            isOpen={settingsDropdownOpen}
+            onToggle={() => setSettingsDropdownOpen(!settingsDropdownOpen)}
+            activeSession={activeSession}
+            settings={settings}
+            modelsForActiveProvider={modelsForActiveProvider}
+            localApiKey={localApiKey}
+            setLocalApiKey={setLocalApiKey}
+            localSearchApiKey={localSearchApiKey}
+            setLocalSearchApiKey={setLocalSearchApiKey}
+          />
           <button
             className="nk-icon-btn"
             title="New chat"
@@ -4132,7 +2551,7 @@ function App() {
               />
               {(() => {
                 const effortInfo = getModelEffortInfo(activeSession.model);
-                if (!effortInfo || !effortInfo.supportsEffort) return null;
+                if (!effortInfo?.supportsEffort) return null;
                 return (
                   <div className="nk-effort-select">
                     <button
@@ -4149,7 +2568,7 @@ function App() {
                     >
                       <span className="nk-effort-label">Effort</span>
                       <span className="nk-effort-value" data-effort={activeSession.reasoningEffort ?? effortInfo.default}>
-                        {effortLabels[(activeSession.reasoningEffort ?? effortInfo.default) as ReasoningEffort]}
+                        {effortLabels[(activeSession.reasoningEffort ?? effortInfo.default)]}
                       </span>
                     </button>
                   </div>

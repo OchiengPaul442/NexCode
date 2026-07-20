@@ -29,7 +29,7 @@ export interface ModelCapabilityEntry extends ModelCapabilities {
 
 // ─── Default context window for unknown models ───────────────────────────────
 
-const DEFAULT_UNKNOWN_CONTEXT_WINDOW = 32_000;
+const _DEFAULT_UNKNOWN_CONTEXT_WINDOW = 32_000;
 
 // ─── Static registry of known models ─────────────────────────────────────────
 // Keys are `${provider}:${model}`. All capabilities verified as of July 2026.

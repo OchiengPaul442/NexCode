@@ -1,12 +1,9 @@
-import * as vscode from "vscode";
 import {
   TaskQueueManager,
-  Task,
-  TaskEvent,
-  ProposedEdit,
-  RequestAttachment,
-  ProviderId,
-  AgentMode,
+  type Task,
+  type TaskEvent,
+  type ProposedEdit,
+  type RequestAttachment,
 } from "@nexcode/agent-core";
 
 interface AttachmentChip {

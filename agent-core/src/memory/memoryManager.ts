@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
-import { ChatMessage } from "../types";
-import { LongTermMemoryEntry, LongTermMemoryStore } from "./longTermMemory";
+import { type ChatMessage } from "../types";
+import { type LongTermMemoryEntry, LongTermMemoryStore } from "./longTermMemory";
 import { ShortTermMemory } from "./shortTermMemory";
 import { redactSecrets } from "../utils/redact";
 

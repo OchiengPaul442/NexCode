@@ -1,6 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
-import { ChatMessage } from "../types";
+import { type ChatMessage } from "../types";
 
 const MAX_SESSIONS = 50;
 const MAX_CONTEXT_MESSAGES = 12;

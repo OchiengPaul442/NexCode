@@ -1,5 +1,5 @@
-import { TerminalTool } from "./terminalTool";
-import { ToolResult } from "../types";
+import { type TerminalTool } from "./terminalTool";
+import { type ToolResult } from "../types";
 import * as fs from "fs";
 import * as path from "path";
 

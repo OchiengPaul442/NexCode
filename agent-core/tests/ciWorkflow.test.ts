@@ -46,7 +46,7 @@ describe("NC-031 & NC-045: CI workflow configuration", () => {
 
     it("uses matrix strategy for OS", () => {
       // The matrix should declare os as a dimension
-      expect(ciContent).toMatch(/matrix:.*\n\s+os:\s*\[/m);
+      expect(ciContent).toMatch(/matrix:.*\r?\n\s+os:\s*\[/m);
     });
 
     it("has fail-fast: false to avoid cancelling healthy platform jobs", () => {

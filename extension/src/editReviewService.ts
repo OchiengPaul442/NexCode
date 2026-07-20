@@ -1,7 +1,7 @@
 import path from "path";
 import * as vscode from "vscode";
 import {
-  ProposedEdit,
+  type ProposedEdit,
   validateEditPreconditions,
   checkPathWithinWorkspace,
 } from "@nexcode/agent-core";

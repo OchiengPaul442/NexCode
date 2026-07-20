@@ -51,6 +51,9 @@ const typeAwareProductionRules = {
   "@typescript-eslint/prefer-optional-chain": "warn",
   "@typescript-eslint/no-unnecessary-type-assertion": "warn",
   "@typescript-eslint/prefer-nullish-coalescing": "warn",
+
+  // Allow underscore-prefixed unused variables and arguments
+  "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
 };
 
 // Relaxed rules for test files (any usage common in mocks/fixtures)
@@ -82,6 +85,7 @@ export default tseslint.config(
       "**/coverage/**",
       "**/extension/media/**",
       "**/*.d.ts",
+      "extension/src/test/**",
     ],
   },
 

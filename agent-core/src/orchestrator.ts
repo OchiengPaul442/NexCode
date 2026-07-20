@@ -1,7 +1,6 @@
 import fs from "fs/promises";
-import path from "path";
 import { randomUUID } from "crypto";
-import { createRuntimeConfig, getTemperatureForMode, getModelForMode, RuntimeConfig } from "./config";
+import { createRuntimeConfig, getTemperatureForMode, getModelForMode, type RuntimeConfig, type AgentModels } from "./config";
 
 import { CoderAgent } from "./agents/coderAgent";
 import { PlannerAgent } from "./agents/plannerAgent";
@@ -9,21 +8,20 @@ import { QaAgent } from "./agents/qaAgent";
 import { ReviewerAgent } from "./agents/reviewerAgent";
 import { SecurityAgent } from "./agents/securityAgent";
 import {
-  ActivityFile,
-  ActivityStatus,
-  ActivityTodo,
-  AgentMode,
-  AgentResult,
-  ChatMessage,
-  OrchestratorEvent,
-  OrchestratorRequest,
-  OrchestratorResponse,
-  ProviderId,
-  ProposedEdit,
-  ReasoningEffort,
-  ToolResult,
+  type ActivityFile,
+  type ActivityStatus,
+  type ActivityTodo,
+  type AgentMode,
+  type ChatMessage,
+  type OrchestratorEvent,
+  type OrchestratorRequest,
+  type OrchestratorResponse,
+  type ProviderId,
+  type ProposedEdit,
+  type ReasoningEffort,
+  type ToolResult,
 } from "./types";
-import { McpAdapter, McpToolCall, McpToolResult } from "./mcp";
+import { type McpAdapter, type McpToolCall, type McpToolResult } from "./mcp";
 import { McpRegistry } from "./mcp/mcpRegistry";
 import { FilesystemAdapter } from "./mcp/adapters/filesystemAdapter";
 import { MemoryManager } from "./memory/memoryManager";
@@ -35,7 +33,7 @@ import { ModelRouter, detectModelCapabilities } from "./providers/modelRouter";
 import { OllamaProvider } from "./providers/ollamaProvider";
 import { OpenAICompatibleProvider } from "./providers/openAICompatibleProvider";
 import { ToolRegistry } from "./tools/toolRegistry";
-import { ApprovalCallback, DefaultToolApprovalPolicy } from "./tools/toolApprovalPolicy";
+import { type ApprovalCallback, DefaultToolApprovalPolicy } from "./tools/toolApprovalPolicy";
 import { TokenCounter } from "./utils/tokenCounter";
 import { getModelCapabilityRegistry } from "./utils/modelCapabilityRegistry";
 import { chunkText, extractFirstCodeBlock } from "./utils/text";
@@ -48,12 +46,37 @@ import {
 import {
   buildWorkspaceContext as buildWorkspaceContextImpl,
   clampText,
-  extractLikelyFileReferences,
-  normalizeActivityPath,
 } from "./orchestrator/contextBuilder";
+import {
+  inferNaturalLanguageEditRequest,
+  extractToolCommandRequest as extractToolCommandRequestFn,
+  extractWorkspaceStatsRequest as extractWorkspaceStatsRequestFn,
+} from "./orchestrator/intentParser";
+import {
+  resolveAutoStrategy as resolveAutoStrategyFn,
+  describePipelineStage as describePipelineStageFn,
+  formatPipelineStage as formatPipelineStageFn,
+  type AutoRoutingStrategy,
+} from "./orchestrator/autoRouter";
+import {
+  buildActivityFilesFromProposedEdits as buildActivityFilesFromProposedEditsFn,
+  inferActivityFilesFromToolCommand as inferActivityFilesFromToolCommandFn,
+  inferActivityFilesFromPrompt as inferActivityFilesFromPromptFn,
+  parseEditCommand as parseEditCommandFn,
+} from "./orchestrator/activityFileBuilder";
+import { formatUserFacingError as formatUserFacingErrorFn } from "./orchestrator/errorMapper";
+import { parsePromptEnhancement as parsePromptEnhancementFn } from "./orchestrator/promptEnhancer";
+import {
+  isAbortError as isAbortErrorFn,
+  ensureNotAborted as ensureNotAbortedFn,
+  cleanupSubagentFiles as cleanupSubagentFilesFn,
+  runAgentSafely as runAgentSafelyFn,
+  isAppendStyleEdit as isAppendStyleEditFn,
+  extractRequestedAppendText as extractRequestedAppendTextFn,
+} from "./orchestrator/orchestratorHelpers";
 import { ContextCompressor } from "./utils/contextCompressor";
 import { SessionCompressor } from "./utils/sessionCompressor";
-import { runAgentLoop, AgentLoopConfig } from "./agents/agentLoop";
+import { runAgentLoop, type AgentLoopConfig } from "./agents/agentLoop";
 import { getToolDefinitionsForMode } from "./tools/toolDefinitions";
 import { validateEditPreconditions } from "./utils/editValidation";
 import { atomicWriteFile } from "./tools/fileSystemTool";
@@ -75,23 +98,13 @@ export interface NexcodeOrchestratorOptions {
   tavilyBaseUrl?: string;
   approvalCallback?: ApprovalCallback;
   modeTemperatures?: Partial<Record<AgentMode, number>>;
-  agentModels?: import("./config").AgentModels;
+  agentModels?: AgentModels;
   steeringProvider?: () => string | undefined;
   /** Whether workspace prompt files are allowed to override built-in defaults. */
   allowWorkspacePrompts?: boolean;
 }
 
-type AutoRoutingStrategy =
-  | {
-      kind: "single";
-      mode: Exclude<AgentMode, "auto">;
-      statusLabel?: string;
-      todoTitle: string;
-    }
-  | {
-      kind: "pipeline";
-      pipeline: Exclude<AgentMode, "auto">[];
-    };
+
 
 export interface PromptEnhancementRequest {
   prompt: string;
@@ -109,11 +122,6 @@ export interface PromptEnhancementResult {
   notes: string[];
   providerUsed: ProviderId;
   modelUsed: string;
-}
-
-interface InferredEditRequest {
-  filePath: string;
-  instruction: string;
 }
 
 const MAX_WORKSPACE_CONTEXT_CHARS = 12_000;
@@ -382,7 +390,7 @@ export class NexcodeOrchestrator {
       complexity: originalPrompt.length > 1200 ? "large" : "small",
     });
 
-    const parsed = this.parsePromptEnhancement(response.text, originalPrompt);
+    const parsed = parsePromptEnhancementFn(response.text, originalPrompt);
 
     return {
       enhancedPrompt: parsed.enhancedPrompt,
@@ -468,7 +476,7 @@ export class NexcodeOrchestrator {
     };
 
     try {
-      this.ensureNotAborted(request.abortSignal);
+      ensureNotAbortedFn(request.abortSignal);
       const rawSessionMessages = this.memory.getSessionMessages(sessionId);
       const compressedSessionMessages = this.sessionCompressor.compressSession(
         rawSessionMessages.map((m) => ({ role: m.role, text: m.content })),
@@ -500,7 +508,7 @@ export class NexcodeOrchestrator {
           () => "",
         ),
       ]);
-      this.ensureNotAborted(request.abortSignal);
+      ensureNotAbortedFn(request.abortSignal);
 
       const memoryContext = clampText(
         memoryContextRaw,
@@ -530,7 +538,7 @@ export class NexcodeOrchestrator {
       }
 
       const toolDefs = getToolDefinitionsForMode(
-        (mode === "auto" ? "coder" : mode) as Exclude<AgentMode, "auto">,
+        (mode === "auto" ? "coder" : mode),
       );
       const modelContextWindow = detectModelCapabilities(model, provider).contextWindow;
       const inputBudget = this.tokenCounter.calculateInputBudget(modelContextWindow);
@@ -605,20 +613,20 @@ export class NexcodeOrchestrator {
 
       const inferredToolCommand =
         request.allowTools !== false
-          ? this.extractToolCommandRequest(
+          ? extractToolCommandRequestFn(
               request.prompt,
-              request.workspaceRoot,
+              request.workspaceRoot ?? this.config.workspaceRoot,
               request.activeFilePath,
             )
           : null;
-      const inferredEditRequest = this.inferNaturalLanguageEditRequest(
+      const inferredEditRequest = inferNaturalLanguageEditRequest(
         request.prompt,
-        request.workspaceRoot,
+        request.workspaceRoot ?? this.config.workspaceRoot,
         request.activeFilePath,
       );
       const workspaceStatsCommand =
         request.allowTools !== false
-          ? this.extractWorkspaceStatsRequest(request.prompt)
+          ? extractWorkspaceStatsRequestFn(request.prompt)
           : null;
 
       let response: OrchestratorResponse | null = null;
@@ -628,7 +636,7 @@ export class NexcodeOrchestrator {
       ) {
         const toolCommand = request.prompt.replace(/^\s*\/tool\s+/, "").trim();
         executedToolCommand = toolCommand;
-        const toolFiles = this.inferActivityFilesFromToolCommand(toolCommand);
+        const toolFiles = inferActivityFilesFromToolCommandFn(toolCommand, this.config.workspaceRoot);
         latestActivityFiles = toolFiles;
 
         yield {
@@ -670,7 +678,7 @@ export class NexcodeOrchestrator {
           ? `Running terminal command: ${inferredToolCommand.slice("terminal ".length)}`
           : `Running inferred tool command: ${inferredToolCommand}`;
         const inferredFiles =
-          this.inferActivityFilesFromToolCommand(inferredToolCommand);
+          inferActivityFilesFromToolCommandFn(inferredToolCommand, this.config.workspaceRoot);
         latestActivityFiles = inferredFiles;
 
         yield {
@@ -749,7 +757,7 @@ export class NexcodeOrchestrator {
         return;
 
       } else if (request.prompt.trimStart().startsWith("/edit ")) {
-        const parsedEdit = this.parseEditCommand(request.prompt);
+        const parsedEdit = parseEditCommandFn(request.prompt);
         const editFiles = parsedEdit
           ? [
               {
@@ -782,7 +790,7 @@ export class NexcodeOrchestrator {
 
         latestActivityFiles =
           response.proposedEdits.length > 0
-            ? this.buildActivityFilesFromProposedEdits(response.proposedEdits)
+            ? buildActivityFilesFromProposedEditsFn(response.proposedEdits, this.config.workspaceRoot)
             : editFiles.map((file) => ({ ...file, status: "modified" }));
 
       } else if (inferredEditRequest) {
@@ -817,26 +825,16 @@ export class NexcodeOrchestrator {
 
         latestActivityFiles =
           response.proposedEdits.length > 0
-            ? this.buildActivityFilesFromProposedEdits(response.proposedEdits)
+            ? buildActivityFilesFromProposedEditsFn(response.proposedEdits, this.config.workspaceRoot)
             : editFiles.map((file) => ({ ...file, status: "modified" }));
 
       } else if (mode === "auto") {
-        const strategy = this.resolveAutoStrategy(request.prompt);
+        const strategy = resolveAutoStrategyFn(request.prompt);
         if (strategy.kind === "pipeline") {
-          const pipelineTodos = strategy.pipeline.map((stage, index) => ({
-            id: `pipeline-${index + 1}-${stage}`,
-            title: `${this.formatPipelineStage(stage)} stage`,
-            status:
-              index === 0
-                ? ("in-progress" as ActivityStatus)
-                : ("not-started" as ActivityStatus),
-            detail: index === 0 ? "Active" : "Queued",
-          }));
-
           yield {
             type: "status",
             message: `Auto routing: multi-agent pipeline (${strategy.pipeline
-              .map((stage) => this.formatPipelineStage(stage))
+              .map((stage) => formatPipelineStageFn(stage))
               .join(" → ")})`,
           };
 
@@ -878,12 +876,12 @@ export class NexcodeOrchestrator {
             type: "status",
             message:
               strategy.statusLabel ??
-              `Auto routing: ${this.formatPipelineStage(strategy.mode)} fast path`,
+              `Auto routing: ${formatPipelineStageFn(strategy.mode)} fast path`,
           };
 
-          const inferredFiles = this.inferActivityFilesFromPrompt(
+          const inferredFiles = inferActivityFilesFromPromptFn(
             request.prompt,
-            request.workspaceRoot,
+            request.workspaceRoot ?? this.config.workspaceRoot,
             request.activeFilePath,
           );
           latestActivityFiles = inferredFiles;
@@ -922,10 +920,9 @@ export class NexcodeOrchestrator {
           }
         }
       } else {
-        const selectedMode = mode as Exclude<AgentMode, "auto">;
-        const inferredFiles = this.inferActivityFilesFromPrompt(
+        const inferredFiles = inferActivityFilesFromPromptFn(
           request.prompt,
-          request.workspaceRoot,
+          request.workspaceRoot ?? this.config.workspaceRoot,
           request.activeFilePath,
         );
         latestActivityFiles = inferredFiles;
@@ -964,7 +961,7 @@ export class NexcodeOrchestrator {
         }
       }
 
-      this.ensureNotAborted(request.abortSignal);
+      ensureNotAbortedFn(request.abortSignal);
 
       if (!response) {
         throw new Error("No response produced by orchestrator pipeline.");
@@ -997,7 +994,7 @@ export class NexcodeOrchestrator {
       this.efficiencyTracker.trackRequest(estimatedTokens);
 
       if (response.proposedEdits.length > 0) {
-        for (const _edit of response.proposedEdits) {
+        for (let i = 0; i < response.proposedEdits.length; i++) {
           this.efficiencyTracker.trackEdit();
         }
       }
@@ -1079,8 +1076,9 @@ export class NexcodeOrchestrator {
         );
       }
 
-      const responseFiles = this.buildActivityFilesFromProposedEdits(
+      const responseFiles = buildActivityFilesFromProposedEditsFn(
         response.proposedEdits,
+        this.config.workspaceRoot,
       );
       if (responseFiles.length > 0) {
         latestActivityFiles = responseFiles;
@@ -1092,7 +1090,7 @@ export class NexcodeOrchestrator {
         response,
       };
     } catch (error) {
-      if (this.isAbortError(error)) {
+      if (isAbortErrorFn(error)) {
 
         yield {
           type: "stopped",
@@ -1101,7 +1099,7 @@ export class NexcodeOrchestrator {
         return;
       }
 
-      const errorMessage = this.formatUserFacingError(error);
+      const errorMessage = formatUserFacingErrorFn(error);
 
 
       yield {
@@ -1152,13 +1150,11 @@ export class NexcodeOrchestrator {
       files?: ActivityFile[];
     },
   ): AsyncGenerator<OrchestratorEvent, OrchestratorResponse> {
-    const stageLabel = this.formatPipelineStage(selectedMode);
-    const todoTitle = options?.todoTitle ?? `Run ${stageLabel} stage`;
-    const activityFiles = (options?.files ?? []).map((file) => ({ ...file }));
+    const stageLabel = formatPipelineStageFn(selectedMode);
 
     yield {
       type: "status",
-      message: options?.statusLabel ?? this.describePipelineStage(selectedMode),
+      message: options?.statusLabel ?? describePipelineStageFn(selectedMode),
     };
 
 
@@ -1178,7 +1174,7 @@ export class NexcodeOrchestrator {
         temperature,
         abortSignal,
       )) {
-        this.ensureNotAborted(abortSignal);
+        ensureNotAbortedFn(abortSignal);
         if (!token) {
           continue;
         }
@@ -1190,7 +1186,7 @@ export class NexcodeOrchestrator {
         };
       }
     } catch (error) {
-      if (this.isAbortError(error)) {
+      if (isAbortErrorFn(error)) {
         throw error;
       }
 
@@ -1251,7 +1247,7 @@ export class NexcodeOrchestrator {
     let implementationDraft: string | undefined;
     const stageTodos: ActivityTodo[] = pipeline.map((stage, index) => ({
       id: `pipeline-${index + 1}-${stage}`,
-      title: `${this.formatPipelineStage(stage)} stage`,
+      title: `${formatPipelineStageFn(stage)} stage`,
       status: index === 0 ? "in-progress" : "not-started",
       detail: index === 0 ? "Active" : "Queued",
     }));
@@ -1259,9 +1255,9 @@ export class NexcodeOrchestrator {
 
     for (let stageIndex = 0; stageIndex < pipeline.length; stageIndex += 1) {
       const stage = pipeline[stageIndex];
-      this.ensureNotAborted(abortSignal);
+      ensureNotAbortedFn(abortSignal);
 
-      const stageLabel = this.formatPipelineStage(stage);
+      const stageLabel = formatPipelineStageFn(stage);
       stageTodos[stageIndex] = {
         ...stageTodos[stageIndex],
         status: "in-progress",
@@ -1270,7 +1266,7 @@ export class NexcodeOrchestrator {
 
       yield {
         type: "status",
-        message: this.describePipelineStage(stage),
+        message: describePipelineStageFn(stage),
       };
 
 
@@ -1309,7 +1305,7 @@ export class NexcodeOrchestrator {
           reasoningEffort,
           steeringProvider,
         )) {
-          this.ensureNotAborted(abortSignal);
+          ensureNotAbortedFn(abortSignal);
           if (event.type === "token") {
             stageText += event.token;
             composedChunks.push(event.token);
@@ -1319,7 +1315,7 @@ export class NexcodeOrchestrator {
           }
         }
       } catch (error) {
-        if (this.isAbortError(error)) {
+        if (isAbortErrorFn(error)) {
           throw error;
         }
 
@@ -1415,7 +1411,7 @@ export class NexcodeOrchestrator {
     reasoningEffort?: ReasoningEffort,
     steeringProvider?: () => string | undefined,
   ): AsyncGenerator<OrchestratorEvent, OrchestratorResponse> {
-    const resolvedMode = (mode === "auto" ? "coder" : mode) as Exclude<AgentMode, "auto">;
+    const resolvedMode = (mode === "auto" ? "coder" : mode);
     const toolDefs = getToolDefinitionsForMode(resolvedMode);
     const systemPrompt = await this.prompts.getPrompt(resolvedMode);
     const groundingNote = buildGroundingNoteForMode(resolvedMode, prompt);
@@ -1465,7 +1461,7 @@ export class NexcodeOrchestrator {
       const responseText = lastMsg?.content ?? "";
 
       // Cleanup: remove any .agents/ directory files created during the loop
-      await this.cleanupSubagentFiles();
+      await cleanupSubagentFilesFn(this.config.workspaceRoot);
 
       return {
         text: responseText.trim() || "Agent loop completed with no output.",
@@ -1476,18 +1472,18 @@ export class NexcodeOrchestrator {
         diagnostics,
       };
     } catch (error) {
-      if (this.isAbortError(error)) {
+      if (isAbortErrorFn(error)) {
         throw error;
       }
 
       // Cleanup on error too
-      await this.cleanupSubagentFiles();
+      await cleanupSubagentFilesFn(this.config.workspaceRoot);
 
       const errorStr = String(error);
       diagnostics.push(`Agent loop error: ${errorStr}`);
       
       // Provide user-friendly error message
-      let userMessage = "An error occurred while processing your request.";
+      let userMessage = "I could not complete this request due to an internal error. Please try again or rephrase your request.";
       if (errorStr.includes("malformed JSON") || errorStr.includes("can't find closing") || errorStr.includes("invalid response")) {
         userMessage = `The model "${model}" had trouble processing this request. This can happen when a model doesn't fully support tool calling. Try using a different model or simplifying your request.`;
       } else if (errorStr.includes("Context window overflow")) {
@@ -1599,173 +1595,18 @@ export class NexcodeOrchestrator {
   }
 
   private resolveAutoStrategy(prompt: string): AutoRoutingStrategy {
-    const normalized = prompt.toLowerCase().trim();
-    const words = normalized.split(/\s+/).filter(Boolean);
-    const wordCount = words.length;
-
-    const isGreeting =
-      /^(hi|hello|hey|yo|sup|good\s+(morning|afternoon|evening))(?:[\s!.,?]*)$/.test(
-        normalized,
-      ) || /^(thanks|thank you)(?:[\s!.,?]*)$/.test(normalized);
-    const isSimpleQuestion =
-      (/\?/.test(normalized) || /\b(can you|are you|do you|what is|what are|how do|how does|why|explain|tell me|describe)\b/.test(normalized)) &&
-      wordCount < 25 &&
-      !/\b(create|build|implement|fix|debug|test|review|security|plan)\b/.test(
-        normalized,
-      );
-    const wantsPlan =
-      /\b(plan|architecture|roadmap|steps|break down|acceptance criteria)\b/.test(
-        normalized,
-      ) && !/\b(build|create|implement|write|code|edit|fix)\b/.test(normalized);
-    const wantsSecurity =
-      /\b(security|cve|vulnerability|threat|hardening|owasp|secret)\b/.test(
-        normalized,
-      );
-    const wantsQa =
-      /\b(test strategy|test case|qa|validate|verification)\b/.test(normalized);
-    const wantsReview =
-      /\b(review|code review|regression|smell|refactor recommendation)\b/.test(
-        normalized,
-      );
-    const wantsDeepWorkflow =
-      /\b(multi[- ]agent|end[- ]to[- ]end|comprehensive|full workflow|iterate|production[- ]grade|real world test|run all suites|thorough)\b/.test(
-        normalized,
-      );
-    const isLarge = prompt.length > 1400 || wordCount > 220;
-
-    if (isGreeting || isSimpleQuestion) {
-      return {
-        kind: "single",
-        mode: "coder",
-        statusLabel: "Preparing a quick direct answer",
-        todoTitle: "Draft quick answer",
-      };
-    }
-
-    if (wantsPlan) {
-      return {
-        kind: "single",
-        mode: "planner",
-        statusLabel: "Planning approach and milestones",
-        todoTitle: "Build implementation plan",
-      };
-    }
-
-    if (wantsSecurity && !wantsDeepWorkflow) {
-      return {
-        kind: "single",
-        mode: "security",
-        statusLabel: "Checking security posture",
-        todoTitle: "Run focused security review",
-      };
-    }
-
-    if (wantsQa && !wantsDeepWorkflow) {
-      return {
-        kind: "single",
-        mode: "qa",
-        statusLabel: "Validating behavior and tests",
-        todoTitle: "Assess QA and validation coverage",
-      };
-    }
-
-    if (wantsReview && !wantsDeepWorkflow) {
-      return {
-        kind: "single",
-        mode: "reviewer",
-        statusLabel: "Reviewing correctness and regressions",
-        todoTitle: "Produce review findings",
-      };
-    }
-
-    if (wantsDeepWorkflow || isLarge) {
-      return {
-        kind: "pipeline",
-        pipeline: this.resolveAutoPipeline(prompt),
-      };
-    }
-
-    return {
-      kind: "single",
-      mode: "coder",
-      statusLabel: "Drafting implementation-ready response",
-      todoTitle: "Generate implementation guidance",
-    };
-  }
-
-  private resolveAutoPipeline(prompt: string): Exclude<AgentMode, "auto">[] {
-    const normalized = prompt.toLowerCase();
-    const isPlanningHeavy =
-      /\b(plan|architecture|roadmap|acceptance criteria|break down)\b/.test(
-        normalized,
-      );
-    const isSecuritySensitive =
-      /\b(security|audit|cve|vulnerability|secret|threat|compliance|hardening)\b/.test(
-        normalized,
-      );
-    const isValidationHeavy =
-      /\b(test|qa|verify|validation|debug|bug|broken|error|failing)\b/.test(
-        normalized,
-      );
-    const isBuildOrCreate =
-      /\b(create|build|design|scaffold|implement|nextjs|react|frontend|website|app|blog|ui)\b/.test(
-        normalized,
-      );
-    const isLarge = prompt.length > 900 || normalized.split(/\s+/).length > 180;
-
-    const stages: Exclude<AgentMode, "auto">[] = ["coder", "reviewer"];
-
-    if (isPlanningHeavy && !isBuildOrCreate && !stages.includes("planner")) {
-      stages.unshift("planner");
-    }
-    if (isSecuritySensitive && !stages.includes("security")) {
-      stages.push("security");
-    }
-    if (
-      (isLarge || isValidationHeavy || isBuildOrCreate) &&
-      !stages.includes("qa")
-    ) {
-      stages.push("qa");
-    }
-
-    return stages;
-  }
-
-  private describePipelineStage(stage: Exclude<AgentMode, "auto">): string {
-    switch (stage) {
-      case "planner":
-        return "Planner: outlining strategy and milestones";
-      case "coder":
-        return "Coder: producing implementation-ready output";
-      case "reviewer":
-        return "Reviewer: checking correctness and regressions";
-      case "qa":
-        return "QA: validating behavior and test coverage";
-      case "security":
-        return "Security: scanning for exploitable risks";
-      default:
-        return "Running agent stage";
-    }
+    return resolveAutoStrategyFn(prompt);
   }
 
   private formatPipelineStage(stage: Exclude<AgentMode, "auto">): string {
-    switch (stage) {
-      case "planner":
-        return "Planner";
-      case "coder":
-        return "Coder";
-      case "reviewer":
-        return "Reviewer";
-      case "qa":
-        return "QA";
-      case "security":
-        return "Security";
-      default:
-        return "Agent";
-    }
+    return formatPipelineStageFn(stage);
   }
 
-  private async *handleToolRequest(
+  private describePipelineStage(stage: Exclude<AgentMode, "auto">): string {
+    return describePipelineStageFn(stage);
+  }
+
+  private async handleToolRequest(
     prompt: string,
     mode: AgentMode,
     provider: ProviderId,
@@ -1773,7 +1614,7 @@ export class NexcodeOrchestrator {
     diagnostics: string[],
     allowWebSearch: boolean,
     abortSignal?: AbortSignal,
-  ): AsyncGenerator<OrchestratorEvent, OrchestratorResponse> {
+  ): Promise<OrchestratorResponse> {
     const toolCommand = prompt.replace(/^\s*\/tool\s+/, "").trim();
 
     if (
@@ -1782,7 +1623,7 @@ export class NexcodeOrchestrator {
     ) {
       return {
         text: [
-          "## Tool Execution",
+          "### Tool Activity",
           `Command: ${toolCommand}`,
           "",
           "Web search is disabled in settings. Enable it and try again.",
@@ -1806,7 +1647,7 @@ export class NexcodeOrchestrator {
         if (!approved) {
           return {
             text: [
-              "## Tool Execution",
+              "### Tool Activity",
               `Command: ${toolCommand}`,
               "",
               "```text",
@@ -1833,7 +1674,7 @@ export class NexcodeOrchestrator {
         }
         return {
           text: [
-            "## Tool Execution",
+            "### Tool Activity",
             `Command: ${toolCommand}`,
             "",
             "```text",
@@ -1865,7 +1706,7 @@ export class NexcodeOrchestrator {
 
     return {
       text: [
-        "## Tool Execution",
+        "### Tool Activity",
         `Command: ${toolCommand}`,
         "",
         "```text",
@@ -1897,7 +1738,7 @@ export class NexcodeOrchestrator {
     ) {
       return {
         text: [
-          "## Tool Execution",
+          "### Tool Activity",
           `Command: ${toolCommand}`,
           "",
           "Web search is disabled in settings. Enable it and try again.",
@@ -1919,7 +1760,7 @@ export class NexcodeOrchestrator {
           if (!approved) {
             return {
               text: [
-                "## Tool Execution",
+                "### Tool Activity",
                 `Command: ${toolCommand}`,
                 "",
                 "```text",
@@ -1960,7 +1801,7 @@ export class NexcodeOrchestrator {
           if (!approved) {
             return {
               text: [
-                "## Tool Execution",
+                "### Tool Activity",
                 `Command: ${toolCommand}`,
                 "",
                 "```text",
@@ -2008,7 +1849,7 @@ export class NexcodeOrchestrator {
           if (!approved) {
             return {
               text: [
-                "## Tool Execution",
+                "### Tool Activity",
                 `Command: ${toolCommand}`,
                 "",
                 "```text",
@@ -2053,7 +1894,7 @@ export class NexcodeOrchestrator {
 
       return {
         text: [
-          "## Tool Execution",
+          "### Tool Activity",
           `Command: ${toolCommand}`,
           "",
           "```text",
@@ -2068,7 +1909,7 @@ export class NexcodeOrchestrator {
       };
     }
 
-    return yield* this.handleToolRequest(
+    return await this.handleToolRequest(
       prompt,
       mode,
       provider,
@@ -2088,10 +1929,10 @@ export class NexcodeOrchestrator {
     iterator: AsyncGenerator<string, ToolResult>,
     abortSignal?: AbortSignal,
   ): AsyncGenerator<OrchestratorEvent, OrchestratorResponse> {
-    let result: ToolResult | null = null;
+    let result!: ToolResult;
 
     while (true) {
-      this.ensureNotAborted(abortSignal);
+      ensureNotAbortedFn(abortSignal);
       const step = await iterator.next();
       if (step.done) {
         result = step.value;
@@ -2123,7 +1964,7 @@ export class NexcodeOrchestrator {
 
     return {
       text: [
-        "## Tool Execution",
+        "### Tool Activity",
         `Command: ${toolCommand}`,
         "",
         "```text",
@@ -2150,7 +1991,7 @@ export class NexcodeOrchestrator {
     diagnostics: string[],
     abortSignal?: AbortSignal,
   ): Promise<OrchestratorResponse> {
-    const parsed = this.parseEditCommand(prompt);
+    const parsed = parseEditCommandFn(prompt);
     if (!parsed) {
       return {
         text: "Use /edit <relative/path> :: <instruction>",
@@ -2182,7 +2023,7 @@ export class NexcodeOrchestrator {
       "```",
     ].join("\n");
 
-    const generated = await this.runAgentSafely(
+    const generated = await runAgentSafelyFn(
       "coder",
       () =>
         this.coder.run({
@@ -2202,12 +2043,12 @@ export class NexcodeOrchestrator {
     const extracted = extractFirstCodeBlock(generated.content);
     let newText =
       extracted && extracted.length > 0 ? extracted : generated.content;
-    const requestedAppendText = this.extractRequestedAppendText(
+    const requestedAppendText = extractRequestedAppendTextFn(
       parsed.instruction,
     );
 
     if (
-      this.isAppendStyleEdit(parsed.instruction) &&
+      isAppendStyleEditFn(parsed.instruction) &&
       oldText.trim().length > 0 &&
       !newText.includes(oldText.trimEnd())
     ) {
@@ -2226,7 +2067,7 @@ export class NexcodeOrchestrator {
       requestedAppendText &&
       !newText.includes(requestedAppendText.trim()) &&
       oldText.trim().length > 0 &&
-      this.isAppendStyleEdit(parsed.instruction)
+      isAppendStyleEditFn(parsed.instruction)
     ) {
       newText = `${oldText.trimEnd()}\n${requestedAppendText.trim()}`;
     }
@@ -2253,739 +2094,6 @@ export class NexcodeOrchestrator {
     };
   }
 
-  private parseEditCommand(
-    prompt: string,
-  ): { filePath: string; instruction: string } | null {
-    const match = prompt.match(/^\s*\/edit\s+(.+?)\s*::\s*([\s\S]+)$/);
-    if (!match) {
-      return null;
-    }
-
-    return {
-      filePath: match[1].trim(),
-      instruction: match[2].trim(),
-    };
-  }
-
-  private isAppendStyleEdit(instruction: string): boolean {
-    return /\b(append|add|insert)\b/i.test(instruction);
-  }
-
-  private extractRequestedAppendText(instruction: string): string | null {
-    const trimmed = instruction.trim();
-
-    const patterns = [
-      /(?:append|add|insert)(?:\s+a)?(?:\s+new)?\s+line\s+with\s+(?:the\s+)?text\s+([`'\"]?)([\s\S]+?)\1\.?$/i,
-      /(?:append|add|insert)(?:\s+a)?(?:\s+new)?\s+line\s+(?:containing|that says|saying)\s+([`'\"]?)([\s\S]+?)\1\.?$/i,
-      /(?:append|add|insert)(?:\s+a)?(?:\s+new)?\s+line\s+(?:with|of)\s+([`'\"]?)([\s\S]+?)\1\.?$/i,
-    ];
-
-    for (const pattern of patterns) {
-      const match = trimmed.match(pattern);
-      if (match) {
-        const text = match[2].trim();
-        if (text) {
-          return text;
-        }
-      }
-    }
-
-    return null;
-  }
-
-  private inferNaturalLanguageEditRequest(
-    prompt: string,
-    workspaceRoot?: string,
-    activeFilePath?: string,
-  ): InferredEditRequest | null {
-    const normalized = prompt.trim();
-    if (!normalized || normalized.startsWith("/")) {
-      return null;
-    }
-
-    if (
-      /\b(explain|describe|summari[sz]e|review|analy[sz]e|read|open|show|search|find|run|execute|test)\b/i.test(
-        normalized,
-      ) &&
-      !/\b(refactor|rewrite|modify|change|update|fix|rename|remove|delete|add|implement|improve|clean up)\b/i.test(
-        normalized,
-      )
-    ) {
-      return null;
-    }
-
-    const hasEditVerb =
-      /\b(refactor|rewrite|modify|change|update|fix|rename|remove|delete|add|implement|improve|clean up)\b/i.test(
-        normalized,
-      );
-    if (!hasEditVerb) {
-      return null;
-    }
-
-    const referencedFiles = extractLikelyFileReferences(normalized)
-      .map((candidate) => normalizeActivityPath(candidate, workspaceRoot ?? this.config.workspaceRoot))
-      .filter((candidate): candidate is string => Boolean(candidate));
-    const mentionsFileContext =
-      referencedFiles.length > 0 ||
-      /\b(file|component|module|function|class|screen|service)\b/i.test(
-        normalized,
-      ) ||
-      /\b(this|current|active|selected|attached)\s+file\b/i.test(normalized);
-
-    if (!mentionsFileContext) {
-      return null;
-    }
-
-    const filePath = this.resolvePromptTargetPath(
-      normalized,
-      workspaceRoot,
-      activeFilePath,
-    );
-    if (!filePath) {
-      return null;
-    }
-
-    return {
-      filePath,
-      instruction: normalized,
-    };
-  }
-
-  private extractToolCommandRequest(
-    prompt: string,
-    workspaceRoot?: string,
-    activeFilePath?: string,
-  ): string | null {
-    const terminalCommand = this.extractTerminalCommandRequest(prompt);
-    if (terminalCommand) {
-      return `terminal ${terminalCommand}`;
-    }
-
-    const normalized = prompt.trim();
-    if (!normalized) {
-      return null;
-    }
-
-    const readMatch = normalized.match(
-      /^(?:please\s+)?(?:read|open|show)\s+(?:the\s+)?file\s+(.+)$/i,
-    );
-    if (readMatch) {
-      return `read ${readMatch[1].trim()}`;
-    }
-
-    const searchMatch = normalized.match(
-      /^(?:please\s+)?(?:search|find)\s+(?:for\s+)?(.+)$/i,
-    );
-    if (searchMatch && !/\b(command|terminal|shell)\b/i.test(normalized)) {
-      const searchQuery = searchMatch[1].trim();
-      const shouldInferSearch =
-        /["'`]/.test(searchQuery) ||
-        /\b(file|symbol|text|string|pattern|repo|repository|workspace|codebase)\b/i.test(
-          searchQuery,
-        );
-
-      if (shouldInferSearch) {
-        return `search ${searchQuery}`;
-      }
-    }
-
-    const testMatch = normalized.match(
-      /^(?:please\s+)?(?:run|execute)\s+(?:the\s+)?tests?(?:\s+with\s+(.+))?$/i,
-    );
-    if (testMatch) {
-      const args = testMatch[1]?.trim();
-      return args && args.length > 0 ? `test ${args}` : "test";
-    }
-
-    const moveMatch = normalized.match(
-      /^(?:please\s+)?(?:move|rename)\s+(.+?)\s+(?:to|into)\s+(.+)$/i,
-    );
-    if (moveMatch) {
-      const sourcePath = this.normalizeRequestedPath(
-        moveMatch[1],
-        workspaceRoot,
-        activeFilePath,
-      );
-      const destinationPath = this.normalizeRequestedPath(
-        moveMatch[2],
-        workspaceRoot,
-        activeFilePath,
-      );
-
-      if (sourcePath && destinationPath) {
-        return `move ${sourcePath} :: ${destinationPath}`;
-      }
-    }
-
-    const clearMatch = normalized.match(
-      /^(?:please\s+)?(?:clear|empty|delete\s+contents\s+of|remove\s+contents\s+of)\s+(.+)$/i,
-    );
-    if (clearMatch) {
-      const targetPath = this.normalizeRequestedPath(
-        clearMatch[1],
-        workspaceRoot,
-        activeFilePath,
-      );
-
-      if (targetPath) {
-        return `delete-contents ${targetPath}`;
-      }
-    }
-
-    const deleteMatch = normalized.match(
-      /^(?:please\s+)?(?:delete|remove)\s+(.+)$/i,
-    );
-    if (deleteMatch) {
-      const targetPath = this.normalizeRequestedPath(
-        deleteMatch[1],
-        workspaceRoot,
-        activeFilePath,
-      );
-
-      if (targetPath) {
-        return `delete ${targetPath}`;
-      }
-    }
-
-    return null;
-  }
-
-  private resolvePromptTargetPath(
-    prompt: string,
-    workspaceRoot?: string,
-    activeFilePath?: string,
-  ): string | null {
-    const referencedFiles = extractLikelyFileReferences(prompt)
-      .map((candidate) => normalizeActivityPath(candidate, workspaceRoot ?? this.config.workspaceRoot))
-      .filter((candidate): candidate is string => Boolean(candidate));
-
-    if (referencedFiles.length > 0) {
-      return referencedFiles[0];
-    }
-
-    const normalizedActivePath = normalizeActivityPath(
-      activeFilePath,
-      workspaceRoot ?? this.config.workspaceRoot,
-    );
-    if (!normalizedActivePath) {
-      return null;
-    }
-
-    if (
-      /\b(this|current|active|selected|attached)\s+file\b/i.test(prompt) ||
-      /\b(refactor|rewrite|modify|change|update|fix|rename|remove|delete|add|implement|improve|clean up)\b/i.test(
-        prompt,
-      )
-    ) {
-      return normalizedActivePath;
-    }
-
-    return null;
-  }
-
-  private normalizeRequestedPath(
-    rawPath: string,
-    workspaceRoot?: string,
-    activeFilePath?: string,
-  ): string | null {
-    const cleaned = rawPath.trim().replace(/[.]+$/, "");
-    if (!cleaned) {
-      return null;
-    }
-
-    const normalizedActivePath = normalizeActivityPath(
-      activeFilePath,
-      workspaceRoot ?? this.config.workspaceRoot,
-    );
-
-    if (
-      /^(?:the\s+)?(?:this|current|active|selected|attached)\s+file$/i.test(
-        cleaned,
-      )
-    ) {
-      return normalizedActivePath ?? null;
-    }
-
-    if (
-      /^(?:the\s+)?(?:this|current|active|selected|attached)\s+(?:folder|directory)$/i.test(
-        cleaned,
-      )
-    ) {
-      return normalizedActivePath
-        ? path.dirname(normalizedActivePath).replace(/\\/g, "/")
-        : null;
-    }
-
-    const withoutKindPrefix = cleaned.replace(
-      /^(?:the\s+)?(?:file|folder|directory)\s+/i,
-      "",
-    );
-
-    return normalizeActivityPath(withoutKindPrefix, workspaceRoot ?? this.config.workspaceRoot) ?? null;
-  }
-
-  private extractTerminalCommandRequest(prompt: string): string | null {
-    const raw = prompt.trim();
-    if (!raw) {
-      return null;
-    }
-
-    const singleLineDirect = this.normalizeCommandCandidate(raw);
-    if (singleLineDirect) {
-      return singleLineDirect;
-    }
-
-    const lines = raw
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0);
-
-    for (let index = 0; index < lines.length; index += 1) {
-      const line = lines[index];
-
-      const bareCandidate = this.normalizeCommandCandidate(line);
-      if (bareCandidate) {
-        return bareCandidate;
-      }
-
-      const inline = line.match(
-        /^(?:please\s+)?(?:help\s+)?(?:run|execute)(?:\s+this)?(?:\s+command)?\s*[:\-]\s*(.+)$/i,
-      );
-      if (inline) {
-        const candidate = this.normalizeCommandCandidate(inline[1]);
-        if (candidate) {
-          return candidate;
-        }
-      }
-
-      if (
-        /^(?:please\s+)?(?:help\s+)?(?:run|execute)(?:\s+this)?(?:\s+command)?\s*[:\-]?$/i.test(
-          line,
-        )
-      ) {
-        const nextLine = lines[index + 1];
-        if (!nextLine) {
-          continue;
-        }
-
-        const candidate = this.normalizeCommandCandidate(nextLine);
-        if (candidate) {
-          return candidate;
-        }
-      }
-    }
-
-    return null;
-  }
-
-  private extractWorkspaceStatsRequest(prompt: string): string | null {
-    const normalized = prompt.toLowerCase().trim();
-    if (!normalized) return null;
-
-    const patterns = [
-      /\b(?:how many|count|number of)\s+(?:files?|folders?|directories?|dirs?)\b/i,
-      /\b(?:file|folder|directory|dir)\s+(?:count|stats?|statistics|breakdown)\b/i,
-      /\bworkspace\s+(?:stats?|statistics|summary|overview)\b/i,
-      /\b(?:what|show)\s+(?:is|are)\s+the\s+(?:file|folder|directory)\s+(?:count|stats?|breakdown)\b/i,
-      /\b(?:list|give|show)\s+(?:me\s+)?(?:workspace\s+)?(?:file|folder|directory)\s+(?:count|stats?|statistics|breakdown)\b/i,
-    ];
-
-    for (const pattern of patterns) {
-      if (pattern.test(normalized)) {
-        return "workspace-stats";
-      }
-    }
-
-    return null;
-  }
-
-  private normalizeCommandCandidate(candidate: string): string | null {
-    const trimmed = candidate
-      .trim()
-      .replace(/^`+/, "")
-      .replace(/`+$/, "")
-      .trim();
-
-    if (!trimmed || trimmed.length > 1_800) {
-      return null;
-    }
-
-    if (/\r|\n/.test(trimmed)) {
-      return null;
-    }
-
-    const commandStarter =
-      /^(pnpm|npm|npx|yarn|bun|node|python|pip|pip3|uv|poetry|go|cargo|dotnet|mvn|gradle|java|javac|git|docker|kubectl|terraform|make|cmake|pwsh|powershell|bash|sh|cmd|ls|dir|mkdir|touch|cat|type)\b/i;
-
-    return commandStarter.test(trimmed) ? trimmed : null;
-  }
-
-  private buildActivityFilesFromProposedEdits(
-    edits: ProposedEdit[],
-  ): ActivityFile[] {
-    const deduped = new Map<string, ActivityFile>();
-
-    for (const edit of edits) {
-      const normalizedPath = normalizeActivityPath(edit.filePath, this.config.workspaceRoot);
-      if (!normalizedPath) {
-        continue;
-      }
-
-      deduped.set(normalizedPath, {
-        path: normalizedPath,
-        status: "modified",
-        summary: edit.summary || "Proposed edit generated",
-      });
-    }
-
-    return [...deduped.values()];
-  }
-
-  private inferActivityFilesFromToolCommand(
-    toolCommand: string,
-  ): ActivityFile[] {
-    const trimmed = toolCommand.trim();
-    if (!trimmed) {
-      return [];
-    }
-
-    const readMatch = trimmed.match(/^read\s+(.+)$/i);
-    if (readMatch) {
-      const filePath = normalizeActivityPath(readMatch[1], this.config.workspaceRoot);
-      if (filePath) {
-        return [
-          {
-            path: filePath,
-            status: "viewed",
-            summary: "Reading file",
-          },
-        ];
-      }
-    }
-
-    const searchMatch = trimmed.match(/^search\s+(.+)$/i);
-    if (searchMatch) {
-      return [
-        {
-          path: "workspace",
-          status: "viewed",
-          summary: `Searching for: ${searchMatch[1].trim()}`,
-        },
-      ];
-    }
-
-    const terminalMatch = trimmed.match(/^terminal\s+(.+)$/i);
-    if (terminalMatch) {
-      return [
-        {
-          path: "terminal",
-          status: "in-progress",
-          summary: terminalMatch[1].trim(),
-        },
-      ];
-    }
-
-    const moveMatch = trimmed.match(/^move\s+(.+?)\s*::\s*(.+)$/i);
-    if (moveMatch) {
-      return [
-        {
-          path: normalizeActivityPath(moveMatch[1], this.config.workspaceRoot) ?? moveMatch[1].trim(),
-          status: "modified",
-          summary: `Moved to ${moveMatch[2].trim()}`,
-        },
-        {
-          path: normalizeActivityPath(moveMatch[2], this.config.workspaceRoot) ?? moveMatch[2].trim(),
-          status: "modified",
-          summary: `Created from move ${moveMatch[1].trim()}`,
-        },
-      ];
-    }
-
-    const deleteMatch = trimmed.match(/^delete\s+(.+)$/i);
-    if (deleteMatch) {
-      const targetPath =
-        normalizeActivityPath(deleteMatch[1], this.config.workspaceRoot) ?? deleteMatch[1].trim();
-      return [
-        {
-          path: targetPath,
-          status: "modified",
-          summary: "Deleting path",
-        },
-      ];
-    }
-
-    const clearMatch = trimmed.match(/^delete-contents\s+(.+)$/i);
-    if (clearMatch) {
-      const targetPath =
-        normalizeActivityPath(clearMatch[1], this.config.workspaceRoot) ?? clearMatch[1].trim();
-      return [
-        {
-          path: targetPath,
-          status: "modified",
-          summary: "Clearing directory contents",
-        },
-      ];
-    }
-
-    const mcpMatch = trimmed.match(/^mcp\s+([^:\s]+:[^\s]+).*$/i);
-    if (mcpMatch) {
-      return [
-        {
-          path: "mcp",
-          status: "in-progress",
-          summary: `Calling ${mcpMatch[1]}`,
-        },
-      ];
-    }
-
-    return [];
-  }
-
-  private inferActivityFilesFromPrompt(
-    prompt: string,
-    workspaceRoot?: string,
-    activeFilePath?: string,
-  ): ActivityFile[] {
-    const files: ActivityFile[] = [];
-    const seen = new Set<string>();
-
-    const parsedEdit = this.parseEditCommand(prompt);
-    if (parsedEdit) {
-      const editPath = normalizeActivityPath(parsedEdit.filePath, this.config.workspaceRoot);
-      if (editPath) {
-        files.push({
-          path: editPath,
-          status: "in-progress",
-          summary: "Preparing edit",
-        });
-        seen.add(editPath);
-      }
-    }
-
-    const pathLikeMatches = prompt.match(/[\w./\\-]+\.[a-z0-9]{1,8}/gi) ?? [];
-    for (const match of pathLikeMatches.slice(0, 4)) {
-      const normalizedPath = normalizeActivityPath(match, workspaceRoot ?? this.config.workspaceRoot);
-      if (!normalizedPath || seen.has(normalizedPath)) {
-        continue;
-      }
-
-      files.push({
-        path: normalizedPath,
-        status: "viewed",
-        summary: "Referenced in prompt",
-      });
-      seen.add(normalizedPath);
-    }
-
-    const normalizedActivePath = normalizeActivityPath(
-      activeFilePath,
-      workspaceRoot ?? this.config.workspaceRoot,
-    );
-    if (normalizedActivePath && !seen.has(normalizedActivePath)) {
-      files.push({
-        path: normalizedActivePath,
-        status: "viewed",
-        summary: "Active editor context",
-      });
-    }
-
-    return files.slice(0, 6);
-  }
-
-  private parsePromptEnhancement(
-    responseText: string,
-    fallbackPrompt: string,
-  ): { enhancedPrompt: string; notes: string[] } {
-    const candidates = [responseText, extractFirstCodeBlock(responseText)]
-      .filter(
-        (candidate): candidate is string =>
-          typeof candidate === "string" && candidate.trim().length > 0,
-      )
-      .map((candidate) => candidate.trim());
-
-    for (const candidate of candidates) {
-      try {
-        const parsed = JSON.parse(candidate) as {
-          enhancedPrompt?: unknown;
-          notes?: unknown;
-        };
-
-        if (typeof parsed.enhancedPrompt !== "string") {
-          continue;
-        }
-
-        const enhancedPrompt = parsed.enhancedPrompt.trim();
-        if (!enhancedPrompt) {
-          continue;
-        }
-
-        const notes = Array.isArray(parsed.notes)
-          ? parsed.notes
-              .map((item) => String(item).trim())
-              .filter((item) => item.length > 0)
-              .slice(0, 5)
-          : [];
-
-        return {
-          enhancedPrompt,
-          notes,
-        };
-      } catch {
-        // Try next candidate.
-      }
-    }
-
-    const plainText = this.parsePlainPromptEnhancement(responseText);
-    if (plainText.enhancedPrompt) {
-      return {
-        enhancedPrompt: plainText.enhancedPrompt,
-        notes:
-          plainText.notes.length > 0
-            ? plainText.notes
-            : ["Model returned a plain text rewrite."],
-      };
-    }
-
-    return {
-      enhancedPrompt: fallbackPrompt,
-      notes: ["Model returned empty output; original prompt was preserved."],
-    };
-  }
-
-  private parsePlainPromptEnhancement(responseText: string): {
-    enhancedPrompt: string;
-    notes: string[];
-  } {
-    const text = responseText.trim();
-    if (!text) {
-      return {
-        enhancedPrompt: "",
-        notes: [],
-      };
-    }
-
-    const lines = text.split(/\r?\n/);
-    const promptLines: string[] = [];
-    const noteLines: string[] = [];
-    let inNotes = false;
-
-    for (const rawLine of lines) {
-      const line = rawLine.trim();
-
-      if (!line) {
-        if (inNotes) {
-          noteLines.push("");
-        } else {
-          promptLines.push("");
-        }
-        continue;
-      }
-
-      const headingMatch = line.match(
-        /^(enhanced|rewritten|revised|optimized)\s+prompt\s*:\s*(.*)$/i,
-      );
-      if (headingMatch) {
-        const rest = headingMatch[2].trim();
-        if (rest) {
-          promptLines.push(rest);
-        }
-        continue;
-      }
-
-      if (/^notes\s*:\s*$/i.test(line)) {
-        inNotes = true;
-        continue;
-      }
-
-      const inlineNotesMatch = line.match(/^notes\s*:\s*(.*)$/i);
-      if (inlineNotesMatch) {
-        inNotes = true;
-        const rest = inlineNotesMatch[1].trim();
-        if (rest) {
-          noteLines.push(rest);
-        }
-        continue;
-      }
-
-      if (inNotes) {
-        noteLines.push(line.replace(/^[-*]\s*/, ""));
-      } else {
-        promptLines.push(rawLine);
-      }
-    }
-
-    const enhancedPrompt = promptLines.join("\n").trim();
-    const notes = noteLines
-      .map((item) => item.trim())
-      .filter((item) => item.length > 0)
-      .slice(0, 5);
-
-    return {
-      enhancedPrompt,
-      notes,
-    };
-  }
-
-  private async runAgentSafely(
-    mode: Exclude<AgentMode, "auto">,
-    run: () => Promise<AgentResult>,
-    diagnostics: string[],
-  ): Promise<AgentResult> {
-    try {
-      return await run();
-    } catch (error) {
-      if (this.isAbortError(error)) {
-        throw error;
-      }
-
-      const errorStr = String(error);
-      const isTimeout = errorStr.toLowerCase().includes("timeout");
-      diagnostics.push(`${capitalize(mode)} agent error: ${errorStr}`);
-      const reason = isTimeout
-        ? `The request timed out. The model is taking too long to respond. Try a simpler task, break it into smaller steps, or switch to a faster model.`
-        : errorStr;
-      return {
-        agent: mode,
-        content: `> **${capitalize(mode)} agent could not complete the task.**\n>\n> ${reason}`,
-      };
-    }
-  }
-
-  private ensureNotAborted(signal?: AbortSignal): void {
-    if (signal?.aborted) {
-      const reason = signal.reason ?? "Request aborted.";
-      const err = new Error(typeof reason === "string" ? reason : String(reason));
-      err.name = "AbortError";
-      throw err;
-    }
-  }
-
-  private async cleanupSubagentFiles(): Promise<void> {
-    try {
-      const fs = await import("fs/promises");
-      const path = await import("path");
-      const agentsDir = path.join(this.config.workspaceRoot, ".agents");
-      const exists = await fs.access(agentsDir).then(() => true).catch(() => false);
-      if (exists) {
-        await fs.rm(agentsDir, { recursive: true, force: true });
-      }
-    } catch {
-      // Ignore cleanup errors - not critical
-    }
-  }
-
-  private isAbortError(error: unknown): boolean {
-    if (error instanceof Error && error.name === "AbortError") {
-      return true;
-    }
-
-    if (typeof DOMException !== "undefined" && error instanceof DOMException) {
-      return error.name === "AbortError";
-    }
-
-    return false;
-  }
-
   private getSessionId(workspaceRoot?: string): string {
     return workspaceRoot
       ? `workspace:${workspaceRoot}`
@@ -3000,76 +2108,6 @@ export class NexcodeOrchestrator {
       this.config.providerDefaults.provider,
     ).contextWindow;
     return buildWorkspaceContextImpl(request, this.config.workspaceRoot, modelContextWindow);
-  }
-
-  private formatUserFacingError(error: unknown): string {
-    const raw = String(error ?? "")
-      .replace(/\s+/g, " ")
-      .trim();
-    if (!raw) {
-      return "Request failed due to an unknown error.";
-    }
-
-    const normalized = raw.toLowerCase();
-
-    if (normalized.includes("timeout")) {
-      return "The model request timed out. Try a smaller prompt or switch to a faster model.";
-    }
-
-    if (
-      normalized.includes("invalid_request_error") ||
-      normalized.includes("400")
-    ) {
-      return "The model could not process this request. Try a different model or simplify your prompt.";
-    }
-
-    if (
-      normalized.includes("401") ||
-      normalized.includes("unauthorized") ||
-      normalized.includes("invalid api key")
-    ) {
-      return "Authentication failed. Check your API key in settings.";
-    }
-
-    if (normalized.includes("429") || normalized.includes("rate limit")) {
-      return "Rate limit reached. Please wait a moment and try again.";
-    }
-
-    if (
-      normalized.includes("all stream attempts failed") ||
-      normalized.includes("all provider/model attempts failed")
-    ) {
-      if (normalized.includes("ollama") && normalized.includes("econnrefused")) {
-        return "Ollama is not running. Start it with: `ollama serve`. Or switch to OpenCode Go in settings (nexcodeKiboko.defaultProvider = openai-compatible).";
-      }
-      if (normalized.includes("ollama") && normalized.includes("model")) {
-        return "Ollama model not found. Pull it with: `ollama pull <model-name>`. Check available models with: `ollama list`.";
-      }
-      if (normalized.includes("opencode") || normalized.includes("openai-compatible")) {
-        return "OpenCode Go API failed. Check your API key in settings (nexcodeKiboko.openAIApiKey) and ensure the model is valid (e.g., deepseek-v4-flash, mimo-v2.5).";
-      }
-      if (normalized.includes("upstream request failed")) {
-        return "Provider upstream request failed. For Ollama: ensure it's running. For OpenCode Go: check your API key and model name in settings.";
-      }
-      return "All configured provider attempts failed. For Ollama: ensure it's running (`ollama serve`). For OpenCode Go: set a valid API key in settings.";
-    }
-
-    if (
-      normalized.includes("fetch failed") ||
-      normalized.includes("econnrefused") ||
-      normalized.includes("enotfound")
-    ) {
-      if (normalized.includes("ollama") || normalized.includes("11434")) {
-        return "Cannot reach Ollama. Start it with: `ollama serve`. Then pull your model: `ollama pull <model-name>`.";
-      }
-      return "Could not reach the model provider endpoint. Check network access and base URL settings.";
-    }
-
-    if (normalized.includes("abort")) {
-      return "Request was cancelled.";
-    }
-
-    return raw.length > 300 ? `${raw.slice(0, 300)}...` : raw;
   }
 }
 

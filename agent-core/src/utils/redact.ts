@@ -16,18 +16,18 @@
 // ---------------------------------------------------------------------------
 
 const SECRET_KEY_PATTERNS = [
-  /api[_\-]?key/i,
+  /api[_-]?key/i,
   /token/i,
   /secret/i,
   /password/i,
   /passwd/i,
   /credential/i,
   /authorization/i,
-  /auth[_\-]?token/i,
-  /access[_\-]?key/i,
-  /private[_\-]?key/i,
-  /signing[_\-]?key/i,
-  /client[_\-]?secret/i,
+  /auth[_-]?token/i,
+  /access[_-]?key/i,
+  /private[_-]?key/i,
+  /signing[_-]?key/i,
+  /client[_-]?secret/i,
   /bearer/i,
   /oauth/i,
 ];
@@ -80,13 +80,13 @@ function applyPatternRedaction(text: string): string {
       // Slack user tokens
       .replace(/\b(xoxp-[0-9]{10,13}-[0-9]{10,13}-[0-9]{10,13}-[a-f0-9]{32})\b/g, "[REDACTED_SLACK_TOKEN]")
       // Slack app-level tokens
-      .replace(/\b(xoxe-[0-9]-[a-zA-Z0-9\-]{143})\b/g, "[REDACTED_SLACK_TOKEN]")
+      .replace(/\b(xoxe-[0-9]-[a-zA-Z0-9-]{143})\b/g, "[REDACTED_SLACK_TOKEN]")
       // Slack webhook URLs
       .replace(/\b(https:\/\/hooks\.slack\.com\/services\/T[a-zA-Z0-9]{8,12}\/B[a-zA-Z0-9]{8,12}\/[a-zA-Z0-9]{24})\b/g, "[REDACTED_SLACK_WEBHOOK]")
       // Google API keys
       .replace(/\b(AIza[0-9A-Za-z\-_]{35})\b/g, "[REDACTED_GOOGLE_API_KEY]")
       // Google OAuth client secrets
-      .replace(/\b(GOCSPX-[a-zA-Z0-9_\-]{28})\b/g, "[REDACTED_GOOGLE_OAUTH_SECRET]")
+      .replace(/\b(GOCSPX-[a-zA-Z0-9_-]{28})\b/g, "[REDACTED_GOOGLE_OAUTH_SECRET]")
       // Hugging Face tokens
       .replace(/\b(hf_[a-zA-Z0-9]{34})\b/g, "[REDACTED_HF_TOKEN]")
       // OpenRouter keys
@@ -99,14 +99,14 @@ function applyPatternRedaction(text: string): string {
       .replace(/\b(~[a-zA-Z0-9]{34,40})\b/g, (match, p1, offset, str) => {
         // Only redact if preceded by context suggesting Azure
         const before = str.slice(Math.max(0, offset - 50), offset);
-        if (/azure|client[_\-]?secret/i.test(before)) {
+        if (/azure|client[_-]?secret/i.test(before)) {
           return "[REDACTED_AZURE_CLIENT_SECRET]";
         }
         return match;
       })
       // Bearer tokens
       .replace(
-        /Bearer\s+[a-zA-Z0-9._\-]{20,}/g,
+        /Bearer\s+[a-zA-Z0-9._-]{20,}/g,
         "Bearer [REDACTED_TOKEN]",
       )
       // Authorization header values
@@ -145,7 +145,7 @@ function redactJWTTokens(text: string): string {
   // Match three base64url segments separated by dots
   return text.replace(
     /\b([A-Za-z0-9\-_]+)\.([A-Za-z0-9\-_]+)\.([A-Za-z0-9\-_]{20,})\b/g,
-    (match, headerB64: string, payloadB64: string, sigB64: string) => {
+    (match, headerB64: string, _payloadB64: string, _sigB64: string) => {
       try {
         // base64url → base64
         const headerStr = Buffer.from(
@@ -337,10 +337,10 @@ export function redactObject<T>(
 
   // Cycle detection: track objects we've already visited
   const seen = _seen ?? new WeakSet<object>();
-  if (seen.has(obj as object)) {
+  if (seen.has(obj)) {
     return "[CIRCULAR]" as T;
   }
-  seen.add(obj as object);
+  seen.add(obj);
 
   if (Array.isArray(obj)) {
     return obj.map((item) => redactObject(item, knownValues, seen)) as T;

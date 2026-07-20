@@ -1,14 +1,12 @@
-import { randomUUID } from "crypto";
 import {
-  Task,
-  TaskStatus,
-  TaskEvent,
-  OrchestratorEvent,
-  OrchestratorRequest,
-  ProviderId,
-  AgentMode,
-  ReasoningEffort,
-  RequestAttachment,
+  type Task,
+  type TaskStatus,
+  type TaskEvent,
+  type OrchestratorRequest,
+  type ProviderId,
+  type AgentMode,
+  type ReasoningEffort,
+  type RequestAttachment,
 } from "./types";
 import { TaskQueue, classifyPromptIntent } from "./taskQueue";
 
@@ -245,12 +243,12 @@ export class TaskQueueManager {
 
   private buildActivityResult(taskId: string, result: string): string {
     const prompt = this.taskPrompts.get(taskId) ?? "";
-    const truncated = prompt.length > 80 ? prompt.slice(0, 80) + "..." : prompt;
+    const _truncated = prompt.length > 80 ? prompt.slice(0, 80) + "..." : prompt;
     return result;
   }
 
   clear(): void {
-    for (const [id, controller] of this.runningTasks) {
+    for (const [_id, controller] of this.runningTasks) {
       controller.abort("queue-cleared");
     }
     this.runningTasks.clear();

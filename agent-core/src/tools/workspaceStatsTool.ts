@@ -1,6 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
-import { ToolResult } from "../types";
+import { type ToolResult } from "../types";
 
 const SKIP_DIRS = new Set([
   "node_modules",

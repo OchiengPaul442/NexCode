@@ -12,7 +12,7 @@ type SecretKey = keyof typeof SECRET_KEYS;
  * The workspace configuration keys that hold legacy plaintext secrets.
  * Used both for migration and for cleanup/removal after migration.
  */
-export const LEGACY_PLAINTEXT_KEYS = Object.keys(SECRET_KEYS) as string[];
+export const LEGACY_PLAINTEXT_KEYS = Object.keys(SECRET_KEYS);
 
 export class SecretService {
   private static readonly MIGRATION_FLAG = "nexcode.secrets.migrated";
@@ -123,6 +123,6 @@ export class SecretService {
     for (const key of Object.keys(SECRET_KEYS) as SecretKey[]) {
       result[key] = await this.getSecret(key);
     }
-    return result as Record<SecretKey, string>;
+    return result;
   }
 }

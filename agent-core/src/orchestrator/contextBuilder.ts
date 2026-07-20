@@ -1,6 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
-import { RequestAttachment, OrchestratorRequest } from "../types";
+import { type RequestAttachment, type OrchestratorRequest } from "../types";
 import { ContextCache } from "../utils/contextCache";
 import { checkPathWithinWorkspace } from "../utils/pathContainment";
 import { TokenCounter } from "../utils/tokenCounter";
@@ -10,9 +10,6 @@ const fileTreeCache = new ContextCache(30_000);
 const manifestCache = new ContextCache(300_000);
 const recentlyModifiedCache = new ContextCache(30_000);
 
-const MAX_WORKSPACE_CONTEXT_CHARS = 12_000;
-const MAX_MEMORY_CONTEXT_CHARS = 4_000;
-const MAX_TOOL_OUTPUT_CHARS = 16_000;
 const MAX_ACTIVE_SNIPPET_CHARS = 3_200;
 const MAX_REFERENCED_FILE_SNIPPET_CHARS = 1_600;
 const MAX_ATTACHMENT_TEXT_CHARS = 3_000;
@@ -58,7 +55,7 @@ export async function buildWorkspaceContext(
     if (manifest) {
       sections.push(manifest);
     }
-  } catch {}
+  } catch { /* no-op */ }
 
   try {
     const files = await getWorkspaceFileTree(workspaceRoot);
@@ -68,14 +65,14 @@ export async function buildWorkspaceContext(
       const abbreviated = formatFileTreeAsAbbreviated(files);
       sections.push(`Project files (${files.length} total, abbreviated):\n${abbreviated}`);
     }
-  } catch {}
+  } catch { /* no-op */ }
 
   try {
     const recent = await getRecentlyModifiedFiles(workspaceRoot);
     if (recent.length > 0) {
       sections.push(`Recently modified:\n${recent.map((f) => `  ${f}`).join("\n")}`);
     }
-  } catch {}
+  } catch { /* no-op */ }
 
   if (request.activeFilePath) {
     const absoluteActivePath = resolvePathWithinWorkspaceRoot(
@@ -400,26 +397,26 @@ async function readManifest(workspaceRoot: string): Promise<string | null> {
       Object.keys(pkg.devDependencies ?? {}).length;
     const scriptCount = Object.keys(pkg.scripts ?? {}).length;
     return `Project: ${pkg.name ?? "unknown"} (Node.js), ${depCount} dependencies, ${scriptCount} scripts`;
-  } catch {}
+  } catch { /* no-op */ }
 
   try {
     const raw = await fs.readFile(path.join(workspaceRoot, "pyproject.toml"), "utf8");
     const nameMatch = raw.match(/^name\s*=\s*"([^"]+)"/m);
     const deps = (raw.match(/(?:dependencies|requires)\s*=\s*\[/g) ?? []).length;
     return `Project: ${nameMatch?.[1] ?? "unknown"} (Python), ~${deps} dependency block(s)`;
-  } catch {}
+  } catch { /* no-op */ }
 
   try {
     const raw = await fs.readFile(path.join(workspaceRoot, "go.mod"), "utf8");
     const modMatch = raw.match(/^module\s+(\S+)/m);
     return `Project: ${modMatch?.[1] ?? "unknown"} (Go)`;
-  } catch {}
+  } catch { /* no-op */ }
 
   try {
     const raw = await fs.readFile(path.join(workspaceRoot, "Cargo.toml"), "utf8");
     const nameMatch = raw.match(/^name\s*=\s*"([^"]+)"/m);
     return `Project: ${nameMatch?.[1] ?? "unknown"} (Rust)`;
-  } catch {}
+  } catch { /* no-op */ }
 
   try {
     const files = await fs.readdir(workspaceRoot);
@@ -431,7 +428,7 @@ async function readManifest(workspaceRoot: string): Promise<string | null> {
     if (csproj) {
       return `Project: ${csproj.replace(/\.csproj$/, "")} (C#/.NET)`;
     }
-  } catch {}
+  } catch { /* no-op */ }
 
   try {
     const files = await fs.readdir(workspaceRoot);
@@ -440,7 +437,7 @@ async function readManifest(workspaceRoot: string): Promise<string | null> {
     if (hasGradle || hasPom) {
       return `Project: (Java/${hasGradle ? "Gradle" : "Maven"})`;
     }
-  } catch {}
+  } catch { /* no-op */ }
 
   return null;
 }
@@ -463,7 +460,8 @@ async function getRecentlyModifiedFiles(
     try {
       const stat = await fs.stat(path.join(workspaceRoot, file));
       withMtime.push({ file, mtime: stat.mtimeMs });
-    } catch {}
+  } catch { /* no-op */ }
+
   }
 
   withMtime.sort((a, b) => b.mtime - a.mtime);

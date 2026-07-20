@@ -1,4 +1,4 @@
-import { McpAdapter, McpToolCall, McpToolResult } from "./types";
+import { type McpAdapter, type McpToolCall, type McpToolResult } from "./types";
 
 export class McpRegistry {
   private readonly adapters = new Map<string, McpAdapter>();

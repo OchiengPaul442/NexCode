@@ -116,7 +116,7 @@ describe("Real-world agent flow tests", () => {
       const finalEvent = events.find((e) => e.type === "final");
       expect(finalEvent).toBeDefined();
       if (finalEvent?.type === "final") {
-        expect(finalEvent.response.text).toContain("Tool Execution");
+        expect(finalEvent.response.text).toContain("Tool Activity");
       }
     });
 
@@ -134,7 +134,7 @@ describe("Real-world agent flow tests", () => {
       const finalEvent = events.find((e) => e.type === "final");
       expect(finalEvent).toBeDefined();
       if (finalEvent?.type === "final") {
-        expect(finalEvent.response.text).toContain("Tool Execution");
+        expect(finalEvent.response.text).toContain("Tool Activity");
       }
     });
 
@@ -234,7 +234,7 @@ describe("Real-world agent flow tests", () => {
       const finalEvent = events.find((e) => e.type === "final");
       expect(finalEvent).toBeDefined();
       if (finalEvent?.type === "final") {
-        expect(finalEvent.response.text).toContain("Tool Execution");
+        expect(finalEvent.response.text).toContain("Tool Activity");
       }
     });
 

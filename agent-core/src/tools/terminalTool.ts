@@ -1,9 +1,5 @@
-import { exec, execFile, spawn, ChildProcess } from "child_process";
-import { promisify } from "util";
-import { ToolResult } from "../types";
-
-const execAsync = promisify(exec);
-const execFileAsync = promisify(execFile);
+import { exec, execFile, execSync, spawn, type ChildProcess } from "child_process";
+import { type ToolResult } from "../types";
 
 /**
  * Kill a child process tree cross-platform.
@@ -21,7 +17,6 @@ function killProcessTree(child: ChildProcess): void {
   try {
     if (IS_WINDOWS) {
       // taskkill /T /F /PID terminates the entire process tree on Windows
-      const { execSync } = require("child_process") as typeof import("child_process");
       execSync(`taskkill /T /F /PID ${pid}`, { stdio: "ignore" });
     } else {
       // On POSIX, kill the process group (negative PID) to catch all children.
@@ -291,6 +286,12 @@ const SHELL_EXPANSION_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /&&\s*\w/, reason: 'Chained command (&&) is blocked.' },
   { pattern: /\|\s*\w/, reason: 'Piped command (|) is blocked.' },
   { pattern: /;\s*\w/, reason: 'Chained command (;) is blocked.' },
+  // C-02: Output redirection (>, >>) must be rejected — it turns read-only commands into writes.
+  { pattern: /[^|;]\s*>\s*\S/, reason: 'Output redirection (>) is blocked. Use typed file tools instead.' },
+  // C-02: Input redirection (<) must be rejected for security.
+  { pattern: /[^|;]\s*<\s*\S/, reason: 'Input redirection (<) is blocked.' },
+  // C-02: Ampersand chaining (&) must be rejected — it chains arbitrary commands.
+  { pattern: /\s+&\s+\w/, reason: 'Ampersand command chaining (&) is blocked.' },
   { pattern: /\bnode\s+-e\b/i, reason: 'Inline node execution (node -e) is blocked.' },
   { pattern: /\bpython\s+-c\b/i, reason: 'Inline python execution (python -c) is blocked.' },
   { pattern: /\bpython3\s+-c\b/i, reason: 'Inline python3 execution (python3 -c) is blocked.' },

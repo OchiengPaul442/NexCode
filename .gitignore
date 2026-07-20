@@ -12,6 +12,7 @@ extension/package-lock.json
 .vscode-test/
 .nexcode/
 *.log
+*logs
 *.tmp
 .DS_Store
 Thumbs.db

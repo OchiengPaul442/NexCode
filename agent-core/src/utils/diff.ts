@@ -1,5 +1,6 @@
 // diff-match-patch does not ship stable TypeScript definitions across versions.
 // We use a narrow typed wrapper to keep the rest of the code strongly typed.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const DiffMatchPatch: any = require("diff-match-patch");
 
 export function createPatch(oldText: string, newText: string): string {

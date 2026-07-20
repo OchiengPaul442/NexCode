@@ -6,7 +6,6 @@ import type {
   AgentMode,
   UiMode,
   Session,
-  ChatMessage,
   ActivityStatus,
   ReasoningEffort,
   SidebarSettings,
@@ -106,8 +105,7 @@ export function mapAgentModeToUi(mode: AgentMode): UiMode {
     case "reviewer":
     case "qa":
     case "security":
-      return "agent";
-    default:
+    case "auto":
       return "agent";
   }
 }
@@ -157,7 +155,7 @@ export function formatAgentMode(mode?: AgentMode): string {
       return "Security";
     case "auto":
       return "Auto";
-    default:
+    case undefined:
       return "Agent";
   }
 }
@@ -238,6 +236,7 @@ export function activityStatusLabel(status: ActivityStatus): string {
 export function activityStatusClass(status: ActivityStatus): string {
   switch (status) {
     case "pending":
+    case "not-started":
       return "nk-activity-status--not-started";
     case "in-progress":
       return "nk-activity-status--in-progress";
@@ -249,8 +248,6 @@ export function activityStatusClass(status: ActivityStatus): string {
       return "nk-activity-status--viewed";
     case "modified":
       return "nk-activity-status--modified";
-    default:
-      return "nk-activity-status--not-started";
   }
 }
 

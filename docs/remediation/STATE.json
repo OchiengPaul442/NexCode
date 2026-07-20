@@ -17,7 +17,7 @@
   "activeFindingIds": [],
   "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004", "NC-005", "NC-006", "NC-007", "NC-008", "NC-009", "NC-010", "NC-011", "NC-013", "NC-014", "NC-015", "NC-016", "NC-017", "NC-018", "NC-019", "NC-020", "NC-021", "NC-022", "NC-024", "NC-025", "NC-028", "NC-034", "NC-035"],
   "blockedFindingIds": [],
-  "lastCommit": "pending",
+  "lastCommit": "7b28d45",
   "lastSummary": "NC-011 fixed: Steering state machine — steering now allowed in planning, running, and verifying states (was running-only). classifyAndRoute() routes by session ID via getActiveTaskBySession(), not by first global active task. (1) TaskQueue.STEERING_ELIGIBLE_STATES = {running, planning, verifying} — queued, waiting-for-user, completed, failed, cancelled rejected. (2) TaskQueue.getActiveTaskBySession(sessionId) — finds active task belonging to a specific session. (3) classifyAndRoute() first checks session task, then falls back to explicit activeTaskId for backward compat. (4) State machine documented with transition diagram in JSDoc. (5) 39 regression tests in steeringStateMachine.test.ts: steer eligibility by status (10), session-based lookup (6), classifyAndRoute session routing (8), classifyPromptIntent classification (6), transition matrix (9). (6) Updated existing taskConcurrency test to reflect new steering-eligible states. 1242/1242 tests pass (3 pre-existing e2e failures). Build clean. All type-checks clean.",
   "lastVerification": {
     "focusedTests": "PASS — 39/39 steeringStateMachine tests pass, 15/15 taskConcurrency tests pass",

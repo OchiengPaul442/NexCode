@@ -660,6 +660,7 @@ Append one section per autonomous iteration. Never rewrite prior entries.
 **Date:** 20 July 2026
 **Finding IDs:** NC-024 (High)
 **Phase:** 0 — Containment patch
+**Commit:** `d35f765` — `fix(extension): resolve NC-024 — secret migration deletes plaintext settings after copying to SecretStorage`
 
 ### What was done
 

@@ -17,7 +17,7 @@
   "activeFindingIds": [],
   "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004", "NC-005", "NC-007", "NC-008", "NC-022", "NC-024"],
   "blockedFindingIds": [],
-  "lastCommit": "pending",
+  "lastCommit": "d35f765",
   "lastSummary": "NC-024 fixed: Secret migration now deletes plaintext settings after copying to SecretStorage. (1) migrateFromSettings() removed early-return on migration flag — now always runs cleanup. (2) After storing each secret, calls config.update(key, undefined) to remove plaintext from workspace settings. (3) Idempotent: if no plaintext was found in primary pass, cleanupPlaintextRemnants() checks for any remaining plaintext and removes it. (4) hasPlaintextRemnants() public method for health checks. (5) LEGACY_PLAINTEXT_KEYS exported for test coverage. (6) 17 regression tests in agent-core/tests/secretMigration.test.ts covering: copy+delete, idempotent runs, canary secrets, sequential store-before-delete, partial recovery. 835/835 tests pass. Build clean. All type-checks clean.",
   "lastVerification": {
     "focusedTests": "PASS — 17/17 secretMigration tests pass",

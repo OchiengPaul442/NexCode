@@ -17,7 +17,7 @@
   "activeFindingIds": [],
   "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004", "NC-005", "NC-006", "NC-007", "NC-008", "NC-009", "NC-010", "NC-016", "NC-017", "NC-019", "NC-020", "NC-021", "NC-022", "NC-024", "NC-028", "NC-035"],
   "blockedFindingIds": [],
-  "lastCommit": "pending",
+  "lastCommit": "7e285a1",
   "lastSummary": "NC-019 fixed: File writes are non-atomic and patch semantics are ambiguous. (1) Added atomicWriteFile() — writes to a temp file (.nexcode-tmp-{uuid}) then fs.rename() over target. Rename is atomic on POSIX and near-atomic on NTFS, preventing truncation on crash. Preserves existing file permissions. Cleans up temp file on failure. (2) writeFile() now uses atomicWriteFile() instead of direct fs.writeFile(). (3) patchFile() now requires unique match — counts occurrences of oldText via split().length-1 and rejects patches where matchCount > 1 with guidance to provide surrounding context. (4) patchFile() now uses atomicWriteFile() instead of direct fs.writeFile(). (5) Orchestrator applyProposedEdit() now uses atomicWriteFile() instead of direct fs.writeFile()+fs.mkdir(). (6) 25 new regression tests in fileWrites.test.ts: atomicWriteFile (10 tests: create, overwrite, preserve on failure, temp cleanup, parent dirs, permissions, empty, large, multiple writes), writeFile atomic behavior (5 tests: write, overwrite, parent dirs, traversal, temp cleanup), patchFile unique match (10 tests: unique match, reject 2 occurrences, reject 3, not found, atomic write, preserve on failure×2, byte count, traversal, empty string). 1045/1045 unit tests pass. Build clean. All type-checks clean.",
   "lastVerification": {
     "focusedTests": "PASS — 25/25 fileWrites tests pass",

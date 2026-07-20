@@ -356,6 +356,7 @@
 - **Verified:** yes — verified against current source; all 8 review docs marked as historical snapshots, README.md updated with current counts
 - **Required tests:** docs reference current test counts; no false production-ready claims without caveat; historical snapshot headers present
 - **Verification commands:** `npx vitest run agent-core/tests/documentationAccuracy.test.ts`
+- **Commit:** `78c3490`
 - **Resolution evidence:** (1) Added `⚠️ HISTORICAL SNAPSHOT — NOT CURRENT` header to all 8 `docs/review/*.md` files with note about current test counts (1476+ tests, 59+ files). (2) Added `Status: Historical snapshot` to each document's metadata. (3) `README.md` updated: test count from "62 tests" to "1476 tests", test file count from "8 test files" to "59 test files", removed stale "audit-17 issues" badge, expanded Testing section from 7 bullet points to 25 covering all remediation areas. (4) 17 regression tests in `agent-core/tests/documentationAccuracy.test.ts`: historical snapshot markers (8), stale count rejection (3), current count validation (3), badge cleanup (1), release decision caveat (2). 1476/1476 tests pass. Build clean. All type-checks clean.
 
 ### NC-030 — Lint is only TypeScript compilation

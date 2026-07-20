@@ -228,9 +228,18 @@ describe("Real Model Security Tests", () => {
 
     it("deduplicates context entries", () => {
       const compressor = new ContextCompressor(8000);
+      // NC-041: content-hash dedup keeps contexts with same prefix but different content
       const base = "x".repeat(100);
       const contexts = [base + "AAAAA", base + "BBBBB", base + "CCCCC"];
       const deduped = compressor.deduplicateContext(contexts);
+      // All 3 are distinct (different endings), so no dedup occurs
+      expect(deduped.length).toBe(3);
+    });
+
+    it("deduplicates truly identical contexts", () => {
+      const compressor = new ContextCompressor(8000);
+      const content = "identical content for dedup test";
+      const deduped = compressor.deduplicateContext([content, content, content]);
       expect(deduped.length).toBe(1);
     });
   });

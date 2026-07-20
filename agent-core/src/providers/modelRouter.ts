@@ -17,6 +17,13 @@ export interface ModelCapabilities {
   hasThinking: boolean;
   hasToolCalling: boolean;
   contextWindow: number;
+  /**
+   * Average characters per token for this model's tokenizer.
+   * Used by TokenCounter for more accurate estimation than the generic /4 heuristic.
+   * Typical values: BPE models ~3.5-4.2 for prose, ~2.5-3.5 for code.
+   * Falls back to 3.8 (DEFAULT_CHARS_PER_TOKEN) if not specified.
+   */
+  charsPerToken?: number;
 }
 
 /**

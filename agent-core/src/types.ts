@@ -207,10 +207,18 @@ export interface ModelRequest {
   retryBudget?: RetryBudgetLike;
 }
 
+export interface ProviderUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
 export interface ModelResponse {
   text: string;
   toolCalls?: ToolCallRequest[];
   raw?: unknown;
+  /** Provider-reported token usage, when available from the API response. */
+  usage?: ProviderUsage;
 }
 
 /**

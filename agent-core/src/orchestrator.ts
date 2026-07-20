@@ -37,6 +37,7 @@ import { OpenAICompatibleProvider } from "./providers/openAICompatibleProvider";
 import { ToolRegistry } from "./tools/toolRegistry";
 import { ApprovalCallback, DefaultToolApprovalPolicy } from "./tools/toolApprovalPolicy";
 import { TokenCounter } from "./utils/tokenCounter";
+import { getModelCapabilityRegistry } from "./utils/modelCapabilityRegistry";
 import { chunkText, extractFirstCodeBlock } from "./utils/text";
 import { EfficiencyTracker } from "./utils/efficiencyMetrics";
 import {
@@ -433,6 +434,13 @@ export class NexcodeOrchestrator {
     const mode = request.mode ?? "auto";
     const provider = request.provider ?? this.config.providerDefaults.provider;
     const model = request.model ?? getModelForMode(mode, this.config.agentModels, this.config.providerDefaults.model);
+
+    // NC-041: Set model-specific chars-per-token ratio from the capability registry
+    const registry = getModelCapabilityRegistry();
+    const modelCharsPerToken = registry.getCharsPerToken(provider, model);
+    if (modelCharsPerToken != null) {
+      this.tokenCounter.setCharsPerToken(modelCharsPerToken);
+    }
     const temperature =
       typeof request.temperature === "number"
         ? Math.min(2, Math.max(0, request.temperature))

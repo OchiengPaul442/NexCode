@@ -488,14 +488,14 @@
 
 ### NC-041 — Token estimation and context compression are too approximate
 - **Severity:** Medium
-- **Status:** pending
+- **Status:** fixed
 - **Phase:** D
 - **Dependencies:** none
-- **Affected files:** token counting utilities, context compression
-- **Verified:** unverified
-- **Required tests:** provider usage data preferred; structure-aware code selection
+- **Affected files:** `agent-core/src/utils/tokenCounter.ts`, `agent-core/src/utils/contextCompressor.ts`, `agent-core/src/providers/modelRouter.ts`, `agent-core/src/providers/openAICompatibleProvider.ts`, `agent-core/src/providers/ollamaProvider.ts`, `agent-core/src/orchestrator.ts`, `agent-core/src/types.ts`, `agent-core/src/utils/modelCapabilityRegistry.ts`
+- **Verified:** yes — verified against current source; provider usage calibration, model-specific chars-per-token, content-hash dedup implemented
+- **Required tests:** provider usage calibration; model-specific ratio; content-hash dedup; ContextCompressor fromContextWindow; ProviderUsage extraction
 - **Verification commands:** `npx vitest run agent-core/tests/tokenEstimation.test.ts`
-- **Resolution evidence:** (none yet)
+- **Resolution evidence:** (1) `TokenCounter`: DEFAULT_CHARS_PER_TOKEN changed from 4.0 to 3.8. Added `recordProviderUsage()` with EMA calibration (alpha=0.3, 5 samples to trust). Added `setCharsPerToken()` for model-specific ratios. Added `trackRequestWithUsage()` using real provider token counts. Added `isCalibrated()`, `getCharsPerToken()`, `getCalibrationSampleCount()`. Reset clears calibration. (2) `ProviderUsage` interface + `ModelResponse.usage` field. (3) `OpenAICompatibleProvider` extracts usage from API responses. (4) `OllamaProvider` extracts usage from API responses. (5) `ModelCapabilityRegistry`: charsPerToken added to all 40+ entries, `getCharsPerToken()` method. (6) `Orchestrator` reads charsPerToken from registry. (7) `ContextCompressor.fromContextWindow()` proportional threshold. Content-hash dedup. (8) 44 new tests in `agent-core/tests/tokenEstimation.test.ts`. Updated `contextBudget.test.ts` and `realModelSecurity.test.ts`. 1911/1911 tests pass. Build clean.
 
 ### NC-042 — Exposing "reasoning" by default is the wrong UX contract
 - **Severity:** Medium

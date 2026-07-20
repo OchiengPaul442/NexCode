@@ -2721,3 +2721,107 @@ Append one section per autonomous iteration. Never rewrite prior entries.
 | `agent-core/tests/toolApprovalPolicy.test.ts` | Add NC-033 category header | +11 |
 | `agent-core/tests/searchInjection.test.ts` | Add NC-033 category header | +3 |
 
+---
+
+## Iteration 39 — NC-041: Token estimation and context compression improvements
+
+**Date:** 20 July 2026  
+**Finding IDs:** NC-041 (Medium)  
+**Phase:** D — Credentials and providers  
+
+### What was done
+
+1. **Verified NC-041 against current source code:**
+   - `agent-core/src/utils/tokenCounter.ts:55-57` — confirmed `estimateTokens()` uses hardcoded `/4` (chars-per-token) for all models regardless of tokenizer differences.
+   - `agent-core/src/utils/contextCompressor.ts:76-81` — confirmed `deduplicateContext()` uses first-100-chars prefix as the sole dedup key, causing false-positive dedup when contexts share headers but differ in content.
+   - `agent-core/src/providers/modelRouter.ts:18-57` — confirmed `ModelCapabilities` has no `charsPerToken` field.
+   - `agent-core/src/providers/openAICompatibleProvider.ts` — confirmed `usage` field not extracted from OpenAI API responses.
+   - `agent-core/src/providers/ollamaProvider.ts` — confirmed `prompt_eval_count`/`eval_count` not extracted from Ollama responses.
+   - `agent-core/src/orchestrator.ts:430-440` — confirmed no model-specific token ratio calibration.
+
+2. **Implemented fix (8 production files changed, 1 new test file, 2 test files updated):**
+   - `agent-core/src/utils/tokenCounter.ts` (+133, -2):
+     - Changed `DEFAULT_CHARS_PER_TOKEN` from 4.0 to 3.8 (more accurate for mixed code/prose).
+     - Added `recordProviderUsage()`: EMA calibration (alpha=0.3, min 5 samples, clamped 1.5-6.0).
+     - Added `setCharsPerToken()`: model-specific ratio from ModelCapabilityRegistry.
+     - Added `trackRequestWithUsage()`: uses real provider-reported token counts AND calibrates.
+     - Added `isCalibrated()`, `getCharsPerToken()`, `getCalibrationSampleCount()`.
+     - `estimateTokens()` now uses `Math.max(1, Math.ceil(text.length / this.calibratedCharsPerToken))`.
+     - `reset()` clears calibration state.
+     - `getStats()` includes `charsPerToken` and `calibrationSamples`.
+   - `agent-core/src/types.ts` (+8):
+     - Added `ProviderUsage` interface: `promptTokens`, `completionTokens`, `totalTokens`.
+     - Added optional `usage?: ProviderUsage` to `ModelResponse`.
+   - `agent-core/src/providers/openAICompatibleProvider.ts` (+22):
+     - Added `OpenAIChatUsage` interface.
+     - Extracts `usage` from both `OpenAIChatResponse` branches (tool calls and text-only).
+   - `agent-core/src/providers/ollamaProvider.ts` (+19):
+     - Extracts `usage` from `prompt_eval_count`/`eval_count` in all 4 response paths.
+   - `agent-core/src/providers/modelRouter.ts` (+7):
+     - Added `charsPerToken?: number` to `ModelCapabilities`.
+   - `agent-core/src/utils/modelCapabilityRegistry.ts` (+142, -77):
+     - Added `charsPerToken` to all 40+ static entries (Qwen=3.5, DeepSeek=3.7, Llama=3.8, GPT=4.0, Claude=3.8, etc.).
+     - Added `getCharsPerToken(provider, model)` method.
+   - `agent-core/src/orchestrator.ts` (+8):
+     - Reads `charsPerToken` from `ModelCapabilityRegistry` and calls `tokenCounter.setCharsPerToken()` before generating.
+   - `agent-core/src/utils/contextCompressor.ts` (+59, -14):
+     - Added `fromContextWindow()` static factory: proportional threshold (25% of context window * charsPerToken).
+     - Replaced prefix-based dedup with content-hash dedup (SHA-256 + length+prefix fast pre-check).
+     - Made `maxFileLines`, `headLineCount`, `tailLineCount` configurable instance fields.
+
+3. **Added regression tests (1 new file, 44 tests):**
+   - `agent-core/tests/tokenEstimation.test.ts`:
+     - TokenCounter calibration: default ratio (5), setCharsPerToken (4), provider usage EMA (7), trackRequestWithUsage (3), reset (2), getStats (1).
+     - ContextCompressor improvements: fromContextWindow (3), content-hash dedup (6), configurable file compression (3).
+     - ModelCapabilityRegistry getCharsPerToken (7).
+     - ProviderUsage type (3).
+
+4. **Fixed existing test regressions caused by ratio change:**
+   - `agent-core/tests/contextBudget.test.ts`: replaced hardcoded `/4` with `counter.estimateTokens()` calls; fixed empty content token count.
+   - `agent-core/tests/realModelSecurity.test.ts`: updated dedup test to expect 3 (correct behavior: distinct contexts with same prefix are NOT false-positively deduplicated); added new test for truly identical dedup.
+
+5. **Validated:**
+   - 44/44 new tokenEstimation tests pass.
+   - 13/13 existing contextBudget tests pass.
+   - 62/62 realModelSecurity tests pass.
+   - 1911/1911 full unit tests pass (3 pre-existing e2e failures unrelated).
+   - `tsc --noEmit` clean in agent-core and extension.
+   - `npm run build` clean.
+   - `git diff --check` clean.
+
+### Validation
+
+| Check | Result | Notes |
+|---|---|---|
+| Focused tests (NC-041) | PASS | 44/44 tokenEstimation tests pass |
+| Existing token tests | PASS | 13/13 contextBudget tests pass |
+| Security tests | PASS | 62/62 realModelSecurity tests pass |
+| Full test suite | PASS | 1911/1911 tests pass; 3 pre-existing e2e failures |
+| Type check (agent-core) | PASS | `tsc --noEmit` clean |
+| Type check (extension) | PASS | `tsc --noEmit` clean |
+| Build | PASS | Full `npm run build` clean |
+| No secrets in diff | PASS | No API keys, tokens, or secrets in the diff |
+| No test suppression | PASS | All existing tests retained and passing |
+
+### Remaining risks
+
+- The calibrated chars-per-token ratio requires 5 provider observations before trusting it over the default. Early requests use 3.8 for all models. This is acceptable because the calibration converges quickly.
+- Provider usage data is only available from providers that return `usage` in their API response. If usage is not returned, calibration never occurs and the default 3.8 persists.
+- The content-hash dedup uses SHA-256 truncated to 16 hex chars (64 bits). Collision probability is negligible for typical context dedup workloads.
+
+### Files changed
+
+| File | Change | Lines |
+|---|---|---|
+| `agent-core/src/utils/tokenCounter.ts` | Calibrated chars-per-token, EMA, trackRequestWithUsage | +133, -2 |
+| `agent-core/src/types.ts` | ProviderUsage interface, ModelResponse.usage | +8 |
+| `agent-core/src/providers/openAICompatibleProvider.ts` | Extract usage from OpenAI responses | +22 |
+| `agent-core/src/providers/ollamaProvider.ts` | Extract usage from Ollama responses | +19 |
+| `agent-core/src/providers/modelRouter.ts` | Add charsPerToken to ModelCapabilities | +7 |
+| `agent-core/src/utils/modelCapabilityRegistry.ts` | charsPerToken for all entries, getCharsPerToken method | +142, -77 |
+| `agent-core/src/orchestrator.ts` | Set model-specific chars-per-token from registry | +8 |
+| `agent-core/src/utils/contextCompressor.ts` | fromContextWindow, content-hash dedup, configurable head/tail | +59, -14 |
+| `agent-core/tests/tokenEstimation.test.ts` | New NC-041 regression test file | +320 |
+| `agent-core/tests/contextBudget.test.ts` | Fix hardcoded /4 to use estimateTokens() | +5, -3 |
+| `agent-core/tests/realModelSecurity.test.ts` | Fix dedup test for content-hash behavior | +9, -3 |
+

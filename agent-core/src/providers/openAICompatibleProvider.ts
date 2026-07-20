@@ -3,6 +3,7 @@ import {
   ModelRequest,
   ModelResponse,
   ProviderId,
+  ProviderUsage,
   ToolCallRequest,
 } from "../types";
 import { getModelEffortConfig } from "../utils/modelEffortConfig";
@@ -49,8 +50,15 @@ interface OpenAIStreamChunk {
   choices?: OpenAIStreamChoice[];
 }
 
+interface OpenAIChatUsage {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+}
+
 interface OpenAIChatResponse {
   choices?: OpenAIChoice[];
+  usage?: OpenAIChatUsage;
 }
 
 export class OpenAICompatibleProvider implements ModelProvider {
@@ -381,6 +389,13 @@ export class OpenAICompatibleProvider implements ModelProvider {
           text: json.choices[0].message.content || "",
           toolCalls,
           raw: json,
+          usage: json.usage
+            ? {
+                promptTokens: json.usage.prompt_tokens ?? 0,
+                completionTokens: json.usage.completion_tokens ?? 0,
+                totalTokens: json.usage.total_tokens ?? 0,
+              }
+            : undefined,
         };
       }
 
@@ -389,6 +404,13 @@ export class OpenAICompatibleProvider implements ModelProvider {
       return {
         text,
         raw: json,
+        usage: json.usage
+          ? {
+              promptTokens: json.usage.prompt_tokens ?? 0,
+              completionTokens: json.usage.completion_tokens ?? 0,
+              totalTokens: json.usage.total_tokens ?? 0,
+            }
+          : undefined,
       };
     } finally {
       abort.clear();

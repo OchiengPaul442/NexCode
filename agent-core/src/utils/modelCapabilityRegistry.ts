@@ -36,74 +36,75 @@ const DEFAULT_UNKNOWN_CONTEXT_WINDOW = 32_000;
 // Update this table when new model variants are released.
 
 const STATIC_REGISTRY: Omit<ModelCapabilityEntry, "version" | "source">[] = [
-  // ── Qwen family ──────────────────────────────────────────────
-  { key: "ollama:qwen3:8b", hasThinking: true, hasToolCalling: true, contextWindow: 128_000 },
-  { key: "ollama:qwen3:14b", hasThinking: true, hasToolCalling: true, contextWindow: 128_000 },
-  { key: "ollama:qwen3:32b", hasThinking: true, hasToolCalling: true, contextWindow: 128_000 },
-  { key: "ollama:qwen3:235b", hasThinking: true, hasToolCalling: true, contextWindow: 128_000 },
-  { key: "ollama:qwen2.5-coder:3b", hasThinking: false, hasToolCalling: true, contextWindow: 32_768 },
-  { key: "ollama:qwen2.5-coder:7b", hasThinking: false, hasToolCalling: true, contextWindow: 32_768 },
-  { key: "ollama:qwen2.5-coder:14b", hasThinking: false, hasToolCalling: true, contextWindow: 32_768 },
-  { key: "ollama:qwen2.5-coder:32b", hasThinking: false, hasToolCalling: true, contextWindow: 32_768 },
-  { key: "ollama:qwen2.5:7b", hasThinking: false, hasToolCalling: true, contextWindow: 128_000 },
-  { key: "ollama:qwen2.5:14b", hasThinking: false, hasToolCalling: true, contextWindow: 128_000 },
-  { key: "ollama:qwen2.5:32b", hasThinking: false, hasToolCalling: true, contextWindow: 128_000 },
-  { key: "ollama:qwen2.5:72b", hasThinking: false, hasToolCalling: true, contextWindow: 128_000 },
+  // ── Qwen family (Qwen tokenizer: slightly more compact, ~3.5 cpt) ──
+  { key: "ollama:qwen3:8b", hasThinking: true, hasToolCalling: true, contextWindow: 128_000, charsPerToken: 3.5 },
+  { key: "ollama:qwen3:14b", hasThinking: true, hasToolCalling: true, contextWindow: 128_000, charsPerToken: 3.5 },
+  { key: "ollama:qwen3:32b", hasThinking: true, hasToolCalling: true, contextWindow: 128_000, charsPerToken: 3.5 },
+  { key: "ollama:qwen3:235b", hasThinking: true, hasToolCalling: true, contextWindow: 128_000, charsPerToken: 3.5 },
+  { key: "ollama:qwen2.5-coder:3b", hasThinking: false, hasToolCalling: true, contextWindow: 32_768, charsPerToken: 3.5 },
+  { key: "ollama:qwen2.5-coder:7b", hasThinking: false, hasToolCalling: true, contextWindow: 32_768, charsPerToken: 3.5 },
+  { key: "ollama:qwen2.5-coder:14b", hasThinking: false, hasToolCalling: true, contextWindow: 32_768, charsPerToken: 3.5 },
+  { key: "ollama:qwen2.5-coder:32b", hasThinking: false, hasToolCalling: true, contextWindow: 32_768, charsPerToken: 3.5 },
+  { key: "ollama:qwen2.5:7b", hasThinking: false, hasToolCalling: true, contextWindow: 128_000, charsPerToken: 3.5 },
+  { key: "ollama:qwen2.5:14b", hasThinking: false, hasToolCalling: true, contextWindow: 128_000, charsPerToken: 3.5 },
+  { key: "ollama:qwen2.5:32b", hasThinking: false, hasToolCalling: true, contextWindow: 128_000, charsPerToken: 3.5 },
+  { key: "ollama:qwen2.5:72b", hasThinking: false, hasToolCalling: true, contextWindow: 128_000, charsPerToken: 3.5 },
 
-  // ── DeepSeek family ──────────────────────────────────────────
-  { key: "ollama:deepseek-r1:8b", hasThinking: true, hasToolCalling: true, contextWindow: 128_000 },
-  { key: "ollama:deepseek-r1:14b", hasThinking: true, hasToolCalling: true, contextWindow: 128_000 },
-  { key: "ollama:deepseek-r1:32b", hasThinking: true, hasToolCalling: true, contextWindow: 128_000 },
-  { key: "ollama:deepseek-r1:70b", hasThinking: true, hasToolCalling: true, contextWindow: 128_000 },
-  { key: "ollama:deepseek-v4", hasThinking: true, hasToolCalling: true, contextWindow: 128_000 },
+  // ── DeepSeek family (~3.7 cpt) ──────────────────────────────────
+  { key: "ollama:deepseek-r1:8b", hasThinking: true, hasToolCalling: true, contextWindow: 128_000, charsPerToken: 3.7 },
+  { key: "ollama:deepseek-r1:14b", hasThinking: true, hasToolCalling: true, contextWindow: 128_000, charsPerToken: 3.7 },
+  { key: "ollama:deepseek-r1:32b", hasThinking: true, hasToolCalling: true, contextWindow: 128_000, charsPerToken: 3.7 },
+  { key: "ollama:deepseek-r1:70b", hasThinking: true, hasToolCalling: true, contextWindow: 128_000, charsPerToken: 3.7 },
+  { key: "ollama:deepseek-v4", hasThinking: true, hasToolCalling: true, contextWindow: 128_000, charsPerToken: 3.7 },
 
-  // ── Llama family ─────────────────────────────────────────────
-  { key: "ollama:llama3:8b", hasThinking: false, hasToolCalling: true, contextWindow: 8_192 },
-  { key: "ollama:llama3:70b", hasThinking: false, hasToolCalling: true, contextWindow: 8_192 },
-  { key: "ollama:llama3.1:8b", hasThinking: false, hasToolCalling: true, contextWindow: 128_000 },
-  { key: "ollama:llama3.1:70b", hasThinking: false, hasToolCalling: true, contextWindow: 128_000 },
-  { key: "ollama:llama3.3:8b", hasThinking: false, hasToolCalling: true, contextWindow: 128_000 },
+  // ── Llama family (Meta BPE: ~3.8 cpt) ──────────────────────────
+  { key: "ollama:llama3:8b", hasThinking: false, hasToolCalling: true, contextWindow: 8_192, charsPerToken: 3.8 },
+  { key: "ollama:llama3:70b", hasThinking: false, hasToolCalling: true, contextWindow: 8_192, charsPerToken: 3.8 },
+  { key: "ollama:llama3.1:8b", hasThinking: false, hasToolCalling: true, contextWindow: 128_000, charsPerToken: 3.8 },
+  { key: "ollama:llama3.1:70b", hasThinking: false, hasToolCalling: true, contextWindow: 128_000, charsPerToken: 3.8 },
+  { key: "ollama:llama3.3:8b", hasThinking: false, hasToolCalling: true, contextWindow: 128_000, charsPerToken: 3.8 },
 
-  // ── GLM family ───────────────────────────────────────────────
-  { key: "ollama:glm5", hasThinking: true, hasToolCalling: true, contextWindow: 128_000 },
+  // ── GLM family (~3.6 cpt) ───────────────────────────────────────
+  { key: "ollama:glm5", hasThinking: true, hasToolCalling: true, contextWindow: 128_000, charsPerToken: 3.6 },
 
-  // ── Kimi family ──────────────────────────────────────────────
-  { key: "ollama:kimi-k2", hasThinking: true, hasToolCalling: true, contextWindow: 128_000 },
+  // ── Kimi family (~3.6 cpt) ──────────────────────────────────────
+  { key: "ollama:kimi-k2", hasThinking: true, hasToolCalling: true, contextWindow: 128_000, charsPerToken: 3.6 },
 
-  // ── Nemotron family ──────────────────────────────────────────
-  { key: "ollama:nemotron-mini", hasThinking: false, hasToolCalling: false, contextWindow: 32_768 },
+  // ── Nemotron family (~3.8 cpt) ──────────────────────────────────
+  { key: "ollama:nemotron-mini", hasThinking: false, hasToolCalling: false, contextWindow: 32_768, charsPerToken: 3.8 },
 
   // ── Cloud OpenAI-compatible providers ────────────────────────
-  { key: "openai-compatible:gpt-4", hasThinking: false, hasToolCalling: true, contextWindow: 128_000 },
-  { key: "openai-compatible:gpt-4o", hasThinking: false, hasToolCalling: true, contextWindow: 128_000 },
-  { key: "openai-compatible:gpt-4o-mini", hasThinking: false, hasToolCalling: true, contextWindow: 128_000 },
-  { key: "openai-compatible:gpt-oss:120b-cloud", hasThinking: false, hasToolCalling: true, contextWindow: 128_000 },
-  { key: "openai-compatible:claude-3-opus", hasThinking: true, hasToolCalling: true, contextWindow: 128_000 },
-  { key: "openai-compatible:claude-3.5-sonnet", hasThinking: true, hasToolCalling: true, contextWindow: 128_000 },
-  { key: "openai-compatible:claude-sonnet-4", hasThinking: true, hasToolCalling: true, contextWindow: 128_000 },
+  // GPT-4/4o use cl100k_base (~4.0 cpt), Claude uses its own (~3.8 cpt)
+  { key: "openai-compatible:gpt-4", hasThinking: false, hasToolCalling: true, contextWindow: 128_000, charsPerToken: 4.0 },
+  { key: "openai-compatible:gpt-4o", hasThinking: false, hasToolCalling: true, contextWindow: 128_000, charsPerToken: 4.0 },
+  { key: "openai-compatible:gpt-4o-mini", hasThinking: false, hasToolCalling: true, contextWindow: 128_000, charsPerToken: 4.0 },
+  { key: "openai-compatible:gpt-oss:120b-cloud", hasThinking: false, hasToolCalling: true, contextWindow: 128_000, charsPerToken: 3.8 },
+  { key: "openai-compatible:claude-3-opus", hasThinking: true, hasToolCalling: true, contextWindow: 128_000, charsPerToken: 3.8 },
+  { key: "openai-compatible:claude-3.5-sonnet", hasThinking: true, hasToolCalling: true, contextWindow: 128_000, charsPerToken: 3.8 },
+  { key: "openai-compatible:claude-sonnet-4", hasThinking: true, hasToolCalling: true, contextWindow: 128_000, charsPerToken: 3.8 },
 
-  // ── HuggingFace ──────────────────────────────────────────────
-  { key: "huggingface:qwen/qwen3-8b", hasThinking: true, hasToolCalling: true, contextWindow: 128_000 },
-  { key: "huggingface:qwen/qwen2.5-coder-14b-instruct", hasThinking: false, hasToolCalling: true, contextWindow: 32_768 },
+  // ── HuggingFace (uses model's native tokenizer) ──────────────
+  { key: "huggingface:qwen/qwen3-8b", hasThinking: true, hasToolCalling: true, contextWindow: 128_000, charsPerToken: 3.5 },
+  { key: "huggingface:qwen/qwen2.5-coder-14b-instruct", hasThinking: false, hasToolCalling: true, contextWindow: 32_768, charsPerToken: 3.5 },
 
-  // ── Groq ─────────────────────────────────────────────────────
-  { key: "groq:llama-3.1-8b-versatile", hasThinking: false, hasToolCalling: true, contextWindow: 128_000 },
-  { key: "groq:llama-3.3-70b-versatile", hasThinking: false, hasToolCalling: true, contextWindow: 128_000 },
+  // ── Groq (hosted Llama/Qwen models) ─────────────────────────
+  { key: "groq:llama-3.1-8b-versatile", hasThinking: false, hasToolCalling: true, contextWindow: 128_000, charsPerToken: 3.8 },
+  { key: "groq:llama-3.3-70b-versatile", hasThinking: false, hasToolCalling: true, contextWindow: 128_000, charsPerToken: 3.8 },
 
-  // ── Together ─────────────────────────────────────────────────
-  { key: "together:qwen/qwen3-8b", hasThinking: true, hasToolCalling: true, contextWindow: 128_000 },
-  { key: "together:meta-llama/llama-3.3-70b-instruct-turbo", hasThinking: false, hasToolCalling: true, contextWindow: 128_000 },
+  // ── Together (hosted models) ─────────────────────────────────
+  { key: "together:qwen/qwen3-8b", hasThinking: true, hasToolCalling: true, contextWindow: 128_000, charsPerToken: 3.5 },
+  { key: "together:meta-llama/llama-3.3-70b-instruct-turbo", hasThinking: false, hasToolCalling: true, contextWindow: 128_000, charsPerToken: 3.8 },
 
-  // ── OpenRouter ───────────────────────────────────────────────
-  { key: "openrouter:qwen/qwen3-8b", hasThinking: true, hasToolCalling: true, contextWindow: 128_000 },
-  { key: "openrouter:deepseek/deepseek-r1", hasThinking: true, hasToolCalling: true, contextWindow: 128_000 },
-  { key: "openrouter:meta-llama/llama-3.3-70b-instruct", hasThinking: false, hasToolCalling: true, contextWindow: 128_000 },
+  // ── OpenRouter (hosted models) ───────────────────────────────
+  { key: "openrouter:qwen/qwen3-8b", hasThinking: true, hasToolCalling: true, contextWindow: 128_000, charsPerToken: 3.5 },
+  { key: "openrouter:deepseek/deepseek-r1", hasThinking: true, hasToolCalling: true, contextWindow: 128_000, charsPerToken: 3.7 },
+  { key: "openrouter:meta-llama/llama-3.3-70b-instruct", hasThinking: false, hasToolCalling: true, contextWindow: 128_000, charsPerToken: 3.8 },
 
-  // ── Fireworks ────────────────────────────────────────────────
-  { key: "fireworks:accounts/fireworks/models/llama-v3p3-70b-instruct", hasThinking: false, hasToolCalling: true, contextWindow: 128_000 },
+  // ── Fireworks (hosted Llama) ────────────────────────────────
+  { key: "fireworks:accounts/fireworks/models/llama-v3p3-70b-instruct", hasThinking: false, hasToolCalling: true, contextWindow: 128_000, charsPerToken: 3.8 },
 
-  // ── NVIDIA ───────────────────────────────────────────────────
-  { key: "nvidia:nvidia/llama-3.1-nemotron-ultra-253b-v1", hasThinking: false, hasToolCalling: true, contextWindow: 128_000 },
+  // ── NVIDIA (hosted Nemotron/Llama) ───────────────────────────
+  { key: "nvidia:nvidia/llama-3.1-nemotron-ultra-253b-v1", hasThinking: false, hasToolCalling: true, contextWindow: 128_000, charsPerToken: 3.8 },
 ];
 
 // ─── Registry class ──────────────────────────────────────────────────────────
@@ -224,6 +225,15 @@ export class ModelCapabilityRegistry {
    */
   public has(provider: ProviderId | undefined, model: string): boolean {
     return this.lookup(provider, model) !== undefined;
+  }
+
+  /**
+   * Get the chars-per-token ratio for a model, or undefined if not in the registry.
+   * Falls back through: user override > provider metadata > static registry.
+   */
+  public getCharsPerToken(provider: ProviderId | undefined, model: string): number | undefined {
+    const entry = this.lookup(provider, model);
+    return entry?.charsPerToken;
   }
 }
 

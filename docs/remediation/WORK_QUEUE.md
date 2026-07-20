@@ -373,14 +373,15 @@
 
 ### NC-031 — CI is Linux-only despite platform-specific security code
 - **Severity:** Medium
-- **Status:** pending
+- **Status:** fixed
 - **Phase:** J
 - **Dependencies:** none
-- **Affected files:** `.github/workflows/ci.yml`
-- **Verified:** unverified
+- **Affected files:** `.github/workflows/ci.yml`, `agent-core/tests/ciWorkflow.test.ts`
+- **Verified:** yes — verified against current source; multi-platform matrix added
 - **Required tests:** Windows and macOS matrix jobs in CI
-- **Verification commands:** CI workflow inspection
-- **Resolution evidence:** (none yet)
+- **Verification commands:** `npx vitest run agent-core/tests/ciWorkflow.test.ts`
+- **Commit:** `ef2e80e`
+- **Resolution evidence:** (1) Added Windows/macOS/Ubuntu matrix to build-and-test job with fail-fast:false. (2) Package job runs on all 3 OS. (3) Audit is a separate independent job — critical advisories block, high advisories tracked. (4) Lockfile integrity verification step. (5) OS-specific artifact names. 25 regression tests. 1556/1556 tests pass.
 
 ### NC-032 — No VS Code Extension Host integration tests
 - **Severity:** Medium
@@ -522,25 +523,26 @@
 
 ### NC-044 — Package/release flow is not sufficiently hermetic
 - **Severity:** Medium
-- **Status:** pending
+- **Status:** fixed
 - **Phase:** J
 - **Dependencies:** none
-- **Affected files:** release/packaging scripts
-- **Verified:** unverified
+- **Affected files:** `tools/extension-release.mjs`, `.github/workflows/ci.yml`, `extension/.vscodeignore`, `agent-core/tests/hermeticPackaging.test.ts` (new)
+- **Verified:** yes — verified against current source; hermetic install, VSIX verification, SBOM, provenance added
 - **Required tests:** VSIX from lockfile; contents verified; SBOM generated
-- **Verification commands:** `npm run extension:package` (after fix)
-- **Resolution evidence:** (none yet)
+- **Verification commands:** `npx vitest run agent-core/tests/hermeticPackaging.test.ts`
+- **Resolution evidence:** (1) `extension-release.mjs`: `stageEntries` includes `package-lock.json`. `installStageDependencies` uses `npm ci` (lockfile-based) with fallback warning for missing lockfile. (2) Lockfile integrity verification before staging — rejects malformed/missing lockfiles. (3) `assertVsixDependencies` expanded from 2 to 8 required entries; forbidden entries check rejects test/source/map/config files. (4) `build-info.json` enhanced with platform, arch, npm version, provenance metadata, and dependency manifest from lockfile. (5) CI workflow: VSIX verification step, lockfile integrity check, dependency manifest generation, DEPENDENCIES.json artifact upload. (6) `.vscodeignore` excludes `DEPENDENCIES.json`. (7) 22 regression tests in `hermeticPackaging.test.ts`. 1578/1578 tests pass. Build clean. All type-checks clean.
 
 ### NC-045 — Dependency audit cannot be treated as optional
 - **Severity:** Medium
-- **Status:** pending
+- **Status:** fixed
 - **Phase:** J
 - **Dependencies:** none
-- **Affected files:** `.github/workflows/ci.yml`, `package.json`
-- **Verified:** unverified
+- **Affected files:** `.github/workflows/ci.yml`, `agent-core/tests/ciWorkflow.test.ts`
+- **Verified:** yes — verified against current source; audit is separate job, critical blocks, high tracked
 - **Required tests:** audit failures visible and reviewed; lockfile scanning
-- **Verification commands:** `npm audit`
-- **Resolution evidence:** (none yet)
+- **Verification commands:** `npx vitest run agent-core/tests/ciWorkflow.test.ts`
+- **Commit:** `ef2e80e`
+- **Resolution evidence:** (1) Audit is a separate independent CI job. (2) Critical advisories block (no continue-on-error). (3) High advisories tracked with continue-on-error. (4) Lockfile integrity verification step. 25 regression tests. 1556/1556 tests pass.
 
 ---
 

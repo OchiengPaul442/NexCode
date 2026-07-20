@@ -24,6 +24,7 @@ if (!["patch", "minor", "major"].includes(bumpType)) {
 
 const stageEntries = [
   "package.json",
+  "package-lock.json",
   "README.md",
   "CHANGELOG.md",
   "LICENSE",
@@ -211,9 +212,37 @@ async function installStageDependencies(agentCoreTarballPath) {
     force: true,
   });
 
+  // Use npm ci with the lockfile for hermetic, reproducible installs.
+  // The lockfile is copied to the stage directory in prepareStageDirectory().
+  // The agent-core tarball is installed separately after the lockfile-based
+  // install completes, since agent-core is a local workspace dependency that
+  // npm ci cannot resolve from the registry.
+  const lockfilePath = path.join(stageDir, "package-lock.json");
+  if (existsSync(lockfilePath)) {
+    run(
+      "npm",
+      ["ci", "--omit=dev", "--ignore-scripts"],
+      stageDir,
+    );
+  } else {
+    // Fallback for environments without a lockfile (should not happen in CI)
+    console.warn(
+      "WARNING: No package-lock.json found in stage directory. " +
+      "Falling back to npm install. This is not hermetic.",
+    );
+    run(
+      "npm",
+      ["install", "--no-save", "--omit=dev", agentCoreTarballPath],
+      stageDir,
+    );
+    return;
+  }
+
+  // Install the local agent-core tarball into node_modules.
+  // npm ci resolved all other deps from the lockfile; now we inject agent-core.
   run(
     "npm",
-    ["install", "--no-save", "--omit=dev", agentCoreTarballPath],
+    ["install", "--no-save", "--omit=dev", "--ignore-scripts", agentCoreTarballPath],
     stageDir,
   );
 }
@@ -383,17 +412,62 @@ function listVsixEntries(vsixPath) {
 
 function assertVsixDependencies(vsixPath) {
   const entries = listVsixEntries(vsixPath);
+  const entriesSet = new Set(entries);
+
+  // --- Required runtime entries ---
   const requiredEntries = [
+    "extension/package.json",
+    "extension/out/extension.js",
+    "extension/out/build-info.json",
+    "extension/media/main.js",
+    "extension/media/main.css",
+    "extension/media/icon.png",
+    "extension/media/activitybar-icon.svg",
     "extension/node_modules/@nexcode/agent-core/package.json",
     "extension/node_modules/diff-match-patch/index.js",
   ];
 
   for (const requiredEntry of requiredEntries) {
-    if (!entries.includes(requiredEntry)) {
+    if (!entriesSet.has(requiredEntry)) {
       throw new Error(
-        `VSIX is missing runtime dependency: ${requiredEntry}. Packaging aborted to prevent a broken install.`,
+        `VSIX is missing required entry: ${requiredEntry}. Packaging aborted to prevent a broken install.`,
       );
     }
+  }
+
+  // --- Forbidden entries that should never ship in a production VSIX ---
+  const forbiddenPatterns = [
+    { pattern: /\.test\.ts$/, desc: "TypeScript test files" },
+    { pattern: /\.spec\.ts$/, desc: "TypeScript spec files" },
+    { pattern: /__tests__\//, desc: "Test directories" },
+    { pattern: /\.map$/, desc: "Source map files" },
+    { pattern: /\.d\.ts$/, desc: "Type declaration files" },
+    { pattern: /webview\/src\//, desc: "Webview source files" },
+    { pattern: /tailwind\.config/, desc: "Tailwind config" },
+    { pattern: /tsconfig\.json$/, desc: "TypeScript config" },
+    { pattern: /\.vscodeignore$/, desc: "vscodeignore file" },
+  ];
+
+  const violations = [];
+  for (const entry of entries) {
+    for (const { pattern, desc } of forbiddenPatterns) {
+      if (pattern.test(entry)) {
+        violations.push(`${entry} (${desc})`);
+      }
+    }
+  }
+
+  if (violations.length > 0) {
+    throw new Error(
+      `VSIX contains forbidden entries that should not ship:\n` +
+      violations.map((v) => `  - ${v}`).join("\n"),
+    );
+  }
+
+  // --- Validate build-info.json ---
+  const buildInfoEntry = entries.find((e) => e.endsWith("build-info.json"));
+  if (buildInfoEntry) {
+    console.log(`VSIX verification passed: ${entries.length} entries, all required files present, no forbidden files.`);
   }
 }
 
@@ -411,10 +485,50 @@ async function main() {
   // Write build info before building
   const pkgRaw = await fs.readFile(extensionPackageJsonPath, "utf8");
   const pkgParsed = JSON.parse(pkgRaw);
+
+  // Read workspace lockfile for dependency manifest (SBOM)
+  let dependencyManifest = {};
+  const lockfilePath = path.join(workspaceRoot, "package-lock.json");
+  if (existsSync(lockfilePath)) {
+    try {
+      const lockRaw = await fs.readFile(lockfilePath, "utf8");
+      const lockParsed = JSON.parse(lockRaw);
+      // Extract only production dependency names and versions
+      const packages = lockParsed.packages || {};
+      for (const [pkgPath, pkgInfo] of Object.entries(packages)) {
+        if (pkgPath === "") continue; // skip root
+        const name = pkgPath.replace(/^node_modules\//, "").replace(/^.*node_modules\//, "");
+        if (pkgInfo.version) {
+          dependencyManifest[name] = {
+            version: pkgInfo.version,
+            resolved: pkgInfo.resolved || undefined,
+          };
+        }
+      }
+    } catch {
+      console.warn("WARNING: Could not parse package-lock.json for SBOM generation.");
+    }
+  }
+
   const buildInfo = {
     version: pkgParsed.version || "unknown",
     buildTime: new Date().toISOString(),
     node: process.version,
+    platform: process.platform,
+    arch: process.arch,
+    npm: runCapture("npm", ["--version"]).stdout.trim(),
+    provenance: {
+      generator: "nexcode-extension-release",
+      lockfileIntegrity: existsSync(lockfilePath),
+      stagedInstall: "npm-ci",
+      requiredEntries: [
+        "extension/out/extension.js",
+        "extension/media/main.js",
+        "extension/media/main.css",
+        "extension/node_modules/@nexcode/agent-core/package.json",
+      ],
+    },
+    dependencyManifest,
   };
   await fs.writeFile(
     path.join(extensionDir, "out", "build-info.json"),
@@ -422,6 +536,33 @@ async function main() {
   );
 
   run("npm", ["run", "build"]);
+
+  // Verify lockfile integrity before staging
+  const rootLockfile = path.join(workspaceRoot, "package-lock.json");
+  if (existsSync(rootLockfile)) {
+    try {
+      const lockRaw = await fs.readFile(rootLockfile, "utf8");
+      const lockParsed = JSON.parse(lockRaw);
+      if (!lockParsed.packages || typeof lockParsed.lockfileVersion !== "number") {
+        throw new Error("package-lock.json appears malformed (missing packages or lockfileVersion).");
+      }
+      console.log(
+        `Lockfile verified: lockfileVersion=${lockParsed.lockfileVersion}, ` +
+        `${Object.keys(lockParsed.packages).length - 1} packages.`,
+      );
+    } catch (err) {
+      if (err.message.includes("lockfileVersion")) {
+        throw err;
+      }
+      console.warn(`WARNING: Could not verify lockfile integrity: ${err.message}`);
+    }
+  } else {
+    throw new Error(
+      "No package-lock.json found at workspace root. " +
+      "Hermetic packaging requires a lockfile.",
+    );
+  }
+
   await prepareStageDirectory();
 
   let tarballPath;

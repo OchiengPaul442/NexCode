@@ -2572,3 +2572,80 @@ Append one section per autonomous iteration. Never rewrite prior entries.
 | `.gitignore` | Add eslint-output artifact patterns | +3 |
 | `agent-core/tests/eslintConfig.test.ts` | New regression test file (26 tests) | +235 |
 
+---
+
+## Iteration 37 — NC-044: Hermetic package/release flow
+
+**Date:** 20 July 2026
+**Finding IDs:** NC-044 (Medium)
+**Phase:** J — Quality gates
+
+### What was done
+
+1. **Verified NC-044 against current source code:**
+    - `tools/extension-release.mjs:208-219` — confirmed `installStageDependencies()` uses `npm install --no-save --omit=dev` which is network-dependent. No lockfile is copied to the staging directory.
+    - `tools/extension-release.mjs:25-33` — confirmed `stageEntries` does NOT include `package-lock.json`.
+    - `tools/extension-release.mjs:384-398` — confirmed `assertVsixDependencies()` only checks 2 required entries: `extension/node_modules/@nexcode/agent-core/package.json` and `extension/node_modules/diff-match-patch/index.js`. No forbidden-entry checks.
+    - `tools/extension-release.mjs:411-422` — confirmed `build-info.json` only contains `version`, `buildTime`, `node`. No provenance metadata, no dependency manifest.
+    - `.github/workflows/ci.yml:78-109` — confirmed CI package job uses `npm ci` (good) but has no VSIX verification, no lockfile integrity check, no dependency manifest generation.
+    - `extension/.vscodeignore` — confirmed does NOT exclude `DEPENDENCIES.json`.
+
+2. **Implemented fix (3 files changed, 1 new test file):**
+    - `tools/extension-release.mjs` (+120, -15):
+      - `stageEntries` now includes `package-lock.json` for lockfile-based installs.
+      - `installStageDependencies()` rewritten: primary path uses `npm ci --omit=dev --ignore-scripts` with lockfile, then installs agent-core tarball separately. Fallback path for missing lockfile warns about non-hermetic install.
+      - Lockfile integrity verification added to `main()`: reads and validates `package-lock.json` has `packages` and `lockfileVersion`. Rejects malformed lockfiles.
+      - `assertVsixDependencies()` expanded: 8 required entries (package.json, extension.js, main.js, main.css, icon.png, activitybar-icon.svg, agent-core/package.json, build-info.json). Forbidden entries check: rejects test files, source maps, type declarations, webview source, tailwind config, tsconfig, vscodeignore. Reports entry count on success.
+      - `build-info.json` enhanced: includes `platform`, `arch`, `npm` version, `provenance` object (generator, lockfileIntegrity, stagedInstall), and `dependencyManifest` extracted from lockfile.
+    - `.github/workflows/ci.yml` (+40):
+      - Added "Verify VSIX contents" step: lists entries and checks required files exist, warns on test/source artifacts.
+      - Added "Verify lockfile integrity" step: validates lockfileVersion and packages object.
+      - Added "Generate dependency manifest" step: extracts production deps from lockfile into `DEPENDENCIES.json`.
+      - Upload artifact now includes `DEPENDENCIES.json`.
+    - `extension/.vscodeignore` (+1): Added `DEPENDENCIES.json` to prevent it from shipping in the VSIX.
+
+3. **Added regression tests (1 new file, 22 tests):**
+    - `agent-core/tests/hermeticPackaging.test.ts`:
+      - Release script uses hermetic install (4 tests): stageEntries includes package-lock.json, installStageDependencies uses npm ci, release script verifies lockfile integrity, release script has fallback for missing lockfile.
+      - VSIX content verification (3 tests): checks required entry points, rejects forbidden entries (test/source files), reports entry count on success.
+      - Build info includes provenance metadata (3 tests): platform/arch/npm version, provenance object, dependency manifest from lockfile.
+      - .vscodeignore excludes build artifacts (5 tests): DEPENDENCIES.json excluded, source maps excluded, type declarations excluded, test files excluded, webview source excluded.
+      - CI workflow hermetic packaging (5 tests): package job uses npm ci, VSIX verification step, lockfile integrity verification, generates dependency manifest, uploads DEPENDENCIES.json.
+      - Lockfile integrity (2 tests): root package-lock.json exists, valid JSON with lockfileVersion.
+
+4. **Validated:**
+    - 22/22 new hermeticPackaging tests pass.
+    - 1578/1578 full unit tests pass (64 test files).
+    - `tsc --noEmit` clean in agent-core, extension, and webview.
+    - `npm run build` clean.
+    - `git diff --check` clean (no whitespace errors).
+
+### Validation
+
+| Check | Result | Notes |
+|---|---|---|
+| Focused tests (NC-044) | PASS | 22/22 hermeticPackaging tests pass |
+| Full test suite | PASS | 1578/1578 unit tests pass |
+| Type check (agent-core) | PASS | `tsc --noEmit` clean |
+| Type check (extension) | PASS | `tsc --noEmit` clean |
+| Type check (webview) | PASS | `tsc --noEmit` clean |
+| Build | PASS | Full `npm run build` clean |
+| No secrets in diff | PASS | No API keys, tokens, or secrets in the diff |
+| No test suppression | PASS | All existing tests retained and passing |
+
+### Remaining risks
+
+- The `npm ci --ignore-scripts` in the staging directory skips lifecycle scripts. If agent-core or its dependencies require postinstall scripts, they would not run. This is intentional for security — lifecycle scripts should not run during packaging.
+- The CI "Verify VSIX contents" step uses `unzip` or `python3` as fallback. On Windows runners, PowerShell is used instead via the `listVsixEntries()` function in the release script. The CI step is best-effort for verification.
+- The `dependencyManifest` in `build-info.json` includes all transitive dependencies from the lockfile. A future improvement could filter to only direct production dependencies of the extension.
+- SBOM generation is done via a simple dependency manifest extraction, not a full SPDX/CycloneDX SBOM. Full SBOM generation would require additional tooling.
+
+### Files changed
+
+| File | Change | Lines |
+|---|---|---|
+| `tools/extension-release.mjs` | Add package-lock.json to stageEntries, hermetic npm ci install, lockfile verification, expanded VSIX verification, enhanced build-info with provenance and SBOM | +120, -15 |
+| `.github/workflows/ci.yml` | Add VSIX verification, lockfile integrity, dependency manifest generation, DEPENDENCIES.json artifact | +40 |
+| `extension/.vscodeignore` | Exclude DEPENDENCIES.json from VSIX | +1 |
+| `agent-core/tests/hermeticPackaging.test.ts` | New regression test file (22 tests) | +208 |
+

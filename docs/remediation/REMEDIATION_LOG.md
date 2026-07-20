@@ -2100,3 +2100,81 @@ Append one section per autonomous iteration. Never rewrite prior entries.
 | `agent-core/tests/showReasoningDefault.test.ts` | New NC-042 regression test file | +106 |
 | `agent-core/tests/generatedArtifacts.test.ts` | New NC-038 regression test file | +119 |
 
+---
+
+## Iteration 30 — NC-043: Bounded task history with automatic cleanup
+
+**Date:** 20 July 2026
+**Finding IDs:** NC-043 (Medium)
+**Phase:** G — Task state machine and concurrency
+
+### What was done
+
+1. **Verified NC-043 against current source code:**
+   - `agent-core/src/taskQueue.ts:290-306` — confirmed `removeCompleted(maxAge)` exists and removes terminal tasks older than `maxAge`, but is never called by any extension or orchestrator code.
+   - `agent-core/src/taskQueue.ts:274-276` — confirmed `getAllTasks()` returns all tasks in the map (active + queued + terminal) sorted by creation time. No filtering, no limits.
+   - `agent-core/src/taskManager.ts:172-174` — confirmed `TaskQueueManager.getAllTasks()` delegates to the queue with no bounds.
+   - `extension/src/sidebarViewProvider.ts` — confirmed `taskManager.completeTask()` is called on task completion (line 581) but `removeCompleted()` is never invoked. Long-running sessions accumulate completed tasks indefinitely.
+
+2. **Implemented fix (2 production files changed):**
+   - `agent-core/src/taskQueue.ts` (+135, -6):
+     - Added `TaskQueueOptions` interface: `{ maxConcurrent?, maxHistorySize?, maxHistoryAgeMs? }`.
+     - Added `DEFAULT_MAX_HISTORY_SIZE = 100` and `DEFAULT_MAX_HISTORY_AGE_MS = 30 * 60 * 1000`.
+     - Constructor now accepts `TaskQueueOptions | number` (backward compatible with existing `new TaskQueue(2)` callers).
+     - `removeCompleted()`: updated to use `this.maxHistoryAgeMs` as default when no `maxAge` argument provided.
+     - Added `pruneCompletedTasks()`: calls `removeCompleted()` for age-based pruning, then enforces `maxHistorySize` by removing oldest terminal tasks (by completedAt). Returns total removed count (age + size).
+     - Added `getCompletedCount()`: counts terminal tasks in the map.
+     - Added `getCompletedTasks()`: returns terminal tasks sorted by completedAt descending.
+     - Auto-prune: `complete()`, `fail()`, and `cancel()` now call `this.pruneCompletedTasks()` after setting terminal state.
+   - `agent-core/src/taskManager.ts` (+37, -2):
+     - `TaskManagerOptions` extended with `maxHistorySize?: number` and `maxHistoryAgeMs?: number`.
+     - Constructor passes all options through to `new TaskQueue(options)`.
+     - Added `getCompletedTasks()`: delegates to queue.
+     - Added `getCompletedCount()`: delegates to queue.
+     - Added `pruneCompletedTasks()`: delegates to queue, returns removed count.
+     - Added `getTotalTaskCount()`: returns `getAllTasks().length`.
+
+3. **Added regression tests (1 new file, 29 tests):**
+   - `agent-core/tests/taskHistoryBounds.test.ts`:
+     - Auto-pruning on terminal transitions (5 tests): completed/failed/cancelled older than maxHistoryAgeMs are pruned on complete/fail/cancel; active (planning) tasks never pruned; queued tasks never pruned.
+     - Max history size enforcement (8 tests): auto-prune enforces maxHistorySize on complete/fail/cancel (count checks); maxHistorySize=0 disables pruning; default maxHistorySize is 100; manual prune with staggered timestamps; mixed statuses count toward limit; pruneCompletedTasks returns combined age+size removal count.
+     - getCompletedTasks and getCompletedCount (4 tests): sorted by completedAt descending; excludes active/queued; returns removal count; returns 0 when nothing to prune.
+     - Constructor backward compatibility (3 tests): number argument works; options object works; defaults apply.
+     - TaskQueueManager integration (4 tests): passes maxHistorySize; getCompletedTasks returns terminal tasks; pruneCompletedTasks delegates; getTotalTaskCount includes all states.
+     - Edge cases (5 tests): empty queue; explicit maxAge override; constructor defaults; clear resets history; history pruning doesn't affect queued tasks.
+
+4. **Validated:**
+   - 29/29 new taskHistoryBounds tests pass.
+   - 15/15 existing taskConcurrency tests pass.
+   - 39/39 existing steeringStateMachine tests pass.
+   - 1426/1426 full unit tests pass (0 failures).
+   - `tsc --noEmit` clean in agent-core.
+   - `npm run build` clean (agent-core + extension + webview).
+   - `tsc --noEmit` clean in webview.
+
+### Validation
+
+| Check | Result | Notes |
+|---|---|---|
+| Focused tests (NC-043) | PASS | 29/29 taskHistoryBounds tests pass |
+| Existing task tests | PASS | 15/15 taskConcurrency + 39/39 steeringStateMachine pass |
+| Full test suite | PASS | 1426/1426 tests pass |
+| Type check (agent-core) | PASS | `tsc --noEmit` clean |
+| Type check (extension) | PASS | `tsc --noEmit` clean |
+| Type check (webview) | PASS | `tsc --noEmit` clean |
+| Build | PASS | Full `npm run build` clean |
+| No secrets in diff | PASS | No API keys, tokens, or secrets in the diff |
+| No test suppression | PASS | All existing tests retained and passing |
+
+### Remaining risks
+
+- None. The history is now bounded by both age (30 min default) and count (100 default). Both limits are configurable via `TaskQueueOptions`. Auto-prune runs after every terminal state transition, preventing indefinite memory growth.
+
+### Files changed
+
+| File | Change | Lines |
+|---|---|---|
+| `agent-core/src/taskQueue.ts` | Add TaskQueueOptions, pruneCompletedTasks, getCompletedCount/Tasks, auto-prune on terminal transitions | +135, -6 |
+| `agent-core/src/taskManager.ts` | Extend TaskManagerOptions, pass through to queue, expose history methods | +37, -2 |
+| `agent-core/tests/taskHistoryBounds.test.ts` | New regression test file (29 tests) | +410 |
+

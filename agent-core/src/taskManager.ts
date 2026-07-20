@@ -14,6 +14,8 @@ import { TaskQueue, classifyPromptIntent } from "./taskQueue";
 
 export interface TaskManagerOptions {
   maxConcurrent?: number;
+  maxHistorySize?: number;
+  maxHistoryAgeMs?: number;
 }
 
 export interface TaskExecutionResult {
@@ -29,7 +31,11 @@ export class TaskQueueManager {
   private taskPrompts = new Map<string, string>();
 
   constructor(options: TaskManagerOptions = {}) {
-    this.queue = new TaskQueue(options.maxConcurrent);
+    this.queue = new TaskQueue({
+      maxConcurrent: options.maxConcurrent,
+      maxHistorySize: options.maxHistorySize,
+      maxHistoryAgeMs: options.maxHistoryAgeMs,
+    });
   }
 
   onEvent(listener: (event: TaskEvent) => void): () => void {
@@ -185,6 +191,28 @@ export class TaskQueueManager {
     return this.queue.canAcceptNewTask();
   }
 
+  /**
+   * Get completed/failed/cancelled tasks from history, sorted by completion time descending.
+   */
+  getCompletedTasks(): Task[] {
+    return this.queue.getCompletedTasks();
+  }
+
+  /**
+   * Get count of terminal tasks in history.
+   */
+  getCompletedCount(): number {
+    return this.queue.getCompletedCount();
+  }
+
+  /**
+   * Manually trigger pruning of old completed tasks.
+   * Normally called automatically after state transitions.
+   */
+  pruneCompletedTasks(): number {
+    return this.queue.pruneCompletedTasks();
+  }
+
   getNextQueuedTask(): { task: Task; request: OrchestratorRequest } | undefined {
     const item = this.queue.dequeue();
     if (!item) {
@@ -232,5 +260,12 @@ export class TaskQueueManager {
 
   removeCompleted(maxAge?: number): number {
     return this.queue.removeCompleted(maxAge);
+  }
+
+  /**
+   * Get the total count of all tasks (active + queued + terminal).
+   */
+  getTotalTaskCount(): number {
+    return this.queue.getAllTasks().length;
   }
 }

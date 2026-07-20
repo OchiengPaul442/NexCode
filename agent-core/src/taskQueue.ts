@@ -12,15 +12,33 @@ import {
 } from "./types";
 
 const MAX_CONCURRENT_TASKS = 1;
+const DEFAULT_MAX_HISTORY_SIZE = 100;
+const DEFAULT_MAX_HISTORY_AGE_MS = 30 * 60 * 1000; // 30 minutes
+
+export interface TaskQueueOptions {
+  maxConcurrent?: number;
+  maxHistorySize?: number;
+  maxHistoryAgeMs?: number;
+}
 
 export class TaskQueue {
   private tasks = new Map<string, Task>();
   private queue: TaskQueueItem[] = [];
   private listeners: Array<(event: TaskEvent) => void> = [];
   private maxConcurrent: number;
+  private maxHistorySize: number;
+  private maxHistoryAgeMs: number;
 
-  constructor(maxConcurrent: number = MAX_CONCURRENT_TASKS) {
-    this.maxConcurrent = maxConcurrent;
+  constructor(options: TaskQueueOptions | number = MAX_CONCURRENT_TASKS) {
+    if (typeof options === "number") {
+      this.maxConcurrent = options;
+      this.maxHistorySize = DEFAULT_MAX_HISTORY_SIZE;
+      this.maxHistoryAgeMs = DEFAULT_MAX_HISTORY_AGE_MS;
+    } else {
+      this.maxConcurrent = options.maxConcurrent ?? MAX_CONCURRENT_TASKS;
+      this.maxHistorySize = options.maxHistorySize ?? DEFAULT_MAX_HISTORY_SIZE;
+      this.maxHistoryAgeMs = options.maxHistoryAgeMs ?? DEFAULT_MAX_HISTORY_AGE_MS;
+    }
   }
 
   onEvent(listener: (event: TaskEvent) => void): () => void {
@@ -190,6 +208,9 @@ export class TaskQueue {
       pendingCount: this.queue.length,
       activeCount: this.getActiveTasks().length,
     });
+
+    // Auto-prune old completed tasks to prevent unbounded memory growth
+    this.pruneCompletedTasks();
   }
 
   fail(taskId: string, error: string): void {
@@ -207,6 +228,9 @@ export class TaskQueue {
       pendingCount: this.queue.length,
       activeCount: this.getActiveTasks().length,
     });
+
+    // Auto-prune old completed tasks to prevent unbounded memory growth
+    this.pruneCompletedTasks();
   }
 
   cancel(taskId: string): boolean {
@@ -233,6 +257,9 @@ export class TaskQueue {
       pendingCount: this.queue.length,
       activeCount: this.getActiveTasks().length,
     });
+
+    // Auto-prune old completed tasks to prevent unbounded memory growth
+    this.pruneCompletedTasks();
 
     return true;
   }
@@ -287,7 +314,12 @@ export class TaskQueue {
     return this.getActiveTasks().length < this.maxConcurrent;
   }
 
-  removeCompleted(maxAge: number = 30 * 60 * 1000): number {
+  /**
+   * Remove completed/failed/cancelled tasks that exceed the age limit.
+   * Returns the number of tasks removed.
+   */
+  removeCompleted(maxAge?: number): number {
+    const effectiveMaxAge = maxAge ?? this.maxHistoryAgeMs;
     const now = Date.now();
     let removed = 0;
 
@@ -295,7 +327,7 @@ export class TaskQueue {
       if (
         (task.status === "completed" || task.status === "failed" || task.status === "cancelled") &&
         task.completedAt &&
-        now - task.completedAt > maxAge
+        now - task.completedAt > effectiveMaxAge
       ) {
         this.tasks.delete(id);
         removed++;
@@ -303,6 +335,68 @@ export class TaskQueue {
     }
 
     return removed;
+  }
+
+  /**
+   * Enforce the maximum history size by removing oldest terminal tasks
+   * beyond the configured limit. Called automatically after state transitions.
+   * Returns the total number of tasks removed (age-based + size-based).
+   */
+  pruneCompletedTasks(): number {
+    // First, remove age-based entries
+    let totalRemoved = this.removeCompleted();
+
+    // Then enforce size limit if configured
+    if (this.maxHistorySize <= 0) {
+      return totalRemoved;
+    }
+
+    // Collect terminal tasks sorted by completion time (oldest first)
+    const terminalTasks: Array<{ id: string; completedAt: number }> = [];
+    for (const [id, task] of this.tasks) {
+      if (
+        (task.status === "completed" || task.status === "failed" || task.status === "cancelled") &&
+        task.completedAt
+      ) {
+        terminalTasks.push({ id, completedAt: task.completedAt });
+      }
+    }
+
+    terminalTasks.sort((a, b) => a.completedAt - b.completedAt);
+
+    // Remove oldest entries that exceed the limit
+    while (terminalTasks.length > this.maxHistorySize) {
+      const oldest = terminalTasks.shift()!;
+      this.tasks.delete(oldest.id);
+      totalRemoved++;
+    }
+
+    return totalRemoved;
+  }
+
+  /**
+   * Get count of terminal (completed/failed/cancelled) tasks in history.
+   */
+  getCompletedCount(): number {
+    let count = 0;
+    for (const task of this.tasks.values()) {
+      if (task.status === "completed" || task.status === "failed" || task.status === "cancelled") {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  /**
+   * Get completed/failed/cancelled tasks from history, sorted by completion time descending.
+   */
+  getCompletedTasks(): Task[] {
+    return Array.from(this.tasks.values())
+      .filter(
+        (t) =>
+          t.status === "completed" || t.status === "failed" || t.status === "cancelled",
+      )
+      .sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0));
   }
 
   clear(): void {

@@ -506,14 +506,15 @@
 
 ### NC-043 — Completed tasks accumulate indefinitely during normal use
 - **Severity:** Medium
-- **Status:** pending
+- **Status:** fixed
 - **Phase:** G
 - **Dependencies:** NC-010 (task concurrency)
-- **Affected files:** task queue/history management
-- **Verified:** unverified
-- **Required tests:** bounded history; automatic cleanup; retention limits
-- **Verification commands:** `npx vitest run agent-core/tests/taskHistory.test.ts`
-- **Resolution evidence:** (none yet)
+- **Affected files:** `agent-core/src/taskQueue.ts`, `agent-core/src/taskManager.ts`
+- **Verified:** yes — verified against current source; auto-prune added to terminal state transitions, configurable history bounds
+- **Required tests:** bounded history; automatic cleanup; retention limits; age-based pruning; size-based pruning; constructor backward compat
+- **Verification commands:** `npx vitest run agent-core/tests/taskHistoryBounds.test.ts`
+- **Resolution evidence:** `agent-core/src/taskQueue.ts` changed: (1) Added `TaskQueueOptions` interface with `maxConcurrent`, `maxHistorySize` (default 100), `maxHistoryAgeMs` (default 30 min). (2) Constructor accepts `TaskQueueOptions | number` (backward compatible). (3) `pruneCompletedTasks()` enforces both age-based (removeCompleted) and size-based (LRU oldest terminal) pruning. Returns total removed count. (4) `getCompletedCount()` and `getCompletedTasks()` expose terminal task history. (5) Auto-prune called after `complete()`, `fail()`, and `cancel()`. `agent-core/src/taskManager.ts` changed: (1) `TaskManagerOptions` extended with `maxHistorySize` and `maxHistoryAgeMs`. (2) Constructor passes options through to TaskQueue. (3) Exposed `getCompletedTasks()`, `getCompletedCount()`, `pruneCompletedTasks()`, `getTotalTaskCount()`. 29 regression tests in `agent-core/tests/taskHistoryBounds.test.ts`. 1426/1426 tests pass. Build clean. All type-checks clean.
+- **Remaining risk:** None — the history is now bounded by both age (30 min default) and count (100 default). Both limits are configurable.
 
 ### NC-044 — Package/release flow is not sufficiently hermetic
 - **Severity:** Medium

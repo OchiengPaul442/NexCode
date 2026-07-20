@@ -2253,3 +2253,83 @@ Append one section per autonomous iteration. Never rewrite prior entries.
 | `extension/webview/src/main.tsx` | Add workspaceFolders/activeWorkspaceRoot to BackendConfig and StoreState | +12 |
 | `agent-core/tests/multiRootWorkspace.test.ts` | New regression test file (33 tests) | +408 |
 
+---
+
+## Iteration 32 — NC-029: Internal documentation incorrectly declares production readiness
+
+**Date:** 20 July 2026
+**Finding IDs:** NC-029 (Medium)
+**Phase:** J — Quality gates
+
+### What was done
+
+1. **Verified NC-029 against current source code:**
+   - `README.md` (line 65): "62 tests passing across 8 test files" — current: 1459 tests, 58 files.
+   - `README.md` (line 3): badge `audit-17 issues` — stale, no longer relevant.
+   - `docs/review/FINAL_REPORT.md` (line 20): "287 tests across 17 test files" — current: 1459 tests.
+   - `docs/review/RELEASE_READINESS.md` (line 37): "62 tests passing across 8 test files" — stale.
+   - `docs/review/RELEASE_READINESS.md` (line 92): "147 tests passing across 11 test files" — stale.
+   - `docs/review/TEST_MATRIX.md` (line 71): "webview: Not yet integrated into CI" — now passes.
+   - `docs/review/HARDENING_LOG.md` (line 81): "PASS (147/147)" — stale.
+   - `docs/review/BASELINE_VALIDATION.md` (line 19): "21 tests, 5 files" — stale.
+   - All 8 `docs/review/*.md` files lack historical snapshot markers.
+
+2. **Implemented fix (9 documentation files changed):**
+   - `docs/review/FINAL_REPORT.md` (+8): Added `⚠️ HISTORICAL SNAPSHOT — NOT CURRENT` blockquote header with note about current test counts. Added `Status: Historical snapshot` to metadata.
+   - `docs/review/RELEASE_READINESS.md` (+8): Same historical snapshot header.
+   - `docs/review/TEST_MATRIX.md` (+8): Same historical snapshot header.
+   - `docs/review/HARDENING_LOG.md` (+8): Same historical snapshot header.
+   - `docs/review/BASELINE_VALIDATION.md` (+7): Same historical snapshot header.
+   - `docs/review/FINDINGS_REGISTER.md` (+7): Same historical snapshot header, cross-reference to WORK_QUEUE.md.
+   - `docs/review/INDEPENDENT_RED_TEAM_REPORT.md` (+7): Same historical snapshot header, cross-reference to WORK_QUEUE.md.
+   - `docs/review/IMPLEMENTATION_PLAN.md` (+7): Same historical snapshot header, cross-reference to WORK_QUEUE.md.
+   - `README.md` (+27, -9): Updated test count from "62 tests" to "1476 tests", test file count from "8 test files" to "59 test files", removed stale "audit-17 issues" badge, expanded Testing section from 7 bullet points to 25 covering all remediation areas.
+
+3. **Added regression tests (1 new file, 17 tests):**
+   - `agent-core/tests/documentationAccuracy.test.ts`:
+     - Historical snapshot markers (8 tests): each of the 8 review docs contains "HISTORICAL SNAPSHOT".
+     - Stale count rejection (3 tests): README.md does not contain "62 tests", "147 tests", or "287 tests".
+     - Current count validation (3 tests): README.md contains a test count >= 1400; does not contain stale "8 test files" claim; lists >= 20 test categories.
+     - Badge cleanup (1 test): no stale "audit-17 issues" badge.
+     - Release decision caveat (2 tests): FINAL_REPORT.md "APPROVED" appears after historical marker; RELEASE_READINESS.md "CONDITIONAL GO" appears after historical marker.
+
+4. **Validated:**
+   - 17/17 new documentationAccuracy tests pass.
+   - 1476/1476 full unit tests pass (59 test files pass, 3 pre-existing e2e failures unrelated).
+   - `tsc --noEmit` clean in agent-core, extension, and webview.
+   - `npm run build` clean.
+   - `git diff --check` clean (only CRLF warnings).
+
+### Validation
+
+| Check | Result | Notes |
+|---|---|---|
+| Focused tests (NC-029) | PASS | 17/17 documentationAccuracy tests pass |
+| Full test suite | PASS | 1476/1476 unit tests pass; 3 pre-existing e2e failures |
+| Type check (agent-core) | PASS | `tsc --noEmit` clean |
+| Type check (extension) | PASS | `tsc --noEmit` clean |
+| Type check (webview) | PASS | `tsc --noEmit` clean |
+| Build | PASS | Full `npm run build` clean |
+| No secrets in diff | PASS | No API keys, tokens, or secrets in the diff |
+| No test suppression | PASS | All existing tests retained and passing |
+
+### Remaining risks
+
+- The historical snapshot headers are added to existing files rather than regenerating the docs from CI. A future improvement could auto-generate release-readiness evidence from CI artifacts (NC-044 territory).
+- The `docs/review/` documents still contain stale findings and recommendations that may confuse new readers. The historical snapshot header and cross-reference to `docs/remediation/WORK_QUEUE.md` mitigate this.
+
+### Files changed
+
+| File | Change | Lines |
+|---|---|---|
+| `README.md` | Update test counts, remove stale badge, expand Testing section | +27, -9 |
+| `docs/review/FINAL_REPORT.md` | Add historical snapshot header | +8 |
+| `docs/review/RELEASE_READINESS.md` | Add historical snapshot header | +8 |
+| `docs/review/TEST_MATRIX.md` | Add historical snapshot header | +8 |
+| `docs/review/HARDENING_LOG.md` | Add historical snapshot header | +8 |
+| `docs/review/BASELINE_VALIDATION.md` | Add historical snapshot header | +7 |
+| `docs/review/FINDINGS_REGISTER.md` | Add historical snapshot header | +7 |
+| `docs/review/INDEPENDENT_RED_TEAM_REPORT.md` | Add historical snapshot header | +7 |
+| `docs/review/IMPLEMENTATION_PLAN.md` | Add historical snapshot header | +7 |
+| `agent-core/tests/documentationAccuracy.test.ts` | New regression test file (17 tests) | +165 |
+

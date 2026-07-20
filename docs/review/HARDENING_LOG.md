@@ -1,8 +1,16 @@
+> **⚠️ HISTORICAL SNAPSHOT — NOT CURRENT**
+>
+> This document was generated on **2026-07-17** and reflects the repository state at that
+> time (147 tests, 11 test files). The current repository has **1459+ tests across 58+
+> test files**. Do not use this document for release decisions. Run `npm test` for current
+> counts and see CI artifacts for authoritative test evidence.
+
 # HARDENING LOG
 
 **Project:** NEXCODE-KIBOKO
 **Date:** 2026-07-17
 **Hardening Pass:** 1
+**Status:** Historical snapshot — superseded by NC-029 remediation (2026-07-20)
 
 ---
 

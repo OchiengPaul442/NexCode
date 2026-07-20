@@ -1,8 +1,16 @@
+> **⚠️ HISTORICAL SNAPSHOT — NOT CURRENT**
+>
+> This document was generated on **2026-07-18** and reflects the repository state at that
+> time (287 tests, 17 test files). The current repository has **1459+ tests across 58+ test
+> files**. Do not use this document for release decisions. See the latest test evidence in
+> CI artifacts or run `npm test` for current counts.
+
 # FINAL RELEASE READINESS REPORT
 
 **Project:** NEXCODE-KIBOKO
 **Repository:** https://github.com/OchiengPaul442/NexCode
 **Date:** 2026-07-18 (final update — Round 2 verification)
+**Status:** Historical snapshot — superseded by NC-029 remediation (2026-07-20)
 
 ---
 

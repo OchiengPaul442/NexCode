@@ -1,8 +1,16 @@
+> **⚠️ HISTORICAL SNAPSHOT — NOT CURRENT**
+>
+> This document was generated on **2026-07-16** and reflects the repository state at that
+> time (62 tests, 8 test files; later updated to 147 tests, 11 files). The current repository
+> has **1459+ tests across 58+ test files**. Do not use this document for release decisions.
+> See the latest test evidence in CI artifacts or run `npm test` for current counts.
+
 # RELEASE READINESS REPORT
 
 **Project:** NEXCODE-KIBOKO
 **Date:** 2026-07-16
 **Commit:** 56b71aa (pre-fix) → working tree (post-fix)
+**Status:** Historical snapshot — superseded by NC-029 remediation (2026-07-20)
 
 ---
 

@@ -1,8 +1,15 @@
+> **⚠️ HISTORICAL SNAPSHOT — NOT CURRENT**
+>
+> This document was generated on **2026-07-16** and reflects the repository state at that
+> time. Many findings listed here have been resolved in subsequent remediation iterations.
+> See `docs/remediation/WORK_QUEUE.md` for current finding statuses.
+
 # FINDINGS REGISTER
 
 **Project:** NEXCODE-KIBOKO
 **Reviewed:** 2026-07-16
 **Commit:** 56b71aa
+**Status:** Historical snapshot — superseded by NC-029 remediation (2026-07-20)
 
 ---
 

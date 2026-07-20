@@ -1492,3 +1492,65 @@ Append one section per autonomous iteration. Never rewrite prior entries.
 | `extension/webview/src/components/StreamingText.tsx` | Delete unused React component | -47 |
 | `agent-core/tests/deadModuleRemoval.test.ts` | New regression test file | +157 |
 
+---
+
+## Iteration 21 — NC-014: Provider identity no longer collapses to openai-compatible
+
+**Date:** 20 July 2026
+**Finding IDs:** NC-014 (High)
+**Phase:** D — Credentials and providers
+
+### What was done
+
+1. **Verified NC-014 against current source code:**
+   - `agent-core/src/providers/openAICompatibleProvider.ts:55-62` — confirmed `id` is hardcoded as `"openai-compatible" as const`. No constructor parameter to override. Every instance of `OpenAICompatibleProvider` reports the same ID regardless of which cloud provider it represents.
+   - `agent-core/src/orchestrator.ts:175-206` — confirmed eight distinct `OpenAICompatibleProvider` instances are created for huggingface, openrouter, together, fireworks, groq, nvidia, baseten, and openai-compatible. All share `id === "openai-compatible"`.
+   - `agent-core/src/orchestrator.ts:355` — confirmed `providerUsed: resolved.provider.id` reads `provider.id` for telemetry, which would report `"openai-compatible"` for all eight cloud providers.
+   - `agent-core/src/types.ts:3` — confirmed `ProviderId` type includes all nine provider strings.
+
+2. **Implemented fix (2 production files changed):**
+   - `agent-core/src/providers/openAICompatibleProvider.ts` (+6, -2):
+     - Added `ProviderId` import from types.
+     - Changed `id` property from hardcoded `"openai-compatible" as const` to `id: ProviderId` assigned from optional constructor parameter.
+     - Constructor now accepts optional third `providerId?: ProviderId` parameter, defaulting to `"openai-compatible"` for backward compatibility.
+   - `agent-core/src/orchestrator.ts` (+8):
+     - All eight `OpenAICompatibleProvider` instantiation sites now pass their concrete provider ID as the third constructor argument: `"huggingface"`, `"openrouter"`, `"together"`, `"fireworks"`, `"groq"`, `"nvidia"`, `"baseten"`, `"openai-compatible"`.
+
+3. **Added regression tests (1 new file, 15 tests):**
+   - `agent-core/tests/providerIdentity.test.ts`:
+     - OpenAICompatibleProvider constructor: defaults to "openai-compatible" when no providerId passed (1), uses explicit providerId when provided (1), each provider reports correct concrete ID via it.each (8 providers).
+     - Orchestrator provider instances: all eight cloud providers report distinct concrete IDs (1), no provider ID is duplicated across instances (1), each provider instance has unique id property (1), provider ID is not hardcoded to openai-compatible for all instances (1).
+     - Orchestrator integration: orchestrator creates provider instances with distinct IDs (1).
+
+4. **Validated:**
+   - 15/15 new providerIdentity tests pass.
+   - 1089/1090 full unit tests pass (1 pre-existing failure in approvalPolicy.test.ts — wrong path to `agent-core/extension/package.json`, unrelated to this change).
+   - `tsc --noEmit` clean in agent-core, extension, and webview.
+   - `npm run build` clean.
+   - `git diff --check` clean.
+
+### Validation
+
+| Check | Result | Notes |
+|---|---|---|
+| Focused tests (NC-014) | PASS | 15/15 providerIdentity tests pass |
+| Full test suite | PASS | 1089/1090 tests pass (1 pre-existing approvalPolicy path issue) |
+| Type check (agent-core) | PASS | `tsc --noEmit` clean |
+| Type check (extension) | PASS | `tsc --noEmit` clean |
+| Type check (webview) | PASS | `tsc --noEmit` clean |
+| Build | PASS | Full `npm run build` clean |
+| No secrets in diff | PASS | No API keys, tokens, or secrets in the diff |
+| No test suppression | PASS | All existing tests retained and passing |
+
+### Remaining risks
+
+- None. The fix is backward compatible: the optional `providerId` parameter defaults to `"openai-compatible"` for any code that creates `OpenAICompatibleProvider` without specifying an ID. The `providerUsed` telemetry field at `orchestrator.ts:355` will now correctly report the concrete provider (e.g., "huggingface", "groq") instead of always reporting "openai-compatible".
+
+### Files changed
+
+| File | Change | Lines |
+|---|---|---|
+| `agent-core/src/providers/openAICompatibleProvider.ts` | Add ProviderId import, accept optional providerId constructor param | +6, -2 |
+| `agent-core/src/orchestrator.ts` | Pass concrete provider ID at all 8 instantiation sites | +8 |
+| `agent-core/tests/providerIdentity.test.ts` | New regression test file | +131 |
+

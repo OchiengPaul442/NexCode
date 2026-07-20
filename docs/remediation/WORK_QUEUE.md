@@ -167,14 +167,15 @@
 
 ### NC-014 — Provider identity collapses to openai-compatible
 - **Severity:** High
-- **Status:** pending
+- **Status:** fixed
 - **Phase:** D
 - **Dependencies:** NC-001 (provider isolation)
 - **Affected files:** `agent-core/src/providers/openAICompatibleProvider.ts:55-62`, `agent-core/src/orchestrator.ts:347`
-- **Verified:** unverified
+- **Verified:** yes — verified against current source; OpenAICompatibleProvider now accepts providerId constructor parameter, all 8 instantiation sites pass correct ID
 - **Required tests:** each provider instance reports correct concrete ID; provider ID in telemetry without secret
 - **Verification commands:** `npx vitest run agent-core/tests/providerIdentity.test.ts`
-- **Resolution evidence:** (none yet)
+- **Resolution evidence:** `agent-core/src/providers/openAICompatibleProvider.ts` changed: (1) Added `ProviderId` import from types. (2) `id` property changed from hardcoded `"openai-compatible" as const` to `id: ProviderId` assigned from optional constructor parameter (defaults to `"openai-compatible"` for backward compat). (3) Constructor now accepts optional third `providerId?: ProviderId` parameter. `agent-core/src/orchestrator.ts` changed: all 8 `OpenAICompatibleProvider` instantiation sites now pass their concrete provider ID as the third constructor argument (`"huggingface"`, `"openrouter"`, `"together"`, `"fireworks"`, `"groq"`, `"nvidia"`, `"baseten"`, `"openai-compatible"`). 15 regression tests in `agent-core/tests/providerIdentity.test.ts`: default ID (1), explicit ID (1), each provider reports correct ID (8 via it.each), distinct IDs across all 8 providers (1), no duplication across instances (1), unique instances have unique IDs (1), not hardcoded to openai-compatible (1), orchestrator integration (1). 1089/1090 tests pass (1 pre-existing failure in approvalPolicy.test.ts — wrong path to extension/package.json). Build clean. All type-checks clean.
+- **Remaining risk:** None — the fix is backward compatible. The `provider.id` is now used in `orchestrator.ts:355` for `providerUsed` telemetry, which will now correctly report the concrete provider instead of always reporting "openai-compatible".
 
 ### NC-015 — Model capability detection is brittle hardcoded name heuristic
 - **Severity:** High

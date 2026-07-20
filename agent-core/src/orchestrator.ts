@@ -175,34 +175,42 @@ export class NexcodeOrchestrator {
         "openai-compatible": new OpenAICompatibleProvider(
           this.config.providerDefaults.openAIBaseUrl,
           this.config.providerDefaults.openAIApiKey,
+          "openai-compatible",
         ),
         huggingface: new OpenAICompatibleProvider(
           "https://router.huggingface.co/v1",
           this.config.providerDefaults.openAIApiKey,
+          "huggingface",
         ),
         openrouter: new OpenAICompatibleProvider(
           "https://openrouter.ai/api/v1",
           this.config.providerDefaults.openAIApiKey,
+          "openrouter",
         ),
         together: new OpenAICompatibleProvider(
           "https://api.together.ai/v1",
           this.config.providerDefaults.openAIApiKey,
+          "together",
         ),
         fireworks: new OpenAICompatibleProvider(
           "https://api.fireworks.ai/inference/v1",
           this.config.providerDefaults.openAIApiKey,
+          "fireworks",
         ),
         groq: new OpenAICompatibleProvider(
           "https://api.groq.com/openai/v1",
           this.config.providerDefaults.openAIApiKey,
+          "groq",
         ),
         nvidia: new OpenAICompatibleProvider(
           "https://integrate.api.nvidia.com/v1",
           this.config.providerDefaults.openAIApiKey,
+          "nvidia",
         ),
         baseten: new OpenAICompatibleProvider(
           "https://inference.baseten.co/v1",
           this.config.providerDefaults.openAIApiKey,
+          "baseten",
         ),
       },
       {

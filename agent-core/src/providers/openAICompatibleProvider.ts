@@ -2,6 +2,7 @@ import {
   ModelProvider,
   ModelRequest,
   ModelResponse,
+  ProviderId,
   ToolCallRequest,
 } from "../types";
 import { getModelEffortConfig } from "../utils/modelEffortConfig";
@@ -53,13 +54,16 @@ interface OpenAIChatResponse {
 }
 
 export class OpenAICompatibleProvider implements ModelProvider {
-  public readonly id = "openai-compatible" as const;
+  public readonly id: ProviderId;
   private readonly maxRetryAttempts = 3;
 
   public constructor(
     private readonly baseUrl: string,
     private readonly apiKey?: string,
-  ) {}
+    providerId?: ProviderId,
+  ) {
+    this.id = providerId ?? "openai-compatible";
+  }
 
   public async checkConnection(): Promise<{ ok: boolean; error?: string }> {
     try {

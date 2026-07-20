@@ -243,7 +243,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       }
     });
 
-    this.pushInitialWebviewState();
+    void this.pushInitialWebviewState();
   }
 
   public async notifyConfigChanged(): Promise<void> {
@@ -525,7 +525,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     });
 
     this.taskController.postTaskList();
-    this.processNextTask();
+    void this.processNextTask();
   }
 
   private async processNextTask(): Promise<void> {
@@ -601,7 +601,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       this.taskController.postAttachments();
       this.postMessage({ type: "end", taskId: task.id });
       this.taskController.postTaskList();
-      this.processNextTask();
+      void this.processNextTask();
     }
   }
 
@@ -1574,7 +1574,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       context.subscriptions,
     );
 
-    this.pushInitialWebviewState();
+    void this.pushInitialWebviewState();
   }
 
   private async pushInitialWebviewState(): Promise<void> {

@@ -7,6 +7,8 @@
  * at runtime before the extension host acts on the message.
  */
 
+import * as path from "path";
+
 // --- Valid message type discriminators ---
 
 const VALID_MESSAGE_TYPES = [
@@ -265,10 +267,19 @@ function validateMessageFields(
       }
       break;
 
-    // No-field-required messages: clearConversation, taskCompleted, listMcpServers,
-    // pickAttachments, openInTab, openSettings, openShortcuts, openDocs, listTasks,
-    // cancelPrompt
-    default:
+    // No-field-required messages: validated by type discriminator only
+    case "cancelPrompt":
+    case "clearConversation":
+    case "taskCompleted":
+    case "refreshProviderStatus":
+    case "requestModelSuggestions":
+    case "listMcpServers":
+    case "pickAttachments":
+    case "openInTab":
+    case "openSettings":
+    case "openShortcuts":
+    case "openDocs":
+    case "listTasks":
       break;
   }
 
@@ -291,8 +302,6 @@ export function validateOpenFilePath(
   if (!trimmed) {
     return null;
   }
-
-  const path = require("path") as typeof import("path");
 
   // Normalize the path
   const absolutePath = path.isAbsolute(trimmed)

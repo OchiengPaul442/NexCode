@@ -103,7 +103,7 @@ export class ToolRegistry {
     start: number,
   ): void {
     if (!this.auditLog) return;
-    this.auditLog.log({
+    void this.auditLog.log({
       timestamp: new Date().toISOString(),
       toolName,
       arg,

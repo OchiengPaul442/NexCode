@@ -27,3 +27,7 @@ extension/media/main.css
 
 # Local simulation and audit artifacts
 audit/
+
+# ESLint output artifacts
+eslint-output*.json
+eslint-output*.txt

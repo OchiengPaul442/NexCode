@@ -13,12 +13,20 @@
   "scripts": {
     "build": "npm run -w agent-core build && npm run -w extension build && npm run typecheck:webview",
     "test": "npm run -w agent-core test",
-    "lint": "npm run -w agent-core build && npm run -w agent-core lint && npm run -w extension lint",
+    "typecheck": "npm run -w agent-core build && npm run -w agent-core lint && npm run -w extension lint",
+    "lint": "npm run typecheck && npm run lint:eslint",
+    "lint:eslint": "eslint agent-core/src/ extension/src/ extension/webview/src/",
+    "lint:eslint:fix": "eslint --fix agent-core/src/ extension/src/ extension/webview/src/",
     "typecheck:webview": "tsc -p extension/webview/tsconfig.json",
     "package:vsix": "npm run extension:package",
     "extension:package": "node tools/extension-release.mjs --no-bump --no-install"
   },
   "dependencies": {
     "diff": "^9.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.7.0",
+    "typescript-eslint": "^8.64.0"
   }
 }

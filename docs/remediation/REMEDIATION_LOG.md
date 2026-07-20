@@ -2476,3 +2476,99 @@ Append one section per autonomous iteration. Never rewrite prior entries.
 | `agent-core/src/index.ts` | Export RetryBudget and related types | +5 |
 | `agent-core/tests/retryBudget.test.ts` | New regression test file (10 tests) | +212 |
 
+---
+
+## Iteration 35 — NC-030: Add real ESLint with type-aware rules
+
+**Date:** 20 July 2026
+**Finding IDs:** NC-030 (Medium)
+**Phase:** J — Quality gates
+
+### What was done
+
+1. **Verified NC-030 against current source code:**
+   - Root `package.json:16`: confirmed `"lint": "npm run -w agent-core build && npm run -w agent-core lint && npm run -w extension lint"` — the "lint" script only runs TypeScript compilation (`tsc --noEmit`). No ESLint, no type-aware rules, no actual linting.
+   - `agent-core/package.json:14`: confirmed `"lint": "tsc -p tsconfig.json --noEmit"` — only type-checking.
+   - `extension/package.json`: confirmed `"lint": "tsc -p . --noEmit"` — only type-checking.
+   - No `eslint.config.*` file exists at the project root.
+   - No ESLint packages in any `devDependencies`.
+
+2. **Implemented fix (5 production files changed, 2 new files):**
+   - `eslint.config.mjs` (new, 147 lines): typescript-eslint flat config with type-aware rules:
+     - `no-floating-promises`: error
+     - `no-misused-promises`: error (with `checksVoidReturn: { attributes: false }`)
+     - `switch-exhaustiveness-check`: error (with `allowDefaultCaseForExhaustiveSwitch: true`)
+     - `consistent-type-imports`: warn (auto-fixable)
+     - `no-unsafe-argument/assignment/member-access/return/call`: warn
+     - `prefer-optional-chain`, `no-unnecessary-type-assertion`, `prefer-nullish-coalescing`: warn
+     - Separate relaxed rules for test files (no-unsafe-* off for mocks/fixtures)
+     - Ignores: dist, out, node_modules, coverage, extension/media, *.d.ts
+   - Root `package.json` (+5):
+     - Added `"typecheck"` script (renamed from old lint behavior: `npm run -w agent-core build && npm run -w agent-core lint && npm run -w extension lint`)
+     - Added `"lint"` script: `npm run typecheck && npm run lint:eslint` (runs both)
+     - Added `"lint:eslint"` script: `eslint agent-core/src/ extension/src/ extension/webview/src/`
+     - Added `"lint:eslint:fix"` script: `eslint --fix ...`
+     - Added devDependencies: `eslint`, `@eslint/js`, `typescript-eslint`
+   - `extension/src/sidebarViewProvider.ts` (+4, -4): Fixed 4 floating promise issues:
+     - `void this.pushInitialWebviewState()` (2 call sites)
+     - `void this.processNextTask()` (2 call sites)
+   - `agent-core/src/tools/toolRegistry.ts` (+1, -1): Fixed 1 floating promise:
+     - `void this.auditLog.log(...)` (was fire-and-forget Promise)
+   - `agent-core/src/utils/webviewMessageValidation.ts` (+14, -2):
+     - Added `import * as path from "path"` at top level (replacing inline `require("path")`)
+     - Removed `const path = require("path") as typeof import("path")` from function body
+     - Added 12 missing `case` labels in the `validateMessageFields` switch: `cancelPrompt`, `clearConversation`, `taskCompleted`, `refreshProviderStatus`, `requestModelSuggestions`, `listMcpServers`, `pickAttachments`, `openInTab`, `openSettings`, `openShortcuts`, `openDocs`, `listTasks`
+   - `.gitignore` (+3): Added `eslint-output*.json` and `eslint-output*.txt` entries.
+
+3. **Added regression tests (1 new file, 26 tests):**
+   - `agent-core/tests/eslintConfig.test.ts`:
+     - Config file exists (2): eslint.config.mjs exists, is non-empty.
+     - Required type-aware rules (8): no-floating-promises error, no-misused-promises error, switch-exhaustiveness-check, consistent-type-imports, no-unsafe-argument, no-unsafe-assignment, no-unsafe-member-access, no-unsafe-return.
+     - File patterns (4): agent-core/src, extension/src, extension/webview/src, test files.
+     - Project service (1): projectService: true for type-aware linting.
+     - Ignores (4): dist, node_modules, extension/media, *.d.ts.
+     - DevDependencies (1): root package.json has eslint, @eslint/js, typescript-eslint.
+     - Lint scripts (3): lint:eslint exists, typecheck exists, lint runs both.
+     - Switch exhaustiveness (1): all VALID_MESSAGE_TYPES appear as case labels.
+     - Floating promise fixes (2): sidebarViewProvider voids async calls, toolRegistry voids auditLog.log.
+
+4. **Validated:**
+   - 26/26 new eslintConfig tests pass.
+   - 1531/1531 full unit tests pass (62 test files).
+   - `tsc --noEmit` clean in agent-core, extension, and webview.
+   - `npm run build` clean.
+   - `git diff --check` clean (only CRLF warnings).
+   - ESLint: 69 pre-existing errors (unused vars, empty blocks, escape chars), 323 warnings (type-safety). Key rules enforced: no-floating-promises, no-misused-promises, switch-exhaustiveness-check.
+
+### Validation
+
+| Check | Result | Notes |
+|---|---|---|
+| Focused tests (NC-030) | PASS | 26/26 eslintConfig tests pass |
+| Full test suite | PASS | 1531/1531 unit tests pass |
+| Type check (agent-core) | PASS | `tsc --noEmit` clean |
+| Type check (extension) | PASS | `tsc --noEmit` clean |
+| Type check (webview) | PASS | `tsc --noEmit` clean |
+| Build | PASS | Full `npm run build` clean |
+| ESLint config | PASS | Config loads, rules validated, file patterns correct |
+| No secrets in diff | PASS | No API keys, tokens, or secrets in the diff |
+| No test suppression | PASS | All existing tests retained and passing |
+
+### Remaining risks
+
+- 69 pre-existing ESLint errors remain (unused vars, empty blocks, escape chars, require-imports). These are code quality issues to be addressed incrementally via `npm run lint:eslint:fix` and manual cleanup. They do not affect the type-aware rules (no-floating-promises, no-misused-promises) which are the audit-required rules.
+- 323 warnings from `no-unsafe-*` family and `consistent-type-imports`. These are informational and will decrease as the codebase adopts stricter typing.
+- The ESLint config uses `projectService: true` which requires TypeScript project configuration. Files outside tsconfig scope may not get type-aware rules.
+
+### Files changed
+
+| File | Change | Lines |
+|---|---|---|
+| `eslint.config.mjs` | New ESLint flat config with type-aware rules | +147 |
+| `package.json` | Add lint:eslint, typecheck scripts; add ESLint devDependencies | +5 |
+| `extension/src/sidebarViewProvider.ts` | Fix 4 floating promises with void prefix | +4, -4 |
+| `agent-core/src/tools/toolRegistry.ts` | Fix 1 floating promise with void prefix | +1, -1 |
+| `agent-core/src/utils/webviewMessageValidation.ts` | Add top-level path import, remove require(); add 12 switch case labels | +14, -2 |
+| `.gitignore` | Add eslint-output artifact patterns | +3 |
+| `agent-core/tests/eslintConfig.test.ts` | New regression test file (26 tests) | +235 |
+

@@ -1153,3 +1153,75 @@ Append one section per autonomous iteration. Never rewrite prior entries.
 | `agent-core/tests/webviewValidation.test.ts` | Update allowed keys test, add dead key rejection tests | +8, -1 |
 | `agent-core/tests/configSchemaAlignment.test.ts` | New regression test file | +185 |
 
+---
+
+## Iteration 16 — NC-020: Cross-platform path containment
+
+**Date:** 20 July 2026
+**Finding IDs:** NC-020 (High)
+**Phase:** F — Filesystem and edit integrity
+**Commit:** `82b4a60` — `fix(agent-core): resolve NC-020 — cross-platform path containment`
+
+### What was done
+
+1. **Verified NC-020 against current source code:**
+   - `agent-core/src/utils/pathContainment.ts:17,101` — confirmed `path.isAbsolute()` is used as the sole host-platform check. On POSIX, `path.isAbsolute("C:\\Windows\\...")` returns `false`, so Windows absolute paths are treated as workspace-relative and can bypass containment.
+   - `agent-core/tests/editValidation.test.ts:95-106` — confirmed the null-byte test was documented as a known gap (NC-020 territory).
+   - Confirmed `C:\Windows\System32\config\SAM` can be treated as a relative path on Linux, resolving inside the workspace instead of being rejected.
+
+2. **Implemented fix (3 production files changed, 1 new utility):**
+   - `agent-core/src/utils/pathContainment.ts` (+91 lines):
+     - Added `isPathAbsoluteCrossPlatform()` — detects Windows drive letters (`C:\`, `C:`, `D:`), drive-relative (`C:foo`), UNC (`\\server`), device (`\\.\`), and extended-length (`\\?\`) paths using regex patterns that work on any host OS.
+     - Added `containsNullBytes()` — rejects paths with null bytes that can truncate at the C level.
+     - Added `isPathSafeCrossPlatform()` — composite check returning `{safe, reason}`.
+     - `resolveWorkspacePath()` — applies cross-platform check only for non-host-absolute paths; host-absolute paths continue through existing containment logic. Null bytes rejected for all paths.
+     - `checkPathWithinWorkspace()` — same cross-platform check pattern.
+   - `agent-core/src/index.ts` (+7):
+     - Exported `isPathAbsoluteCrossPlatform`, `containsNullBytes`, `isPathSafeCrossPlatform`.
+   - `agent-core/tests/editValidation.test.ts` (-7):
+     - Updated null-byte test to expect `null` rejection (was a documented gap).
+
+3. **Added regression tests (1 new file, 61 tests):**
+   - `agent-core/tests/crossPlatformPathContainment.test.ts`:
+     - `isPathAbsoluteCrossPlatform` (23 tests): POSIX absolute, Windows drive letter (C:, D:, Z:, lowercase), drive-relative (C:foo), UNC (\\server, \\192.168.1.1\c$), device (\\.\COM1), extended-length (\\?\C:), safe relative paths, edge cases.
+     - `containsNullBytes` (5 tests): middle, start, end, normal, empty.
+     - `isPathSafeCrossPlatform` (8 tests): null bytes, Windows absolute, POSIX absolute, UNC, device, safe relative, traversal.
+     - `checkPathWithinWorkspace cross-platform` (19 tests): Windows absolute on any platform (C:\, D:\, C:/, lowercase, drive-relative, UNC, device, extended-length), POSIX absolute, null bytes, backslash traversal, empty, whitespace, quote-wrapped, deep traversal.
+     - `resolveWorkspacePath cross-platform` (8 tests): Windows absolute, forward-slash, drive-relative, UNC, device, POSIX absolute, null bytes, traversal.
+
+4. **Validated:**
+   - 61/61 new crossPlatformPathContainment tests pass.
+   - 1009/1009 full unit tests pass.
+   - `tsc --noEmit` clean in agent-core, extension, and webview.
+   - `npm run build` clean.
+   - `git diff --check` clean (only line-ending warnings).
+
+### Validation
+
+| Check | Result | Notes |
+|---|---|---|
+| Focused tests (NC-020) | PASS | 61/61 crossPlatformPathContainment tests pass |
+| Existing path tests | PASS | editValidation (34), fileSystemTool (11), pathResolverConsolidation (8), realModelSecurity (61) all pass |
+| Full test suite | PASS | 1009/1009 unit tests pass; 3 pre-existing e2e failures |
+| Type check (agent-core) | PASS | `tsc --noEmit` clean |
+| Type check (extension) | PASS | `tsc --noEmit` clean |
+| Type check (webview) | PASS | `tsc --noEmit` clean |
+| Build | PASS | Full `npm run build` clean |
+| No secrets in diff | PASS | No API keys, tokens, or secrets in the diff |
+| No test suppression | PASS | All existing tests retained and passing |
+
+### Remaining risks
+
+- The cross-platform detection covers all currently known Windows path forms. Future path forms (e.g., new device namespace prefixes) would require updating the regex patterns.
+- The test suite uses exact-match assertions rather than property-based/fuzz testing. Phase J should add `fast-check` property tests for path variations.
+- Multi-root workspace support (NC-023) is still pending and depends on this fix.
+
+### Files changed
+
+| File | Change | Lines |
+|---|---|---|
+| `agent-core/src/utils/pathContainment.ts` | Add isPathAbsoluteCrossPlatform, containsNullBytes, isPathSafeCrossPlatform; update resolveWorkspacePath and checkPathWithinWorkspace | +91 |
+| `agent-core/src/index.ts` | Export new path containment utilities | +7 |
+| `agent-core/tests/editValidation.test.ts` | Update null-byte test to expect rejection | -7 |
+| `agent-core/tests/crossPlatformPathContainment.test.ts` | New regression test file | +343 |
+

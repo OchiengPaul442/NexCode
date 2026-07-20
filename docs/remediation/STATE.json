@@ -17,7 +17,7 @@
   "activeFindingIds": [],
   "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004", "NC-005", "NC-006", "NC-007", "NC-008", "NC-009", "NC-010", "NC-022", "NC-024", "NC-028"],
   "blockedFindingIds": [],
-  "lastCommit": "TBD",
+  "lastCommit": "75b16c5",
   "lastSummary": "NC-009 fixed: MCP built-in filesystem adapter registered so server list is not silently empty. (1) Added FilesystemAdapter import to orchestrator.ts. (2) Registered FilesystemAdapter on the McpRegistry after construction. 19 regression tests in agent-core/tests/mcpRegistry.test.ts: orchestrator lists filesystem server by default, orchestrator lists only built-in servers, orchestrator lists filesystem tools, orchestrator invokes filesystem MCP tool, McpRegistry stores/unregisters adapters, McpRegistry rejects unknown servers, McpRegistry is in-process only (no MCP protocol methods), FilesystemAdapter enforces workspace containment, FilesystemAdapter rejects traversal. 907/907 unit tests pass. Build clean. All type-checks clean.",
   "lastVerification": {
     "focusedTests": "PASS — 19/19 mcpRegistry tests pass",

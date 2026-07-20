@@ -93,14 +93,15 @@
 
 ### NC-008 — Auto/bypass approval modes undermine user consent
 - **Severity:** Critical
-- **Status:** pending
+- **Status:** fixed
 - **Phase:** 0
 - **Dependencies:** none
-- **Affected files:** `extension/package.json:147-160`, `extension/src/sidebarViewProvider.ts:972-995`, `extension/webview/src/main.tsx:5117-5126`
-- **Verified:** unverified
-- **Required tests:** bypass cannot be set persistently at workspace scope; write auto-approval fallback removed; one policy engine is source of truth
-- **Verification commands:** `npx vitest run agent-core/tests/approvalPolicy.test.ts`
-- **Resolution evidence:** (none yet)
+- **Affected files:** `extension/package.json:147-160`, `extension/src/sidebarViewProvider.ts:1032-1050`, `extension/webview/src/main.tsx:5206-5232`, `agent-core/src/utils/webviewMessageValidation.ts:200-208`
+- **Verified:** yes — verified against current source; bypass removed from enum, extension fallback auto-approve removed, policy engine is sole source of truth
+- **Required tests:** bypass cannot be set persistently; write auto-approval fallback removed; one policy engine is source of truth; legacy bypass value falls back to ask
+- **Verification commands:** `npx vitest run agent-core/tests/approvalPolicy.test.ts && npx vitest run agent-core/tests/webviewValidation.test.ts`
+- **Resolution evidence:** `6c75a36` — (1) `extension/package.json`: removed `"bypass"` from `toolApproval` enum; only `"auto"` and `"ask"` remain. (2) `extension/src/sidebarViewProvider.ts`: approval callback no longer returns `true` for `bypass`; removed hardcoded `["write", "append", "patch"]` fallback auto-approve in auto mode; policy engine's `isAutoExecutable()` is now the sole source of truth. Legacy `bypass` config value falls back to `ask`. (3) `extension/webview/src/main.tsx`: removed `bypass` option from Permission Mode dropdown; simplified onChange handler. (4) `agent-core/src/utils/webviewMessageValidation.ts`: `updateSetting` now rejects `toolApproval=bypass` value. (5) `agent-core/tests/toolApprovalPolicy.test.ts`: updated `simulateApprovalCallback` to remove bypass mode and extension fallback; auto mode tests now verify writes require approval. (6) `agent-core/tests/approvalPolicy.test.ts`: new file with 22 tests covering: enum validation, policy as sole truth, write/append/patch require approval, legacy bypass/autopilot values fall back to ask. (7) `agent-core/tests/webviewValidation.test.ts`: 4 new tests for bypass rejection. 799/799 tests pass. Build clean. All type-checks clean.
+- **Remaining risk:** The `DefaultToolApprovalPolicy` class still accepts `bypassTools` constructor parameter (used for internal policy flexibility). The extension no longer uses it. Phase E should consider whether the policy class itself needs simplification.
 
 ---
 

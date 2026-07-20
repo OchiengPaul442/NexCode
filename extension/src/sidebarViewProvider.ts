@@ -1029,22 +1029,16 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
 
           // Read current settings each time (not captured in closure)
           const currentConfig = vscode.workspace.getConfiguration("nexcodeKiboko");
-          const currentApproval = currentConfig.get<"auto" | "ask" | "bypass">("toolApproval", "ask");
-
-          if (currentApproval === "bypass") {
-            return true;
-          }
+          // NC-008: 'bypass' has been removed from the enum. If a legacy value
+          // persists (e.g. from an older workspace setting), fall back to 'ask'.
+          const rawApproval = currentConfig.get<string>("toolApproval", "ask");
+          const currentApproval: "auto" | "ask" = rawApproval === "auto" ? "auto" : "ask";
 
           if (currentApproval === "auto") {
-            // Use the policy's isAutoExecutable() to determine auto-approve eligibility
-            // This covers safe tools (read, search, web-search, git-*) and low-risk writes
+            // NC-008: Use ONLY the policy's isAutoExecutable() as the source of truth.
+            // The extension must NOT add its own fallback auto-approval overrides.
             const policy = this.orchestrator?.getToolApprovalPolicy?.();
             if (policy && policy.isAutoExecutable(toolName, arg)) {
-              return true;
-            }
-            // Fallback: auto-approve low-risk write tools
-            const autoApproveInAutoMode = ["write", "append", "patch"];
-            if (autoApproveInAutoMode.includes(toolName)) {
               return true;
             }
           }
@@ -1177,7 +1171,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     tavilyApiKeyConfigured: boolean;
     allowTools: boolean;
     requireTerminalApproval: boolean;
-    toolApproval: "auto" | "ask" | "bypass";
+    toolApproval: "auto" | "ask";
     temperature: number;
     modeTemperatures: Record<string, number>;
     agentModels: { manager?: string; primaryWorker?: string; lightweightWorker?: string; reasoningReviewer?: string };
@@ -1214,10 +1208,11 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         "requireTerminalApproval",
         true,
       ),
-      toolApproval: config.get<"auto" | "ask" | "bypass">(
-        "toolApproval",
-        "ask",
-      ),
+      // NC-008: 'bypass' has been removed. Guard against legacy value.
+      toolApproval: ((): "auto" | "ask" => {
+        const raw = config.get<string>("toolApproval", "ask");
+        return raw === "auto" ? "auto" : "ask";
+      })(),
       temperature: config.get<number>("temperature", 0.2),
       modeTemperatures: config.get<Record<string, number>>(
         "modeTemperatures",

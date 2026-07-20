@@ -3,28 +3,28 @@
   "project": "NexCode",
   "status": "in_progress",
   "bootstrapRequired": false,
-  "iteration": 6,
+  "iteration": 7,
   "currentPhase": 0,
   "totalFindings": 45,
   "counts": {
-    "pending": 39,
+    "pending": 38,
     "inProgress": 0,
-    "fixed": 6,
+    "fixed": 7,
     "blocked": 0,
     "obsolete": 0,
     "falsePositive": 0
   },
   "activeFindingIds": [],
-  "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004", "NC-005", "NC-007"],
+  "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004", "NC-005", "NC-007", "NC-008"],
   "blockedFindingIds": [],
-  "lastCommit": "3bccfda",
-  "lastSummary": "NC-007 fixed: PowerShell Select-String search fallback (injection-prone) replaced with a pure Node.js filesystem walker that uses fs.promises.readdir and fs.promises.readFile for recursive walking with case-insensitive literal substring matching. No shell, no PowerShell, no injection. (1) searchWithNodeFallback() — new private method on SearchTool that recursively walks workspace, reads files matching known extensions, skips node_modules/.git/dist/build, performs case-insensitive literal substring matching, returns file:line:content format, limited to 50 results with 1MB per-file size limit and 12-level depth limit. (2) PowerShell Select-String -Command invocation completely removed. (3) Linux/Mac grep fallback also replaced (grep interprets query as regex, not literal). (4) findstr kept on Windows (uses execFile argv, safe). (5) Query truncated to 100 chars in diagnostic output. (6) TerminalTool.getWorkspaceRoot() public getter added. 19 regression tests in agent-core/tests/searchInjection.test.ts. 778/778 tests pass. Build clean. Type-check clean.",
+  "lastCommit": "PENDING",
+  "lastSummary": "NC-008 fixed: Bypass/autopilot approval mode removed for security. (1) extension/package.json: removed 'bypass' from toolApproval enum — only 'auto' and 'ask' remain. (2) sidebarViewProvider.ts: approval callback no longer returns true for bypass; removed hardcoded ['write','append','patch'] fallback auto-approve in auto mode; policy engine isAutoExecutable() is sole source of truth; legacy bypass config value falls back to 'ask'. (3) webview main.tsx: removed bypass option from Permission Mode dropdown. (4) webviewMessageValidation.ts: updateSetting rejects toolApproval=bypass. (5) toolApprovalPolicy.test.ts: updated simulateApprovalCallback to remove bypass and extension fallback. (6) approvalPolicy.test.ts: 22 new tests. (7) webviewValidation.test.ts: 4 new tests. 799/799 tests pass. Build clean.",
   "lastVerification": {
-    "focusedTests": "PASS — 19/19 searchInjection tests pass",
+    "focusedTests": "PASS — 22/22 approvalPolicy + 79/79 webviewValidation tests pass",
     "typecheck": "PASS — agent-core, extension, and webview tsc --noEmit all clean",
     "lint": "PASS — no lint configured beyond tsc (NC-030)",
     "build": "PASS — full npm run build clean",
-    "fullTests": "PASS — 778/778 unit tests pass",
+    "fullTests": "PASS — 799/799 unit tests pass (3 pre-existing e2e failures unrelated)",
     "packaging": "SKIPPED — not attempted this iteration"
   }
 }

@@ -205,6 +205,10 @@ function validateMessageFields(
           return { valid: false, error: `Setting value exceeds maximum size of ${MAX_SETTING_VALUE_SIZE}` };
         }
       }
+      // NC-008: Reject 'bypass' for toolApproval — bypass/autopilot mode removed for security.
+      if (obj.key === "toolApproval" && obj.value === "bypass") {
+        return { valid: false, error: "Bypass/autopilot mode has been removed. Use 'auto' or 'ask'." };
+      }
       break;
 
     case "steerTask":

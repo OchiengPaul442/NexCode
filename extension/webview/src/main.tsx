@@ -5208,14 +5208,10 @@ function App() {
                   <div className="nk-settings-label">Permission Mode</div>
                   <select
                     className="nk-settings-select"
-                    value={settings.autoApprove ? "bypass" : settings.requireTerminalApproval ? "auto" : "ask"}
+                    value={settings.requireTerminalApproval ? "ask" : "auto"}
                     onChange={(e) => {
                       const mode = e.target.value;
-                      if (mode === "bypass") {
-                        useStore.getState().updateSetting("autoApprove", true);
-                        useStore.getState().updateSetting("requireTerminalApproval", false);
-                        vscode.postMessage({ type: "updateSetting", key: "toolApproval", value: "bypass" });
-                      } else if (mode === "auto") {
+                      if (mode === "auto") {
                         useStore.getState().updateSetting("autoApprove", false);
                         useStore.getState().updateSetting("requireTerminalApproval", false);
                         vscode.postMessage({ type: "updateSetting", key: "toolApproval", value: "auto" });
@@ -5228,7 +5224,6 @@ function App() {
                   >
                     <option value="ask">Ask — require approval for destructive tools</option>
                     <option value="auto">Auto — approve safe tools automatically</option>
-                    <option value="bypass">Autopilot — no prompts (trusted only)</option>
                   </select>
                 </div>
 

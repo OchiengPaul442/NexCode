@@ -215,17 +215,16 @@ describe("Permission mode behavior (simulates extension callback logic)", () => 
   const policy = new DefaultToolApprovalPolicy();
   const registry = new ToolRegistry(workspaceRoot, { approvalPolicy: policy });
 
-  const AUTO_APPROVE_TOOLS = ["write", "append", "patch"];
-
+  // NC-008: Bypass mode and the extension-layer fallback auto-approve for
+  // writes have been removed. The policy engine is the sole source of truth.
   function simulateApprovalCallback(
     toolName: string,
     arg: string,
-    mode: "auto" | "ask" | "bypass",
+    mode: "auto" | "ask",
   ): boolean {
-    if (mode === "bypass") return true;
-
     if (mode === "auto") {
-      if (AUTO_APPROVE_TOOLS.includes(toolName)) return true;
+      // Use ONLY the policy's isAutoExecutable() — no extension fallback.
+      if (policy.isAutoExecutable(toolName, arg)) return true;
     }
 
     if (registry.requiresApproval(toolName, arg)) {
@@ -235,39 +234,17 @@ describe("Permission mode behavior (simulates extension callback logic)", () => 
     return true;
   }
 
-  describe("bypass mode", () => {
-    it("auto-approves delete", () => {
-      expect(simulateApprovalCallback("delete", "file.ts", "bypass")).toBe(true);
-    });
-
-    it("auto-approves write", () => {
-      expect(simulateApprovalCallback("write", "f.ts :: content", "bypass")).toBe(true);
-    });
-
-    it("auto-approves terminal with unsafe command", () => {
-      expect(simulateApprovalCallback("terminal", "rm -rf /", "bypass")).toBe(true);
-    });
-
-    it("auto-approves batch_edit", () => {
-      expect(simulateApprovalCallback("batch_edit", "{}", "bypass")).toBe(true);
-    });
-
-    it("auto-approves git-commit", () => {
-      expect(simulateApprovalCallback("git-commit", "msg", "bypass")).toBe(true);
-    });
-  });
-
   describe("auto mode", () => {
-    it("auto-approves write (low-risk write)", () => {
-      expect(simulateApprovalCallback("write", "f.ts :: content", "auto")).toBe(true);
+    it("does NOT auto-approve write (requires user approval — policy is source of truth)", () => {
+      expect(simulateApprovalCallback("write", "f.ts :: content", "auto")).toBe(false);
     });
 
-    it("auto-approves append (low-risk write)", () => {
-      expect(simulateApprovalCallback("append", "f.ts :: content", "auto")).toBe(true);
+    it("does NOT auto-approve append (requires user approval — policy is source of truth)", () => {
+      expect(simulateApprovalCallback("append", "f.ts :: content", "auto")).toBe(false);
     });
 
-    it("auto-approves patch (low-risk write)", () => {
-      expect(simulateApprovalCallback("patch", "f.ts :: old :: new", "auto")).toBe(true);
+    it("does NOT auto-approve patch (requires user approval — policy is source of truth)", () => {
+      expect(simulateApprovalCallback("patch", "f.ts :: old :: new", "auto")).toBe(false);
     });
 
     it("does NOT auto-approve delete (destructive)", () => {

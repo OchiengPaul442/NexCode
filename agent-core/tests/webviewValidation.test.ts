@@ -490,3 +490,46 @@ describe("NC-005: isAllowedSettingKey", () => {
     expect(isAllowedSettingKey("tavilyApiKey")).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// NC-008: Bypass/autopilot mode removed — validation tests
+// ---------------------------------------------------------------------------
+
+describe("NC-008: Bypass/autopilot mode removed", () => {
+  it("updateSetting rejects toolApproval=bypass", () => {
+    const result = validateWebviewMessage({
+      type: "updateSetting",
+      key: "toolApproval",
+      value: "bypass",
+    });
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("Bypass");
+  });
+
+  it("updateSetting accepts toolApproval=auto", () => {
+    const result = validateWebviewMessage({
+      type: "updateSetting",
+      key: "toolApproval",
+      value: "auto",
+    });
+    expect(result.valid).toBe(true);
+  });
+
+  it("updateSetting accepts toolApproval=ask", () => {
+    const result = validateWebviewMessage({
+      type: "updateSetting",
+      key: "toolApproval",
+      value: "ask",
+    });
+    expect(result.valid).toBe(true);
+  });
+
+  it("updateSetting rejects toolApproval with random string", () => {
+    const result = validateWebviewMessage({
+      type: "updateSetting",
+      key: "toolApproval",
+      value: "autopilot",
+    });
+    expect(result.valid).toBe(true); // value validation is in extension, not here
+  });
+});

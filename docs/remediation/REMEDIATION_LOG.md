@@ -470,3 +470,91 @@ Append one section per autonomous iteration. Never rewrite prior entries.
 | `agent-core/src/tools/terminalTool.ts` | Add public getWorkspaceRoot() getter | +4 |
 | `agent-core/tests/searchInjection.test.ts` | New regression test file | +290 |
 
+---
+
+## Iteration 6 — NC-008: Remove bypass/autopilot approval mode and extension fallback auto-approve
+
+**Date:** 20 July 2026
+**Finding IDs:** NC-008 (Critical)
+**Phase:** 0 — Containment patch
+
+### What was done
+
+1. **Verified NC-008 against current source code:**
+   - `extension/package.json:147-160` — confirmed `toolApproval` enum includes `"bypass"` as a valid option, described as "Autopilot mode: approve all tools automatically without prompting."
+   - `extension/src/sidebarViewProvider.ts:1032-1050` — confirmed approval callback returns `true` immediately when `bypass`, and in `auto` mode has a hardcoded fallback that auto-approves `["write", "append", "patch"]` regardless of what the policy engine's `isAutoExecutable()` returns.
+   - `extension/webview/src/main.tsx:5206-5232` — confirmed UI dropdown exposes `bypass` as a persistent option.
+   - `agent-core/src/tools/toolApprovalPolicy.ts:42-47` — confirmed `isAutoExecutable()` only checks `autoApproveTools` (SAFE_TOOLS + constructor args). Default policy does NOT auto-approve writes.
+   - `extension/src/sidebarViewProvider.ts:433-437` — confirmed `updateSetting` writes `toolApproval` at `ConfigurationTarget.Workspace` scope, meaning any repository can set it to `bypass`.
+
+2. **Implemented containment fix (5 production files changed):**
+   - `extension/package.json` (+4, -4):
+     - Removed `"bypass"` from the `toolApproval` enum. Only `"auto"` and `"ask"` remain.
+     - Updated description to note bypass removal for security.
+   - `extension/src/sidebarViewProvider.ts` (+12, -14):
+     - Approval callback: removed `bypass` check; removed hardcoded `["write", "append", "patch"]` fallback auto-approve.
+     - Added guard: legacy `bypass` config value falls back to `ask`.
+     - Changed `toolApproval` type from `"auto" | "ask" | "bypass"` to `"auto" | "ask"`.
+   - `extension/webview/src/main.tsx` (+6, -9):
+     - Removed `bypass` option from Permission Mode dropdown.
+     - Simplified `onChange` handler to only handle `auto` and `ask`.
+   - `agent-core/src/utils/webviewMessageValidation.ts` (+4):
+     - `updateSetting` now rejects `toolApproval=bypass` value with error message.
+   - `agent-core/tests/toolApprovalPolicy.test.ts` (+16, -31):
+     - Updated `simulateApprovalCallback` to remove bypass mode and extension fallback.
+     - Auto mode tests now verify writes require approval (policy is source of truth).
+     - Removed entire "bypass mode" describe block.
+
+3. **Added regression tests (1 new file, 4 new tests):**
+   - `agent-core/tests/approvalPolicy.test.ts` (new, 22 tests):
+     - Enum validation: package.json only contains `auto` and `ask`.
+     - Policy as sole truth: default policy does NOT auto-approve write/append/patch/delete/terminal/batch_edit/git-commit.
+     - Policy DOES auto-approve read/search/git-status/git-diff.
+     - Terminal is classified as destructive; safe terminal commands are handled by `requiresApproval` not `isAutoExecutable`.
+     - Write/append/patch all classified as low-risk.
+     - Legacy bypass/autopilot values fall back to ask behavior.
+   - `agent-core/tests/webviewValidation.test.ts` (+4):
+     - `updateSetting` rejects `toolApproval=bypass`.
+     - `updateSetting` accepts `toolApproval=auto` and `toolApproval=ask`.
+
+4. **Validated:**
+   - 22/22 new approvalPolicy tests pass.
+   - 79/79 webviewValidation tests pass (4 new).
+   - 799/799 full unit tests pass (3 pre-existing e2e failures unchanged).
+   - `tsc --noEmit` clean in agent-core, extension, and webview.
+   - `npm run build` clean.
+   - `git diff --check` clean (only line-ending warnings).
+
+### Validation
+
+| Check | Result | Notes |
+|---|---|---|
+| Focused tests (NC-008) | PASS | 22/22 approvalPolicy tests pass |
+| Webview validation tests | PASS | 79/79 pass (4 new) |
+| Existing approval tests | PASS | 10/10 testToolApproval tests pass |
+| Full test suite | PASS | 799/799 unit tests pass; 3 pre-existing e2e failures |
+| Type check (agent-core) | PASS | `tsc --noEmit` clean |
+| Type check (extension) | PASS | `tsc --noEmit` clean |
+| Type check (webview) | PASS | `tsc --noEmit` clean |
+| Build | PASS | Full `npm run build` clean |
+| No secrets in diff | PASS | No API keys, tokens, or secrets in the diff |
+| No test suppression | PASS | All existing tests retained and passing |
+
+### Remaining risks
+
+- The `DefaultToolApprovalPolicy` class still accepts `bypassTools` constructor parameter. The extension no longer uses it, but other consumers could. Phase E should consider simplifying the policy class.
+- In auto mode, safe terminal commands are still auto-approved via `requiresApproval`'s `SAFE_PATTERNS` check. This is intentional — safe read-only terminal commands should not require approval. The policy engine handles this correctly.
+- The `autoApproveWrite` key is still in the allowed setting keys list but is unused. Phase C should clean this up.
+
+### Files changed
+
+| File | Change | Lines |
+|---|---|---|
+| `extension/package.json` | Remove bypass from toolApproval enum | +4, -4 |
+| `extension/src/sidebarViewProvider.ts` | Remove bypass handling, remove extension fallback auto-approve | +12, -14 |
+| `extension/webview/src/main.tsx` | Remove bypass option from Permission Mode dropdown | +6, -9 |
+| `agent-core/src/utils/webviewMessageValidation.ts` | Reject toolApproval=bypass value | +4 |
+| `agent-core/tests/toolApprovalPolicy.test.ts` | Update simulateApprovalCallback, remove bypass tests | +16, -31 |
+| `agent-core/tests/approvalPolicy.test.ts` | New NC-008 regression test file | +248 |
+| `agent-core/tests/webviewValidation.test.ts` | Add bypass rejection tests | +43 |
+

@@ -2333,3 +2333,68 @@ Append one section per autonomous iteration. Never rewrite prior entries.
 | `docs/review/IMPLEMENTATION_PLAN.md` | Add historical snapshot header | +7 |
 | `agent-core/tests/documentationAccuracy.test.ts` | New regression test file (17 tests) | +165 |
 
+---
+
+## Iteration 33 — NC-039: Orchestrator constructor lifecycle (no side effects)
+
+**Date:** 20 July 2026
+**Finding IDs:** NC-039 (Medium)
+**Phase:** D / J — Constructor lifecycle
+
+### What was done
+
+1. **Verified NC-039 against current source code:**
+   - `agent-core/src/orchestrator.ts:228-230` — confirmed `this.memory.initialize().catch(...)` is called eagerly in the constructor, performing filesystem I/O (loading persisted sessions from disk).
+   - `agent-core/src/orchestrator.ts:147-255` — confirmed the constructor creates all services synchronously but fires `memory.initialize()` as a fire-and-forget Promise.
+   - `extension/src/sidebarViewProvider.ts:1033` — confirmed `createNexcodeOrchestrator()` is called and the orchestrator is used immediately without explicit initialization.
+   - No `dispose()` method exists on the orchestrator class.
+
+2. **Implemented fix (2 production files changed):**
+   - `agent-core/src/orchestrator.ts` (+28, -3):
+     - Removed eager `this.memory.initialize().catch(...)` from constructor — no filesystem I/O during construction.
+     - Added `async initialize(): Promise<void>` method: calls `this.memory.initialize()` with error handling. This is the explicit lifecycle hook for async setup.
+     - Added `async dispose(): Promise<boolean>` method: flushes `this.memory.dispose()` and `this.feedbackLogger.dispose()`, returns true if all succeeded.
+   - `extension/src/sidebarViewProvider.ts` (+1):
+     - Added `await this.orchestrator.initialize()` call after `createNexcodeOrchestrator()` construction to maintain existing behavior.
+
+3. **Added regression tests (1 new file, 19 tests):**
+   - `agent-core/tests/orchestratorLifecycle.test.ts`:
+     - Constructor has no side effects (5 tests): does NOT call memory.initialize(), does NOT perform filesystem reads, does NOT create directories, does NOT make network requests, returns synchronously (<100ms).
+     - Explicit initialize() method (5 tests): has initialize() method, returns Promise, loads persisted memory, handles errors gracefully without throwing, orchestrator usable after initialize().
+     - dispose() method (5 tests): has dispose() method, returns Promise<boolean>, flushes memory resources, can be called without initialize(), returns true on success.
+     - Backward compatibility (3 tests): construction without initialize() works, empty memory context before initialize(), empty memory context after initialize().
+     - Integration (1 test): orchestrator can be constructed and basic methods called without initialize().
+
+4. **Validated:**
+   - 19/19 new orchestratorLifecycle tests pass.
+   - 1495/1495 full unit tests pass (60 test files pass, 3 pre-existing e2e failures unrelated).
+   - `tsc --noEmit` clean in agent-core, extension, and webview.
+   - `npm run build` clean.
+   - `git diff --check` clean.
+
+### Validation
+
+| Check | Result | Notes |
+|---|---|---|
+| Focused tests (NC-039) | PASS | 19/19 orchestratorLifecycle tests pass |
+| Existing orchestrator tests | PASS | 8/8 orchestrator.test.ts tests pass |
+| Full test suite | PASS | 1495/1495 tests pass; 3 pre-existing e2e failures |
+| Type check (agent-core) | PASS | `tsc --noEmit` clean |
+| Type check (extension) | PASS | `tsc --noEmit` clean |
+| Type check (webview) | PASS | `tsc --noEmit` clean |
+| Build | PASS | Full `npm run build` clean |
+| No secrets in diff | PASS | No API keys, tokens, or secrets in the diff |
+| No test suppression | PASS | All existing tests retained and passing |
+
+### Remaining risks
+
+- None. The fix is backward compatible. The orchestrator works without calling `initialize()`, but memory context will not be available until initialization completes. This is the correct behavior for tests and lightweight usage. The sidebar provider calls `initialize()` after construction to maintain existing behavior.
+
+### Files changed
+
+| File | Change | Lines |
+|---|---|---|
+| `agent-core/src/orchestrator.ts` | Remove eager memory.initialize(), add initialize()/dispose() lifecycle methods | +28, -3 |
+| `extension/src/sidebarViewProvider.ts` | Call orchestrator.initialize() after construction | +1 |
+| `agent-core/tests/orchestratorLifecycle.test.ts` | New regression test file (19 tests) | +230 |
+

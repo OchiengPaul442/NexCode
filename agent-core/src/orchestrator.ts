@@ -225,9 +225,6 @@ export class NexcodeOrchestrator {
       allowWorkspacePrompts: this.config.allowWorkspacePrompts,
     });
     this.memory = new MemoryManager(this.config.memoryDir);
-    this.memory.initialize().catch((err) => {
-      console.error("[nexcode] Memory initialization failed:", err);
-    });
     this.mcpRegistry = new McpRegistry();
     // Register the built-in filesystem adapter so MCP is not silently empty.
     // NOTE: This is an in-process adapter registry, not a real MCP protocol client.
@@ -252,6 +249,35 @@ export class NexcodeOrchestrator {
     this.feedbackLogger = new FeedbackLogger(this.config.memoryDir);
     this.reflection = new ReflectionEngine();
     this.promptVersions = new PromptVersionManager(this.config.memoryDir);
+  }
+
+  /**
+   * Performs async initialization that must complete before the orchestrator
+   * can be used. This includes loading persisted memory sessions from disk.
+   *
+   * Call this after construction and before using the orchestrator.
+   * The orchestrator is safe to construct without calling initialize(),
+   * but memory context will not be available until initialization completes.
+   */
+  public async initialize(): Promise<void> {
+    try {
+      await this.memory.initialize();
+    } catch (err) {
+      console.error("[nexcode] Memory initialization failed:", err);
+    }
+  }
+
+  /**
+   * Flushes pending persistence operations and releases resources.
+   * Call this when the orchestrator is no longer needed (e.g., on
+   * workspace close or deactivation).
+   */
+  public async dispose(): Promise<boolean> {
+    const results = await Promise.all([
+      this.memory.dispose(),
+      this.feedbackLogger.dispose(),
+    ]);
+    return results.every(Boolean);
   }
 
   public registerMcpAdapter(adapter: McpAdapter): void {

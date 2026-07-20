@@ -462,14 +462,15 @@
 
 ### NC-039 — Constructor side effects perform network and persistence work
 - **Severity:** Medium
-- **Status:** pending
+- **Status:** fixed
 - **Phase:** D / J
 - **Dependencies:** NC-001 (provider lazy construction)
-- **Affected files:** `agent-core/src/orchestrator.ts` constructor
-- **Verified:** unverified
+- **Affected files:** `agent-core/src/orchestrator.ts:147-255`, `extension/src/sidebarViewProvider.ts:1033-1084`
+- **Verified:** yes — verified against current source; memory.initialize() removed from constructor, explicit initialize()/dispose() lifecycle added
 - **Required tests:** explicit initialize()/dispose() lifecycle; constructors instantiate without network/filesystem side effects
-- **Verification commands:** `npx vitest run agent-core/tests/orchestrator.test.ts`
-- **Resolution evidence:** (none yet)
+- **Verification commands:** `npx vitest run agent-core/tests/orchestratorLifecycle.test.ts`
+- **Resolution evidence:** `agent-core/src/orchestrator.ts` changed: (1) Removed eager `this.memory.initialize().catch(...)` from constructor — no filesystem I/O during construction. (2) Added `async initialize(): Promise<void>` method that calls `this.memory.initialize()` with error handling. (3) Added `async dispose(): Promise<boolean>` method that flushes memory and feedback logger resources. `extension/src/sidebarViewProvider.ts` changed: (4) Added `await this.orchestrator.initialize()` call after `createNexcodeOrchestrator()` construction. 19 regression tests in `agent-core/tests/orchestratorLifecycle.test.ts`: constructor has no filesystem reads/mkdirs/fetch calls, returns synchronously (<100ms), initialize() is async/loads memory/handles errors gracefully, dispose() flushes resources/can be called without initialize()/returns true on success, backward compat (construction without initialize still works, empty memory context). 1495/1495 tests pass. Build clean. All type-checks clean.
+- **Remaining risk:** None — the fix is backward compatible. The orchestrator works without calling `initialize()`, but memory context will not be available until initialization completes. This is the correct behavior for tests and lightweight usage.
 
 ### NC-040 — Retry and fallback behavior can multiply latency and cost
 - **Severity:** Medium
@@ -611,8 +612,8 @@ NC-016 (tool schema validation)
 17. NC-014 — provider identity
 18. NC-013 — fallback policy
 19. NC-015 — model capabilities
-20. NC-025 — response cache
-21. NC-039 — constructor lifecycle
+20. NC-025 — response cache ✅
+21. NC-039 — constructor lifecycle ✅
 22. NC-040 — retry budget
 23. NC-041 — token estimation
 

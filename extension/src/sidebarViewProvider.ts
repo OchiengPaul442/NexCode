@@ -1079,6 +1079,9 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
           return await this.requestToolApproval(toolName, arg);
         },
       });
+      // NC-039: Perform async initialization after construction.
+      // Memory loading is now explicit rather than a constructor side effect.
+      await this.orchestrator.initialize();
       this.currentWorkspaceRoot = workspaceRoot;
     }
 

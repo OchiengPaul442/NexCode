@@ -250,7 +250,17 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     this.orchestrator = undefined;
     this.currentWorkspaceRoot = undefined;
     const settings = await this.getRuntimeSettings();
-    this.postMessage({ type: "config", value: settings });
+    // NC-023: Include workspace folder info on config refresh
+    const workspaceFolders = this.getWorkspaceFolderInfos();
+    const activeWorkspaceRoot = this.getWorkspaceRoot();
+    this.postMessage({
+      type: "config",
+      value: {
+        ...settings,
+        workspaceFolders,
+        activeWorkspaceRoot,
+      },
+    });
   }
 
   public clearConversation(): void {
@@ -849,14 +859,18 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       (!textContent || textContent.trim().length === 0) &&
       this.isTextLike(normalizedMimeType, sanitizedFileName)
     ) {
-      try {
-        const workspaceRoot = this.getWorkspaceRoot();
-        const filePath = path.join(workspaceRoot, sanitizedFileName);
-        const fileUri = vscode.Uri.file(filePath);
-        const bytes = await vscode.workspace.fs.readFile(fileUri);
-        textContent = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
-      } catch {
-        // File might not exist on disk — fall through to validation
+      // NC-023: Try all workspace folders to find the attachment file
+      const folders = vscode.workspace.workspaceFolders ?? [];
+      for (const folder of folders) {
+        try {
+          const filePath = path.join(folder.uri.fsPath, sanitizedFileName);
+          const fileUri = vscode.Uri.file(filePath);
+          const bytes = await vscode.workspace.fs.readFile(fileUri);
+          textContent = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+          break; // Found in this workspace folder
+        } catch {
+          // File might not exist in this folder — try next
+        }
       }
     }
 
@@ -959,7 +973,12 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
-    const workspaceRoot = this.getWorkspaceRoot();
+    // NC-023: Resolve workspace root from the edit's file path to support
+    // multi-root workspaces. Each edit is associated with the workspace folder
+    // that contains its target file, not always workspaceFolders[0].
+    const editUri = vscode.Uri.file(path.join(this.getWorkspaceRoot(), edit.filePath));
+    const folder = this.resolveWorkspaceFolder(editUri);
+    const workspaceRoot = folder?.uri.fsPath ?? this.getWorkspaceRoot();
     const applied = await this.editReviewService.applyEdit(edit, workspaceRoot);
     if (applied) {
       this.taskController.removeEdit(editId);
@@ -976,7 +995,10 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
-    const workspaceRoot = this.getWorkspaceRoot();
+    // NC-023: Resolve workspace root from the edit's file path
+    const editUri = vscode.Uri.file(path.join(this.getWorkspaceRoot(), edit.filePath));
+    const folder = this.resolveWorkspaceFolder(editUri);
+    const workspaceRoot = folder?.uri.fsPath ?? this.getWorkspaceRoot();
     await this.editReviewService.previewEdit(edit, workspaceRoot);
   }
 
@@ -1162,13 +1184,57 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     );
   }
 
+  /**
+   * NC-023: Resolve the workspace folder that contains the given URI.
+   * Falls back to the active editor's document, then to workspaceFolders[0],
+   * then to globalStorageUri.
+   */
+  private resolveWorkspaceFolder(uri?: vscode.Uri): vscode.WorkspaceFolder | undefined {
+    // 1. If a specific URI is provided, find its workspace folder
+    if (uri) {
+      const folder = vscode.workspace.getWorkspaceFolder(uri);
+      if (folder) return folder;
+    }
+
+    // 2. Try the active editor's document
+    const activeEditor = vscode.window.activeTextEditor;
+    if (activeEditor) {
+      const folder = vscode.workspace.getWorkspaceFolder(activeEditor.document.uri);
+      if (folder) return folder;
+    }
+
+    // 3. Fall back to first workspace folder
+    return vscode.workspace.workspaceFolders?.[0];
+  }
+
+  /**
+   * NC-023: Get the workspace root path, resolving from the active editor
+   * context when possible. In multi-root workspaces, this returns the folder
+   * that contains the active editor's file rather than always workspaceFolders[0].
+   */
   private getWorkspaceRoot(): string {
-    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-    if (workspaceFolder) {
-      return workspaceFolder.uri.fsPath;
+    const folder = this.resolveWorkspaceFolder();
+    if (folder) {
+      return folder.uri.fsPath;
     }
 
     return this.context.globalStorageUri.fsPath;
+  }
+
+  /**
+   * NC-023: Get all workspace folders for the webview UI.
+   * Returns folder name and URI path for each root in a multi-root workspace.
+   */
+  private getWorkspaceFolderInfos(): Array<{ name: string; uri: string; index: number }> {
+    const folders = vscode.workspace.workspaceFolders;
+    if (!folders || folders.length === 0) {
+      return [];
+    }
+    return folders.map((f, i) => ({
+      name: f.name,
+      uri: f.uri.fsPath,
+      index: i,
+    }));
   }
 
   private async getRuntimeSettings(): Promise<{
@@ -1510,7 +1576,18 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
 
   private async pushInitialWebviewState(): Promise<void> {
     const settings = await this.getRuntimeSettings();
-    this.postMessage({ type: "config", value: settings });
+    // NC-023: Include workspace folder information so the webview can display
+    // a multi-root workspace picker and associate operations with the correct root.
+    const workspaceFolders = this.getWorkspaceFolderInfos();
+    const activeWorkspaceRoot = this.getWorkspaceRoot();
+    this.postMessage({
+      type: "config",
+      value: {
+        ...settings,
+        workspaceFolders,
+        activeWorkspaceRoot,
+      },
+    });
     this.taskController.postAttachments();
     void this.postMcpRegistryState();
     // NC-002: Do NOT auto-probe provider status or model suggestions on sidebar
@@ -1535,10 +1612,25 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     const filePath = msg.filePath;
     if (!filePath) return;
 
-    // NC-005: Validate that the file path is within the workspace.
-    // The webview must not be able to open arbitrary absolute files.
-    const workspaceRoot = this.getWorkspaceRoot();
-    const containedPath = validateOpenFilePath(workspaceRoot, filePath);
+    // NC-005 + NC-023: Validate that the file path is within any workspace folder.
+    // In multi-root workspaces, check all folders, not just workspaceFolders[0].
+    const folders = vscode.workspace.workspaceFolders;
+    if (!folders || folders.length === 0) {
+      vscode.window.showErrorMessage(
+        `NexCode: No workspace folder is open.`,
+      );
+      return;
+    }
+
+    let containedPath: string | null = null;
+    for (const folder of folders) {
+      const result = validateOpenFilePath(folder.uri.fsPath, filePath);
+      if (result) {
+        containedPath = result;
+        break;
+      }
+    }
+
     if (!containedPath) {
       vscode.window.showErrorMessage(
         `NexCode: Cannot open file outside workspace: ${filePath}`,

@@ -416,6 +416,9 @@ interface BackendConfig {
   openAIApiKeyConfigured?: boolean;
   tavilyApiKeyConfigured?: boolean;
   searchApiKeyConfigured?: boolean;
+  // NC-023: Multi-root workspace folder information.
+  workspaceFolders?: Array<{ name: string; uri: string; index: number }>;
+  activeWorkspaceRoot?: string;
 }
 
 interface StoreState {
@@ -438,6 +441,9 @@ interface StoreState {
   settings: SidebarSettings;
   providerStatus: Record<ProviderId, ProviderStatus | undefined>;
   modelSuggestions: Record<ProviderId, string[]>;
+  // NC-023: Multi-root workspace folder state
+  workspaceFolders: Array<{ name: string; uri: string; index: number }>;
+  activeWorkspaceRoot: string;
   hydrateConfig: (config: BackendConfig) => void;
   setBusy: (value: boolean) => void;
   setTaskQueue: (tasks: QueuedTask[], pending: number, active: number) => void;
@@ -1309,6 +1315,9 @@ const useStore = create<StoreState>((set, get) => {
       nvidia: [],
       baseten: [],
     },
+    // NC-023: Multi-root workspace folder defaults
+    workspaceFolders: [],
+    activeWorkspaceRoot: "",
     hydrateConfig: (config) => {
       set((state) => {
         const defaults = {
@@ -1379,6 +1388,9 @@ const useStore = create<StoreState>((set, get) => {
           sessions: updatedSessions,
           activeSessionId,
           settings,
+          // NC-023: Store workspace folder information from extension
+          workspaceFolders: config.workspaceFolders ?? state.workspaceFolders,
+          activeWorkspaceRoot: config.activeWorkspaceRoot ?? state.activeWorkspaceRoot,
         };
       });
     },

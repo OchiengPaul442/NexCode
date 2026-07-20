@@ -46,6 +46,12 @@ export interface RuntimeConfig {
   };
   modeTemperatures?: Partial<Record<AgentMode, number>>;
   agentModels?: AgentModels;
+  /**
+   * Whether workspace prompt files are allowed to override built-in defaults.
+   * Defaults to false for security — a malicious repository cannot inject
+   * arbitrary system instructions via prompt files in the workspace.
+   */
+  allowWorkspacePrompts?: boolean;
 }
 
 export function getTemperatureForMode(
@@ -98,5 +104,6 @@ export function createRuntimeConfig(
     },
     modeTemperatures: partial.modeTemperatures,
     agentModels: partial.agentModels,
+    allowWorkspacePrompts: partial.allowWorkspacePrompts ?? false,
   };
 }

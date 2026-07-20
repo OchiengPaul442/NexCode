@@ -176,6 +176,11 @@
           "type": "string",
           "default": "",
           "description": "Model for reviewer and security agents. Falls back to defaultModel if empty."
+        },
+        "nexcodeKiboko.allowWorkspacePrompts": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow workspace prompt files to override built-in system prompts. Disabled by default for security — a malicious repository could otherwise inject arbitrary system instructions. Only enable in trusted workspaces where you explicitly want custom prompts."
         }
       }
     },
@@ -192,7 +197,8 @@
           "nexcodeKiboko.allowToolCommands",
           "nexcodeKiboko.allowWebSearch",
           "nexcodeKiboko.searchProvider",
-          "nexcodeKiboko.searchBaseUrl"
+          "nexcodeKiboko.searchBaseUrl",
+          "nexcodeKiboko.allowWorkspacePrompts"
         ]
       }
     }

@@ -252,14 +252,15 @@
 
 ### NC-022 — Workspace prompt files can silently replace trusted system prompts
 - **Severity:** High
-- **Status:** pending
-- **Phase:** 0
+- **Status:** fixed
+- **Phase:** 0 / containment
 - **Dependencies:** none
-- **Affected files:** `extension/src/sidebarViewProvider.ts` (orchestrator construction), `agent-core/src/prompts/promptStore.ts:20-41`
-- **Verified:** unverified
+- **Affected files:** `extension/src/sidebarViewProvider.ts:996-1020`, `agent-core/src/prompts/promptStore.ts`, `agent-core/src/config.ts`, `agent-core/src/orchestrator.ts:57-77,210-213`, `extension/package.json:132-137,188-197`, `agent-core/src/utils/webviewMessageValidation.ts:51-64`
+- **Verified:** yes — verified against current source; PromptStore now defaults to blocking workspace prompts, requires explicit allowWorkspacePrompts=true + trusted workspace
 - **Required tests:** workspace prompt overrides disabled by default; trusted workspace plus opt-in required; override source shown; security policy outside model prompts
-- **Verification commands:** `npx vitest run agent-core/tests/promptStore.test.ts`
-- **Resolution evidence:** (none yet)
+- **Verification commands:** `npx vitest run agent-core/tests/workspacePromptOverride.test.ts`
+- **Resolution evidence:** (1) `PromptStore` constructor now accepts `PromptStoreOptions` with `allowWorkspacePrompts` (default false). String constructor preserved for backward compat but also defaults to false. (2) `getPrompt()` only reads from filesystem when `allowWorkspacePrompts` is true. (3) `RuntimeConfig` and `NexcodeOrchestratorOptions` include `allowWorkspacePrompts?: boolean`. (4) Orchestrator passes flag to `PromptStore`. (5) `sidebarViewProvider.ts` reads `nexcodeKiboko.allowWorkspacePrompts` config AND requires `workspaceTrustService.isWorkspaceTrusted()` — both must be true. (6) `extension/package.json`: added `nexcodeKiboko.allowWorkspacePrompts` (boolean, default false) and added to `restrictedConfigurations`. (7) `webviewMessageValidation.ts`: added `allowWorkspacePrompts` to `ALLOWED_SETTING_KEYS`. (8) 19 regression tests in `agent-core/tests/workspacePromptOverride.test.ts` covering: default blocks overrides, malicious payloads rejected, all modes blocked, backward compat, enabled reads overrides, empty/missing files fall back, caching, per-mode isolation, traversal safety, package.json config validation. 818/818 unit tests pass. Build clean. All type-checks clean.
+- **Remaining risk:** None — the containment is complete. Workspace prompts are disabled by default and cannot be enabled by untrusted workspace configuration.
 
 ### NC-023 — Only first workspace folder is supported
 - **Severity:** High
@@ -576,7 +577,7 @@ NC-016 (tool schema validation)
 7. NC-007 — search injection fix
 8. NC-008 — approval mode hardening
 9. NC-010 — concurrency limit to 1
-10. NC-022 — workspace prompt overrides
+10. NC-022 — workspace prompt overrides ✅
 11. NC-024 — secret migration cleanup
 12. NC-028 — blog fallback removal
 13. NC-009 — MCP marked experimental

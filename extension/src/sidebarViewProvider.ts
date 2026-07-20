@@ -999,6 +999,15 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     if (!this.orchestrator || this.currentWorkspaceRoot !== workspaceRoot) {
       const settings = await this.getRuntimeSettings();
       const rawKeys = await this.getRawApiKeys();
+
+      // NC-022: Workspace prompt overrides are only allowed when the user has
+      // explicitly opted in AND the workspace is trusted.  A malicious
+      // repository must not be able to inject arbitrary system instructions via
+      // prompt files in the workspace directory.
+      const config = vscode.workspace.getConfiguration("nexcodeKiboko");
+      const userAllowsWorkspacePrompts = config.get<boolean>("allowWorkspacePrompts", false);
+      const allowWorkspacePrompts = userAllowsWorkspacePrompts && this.workspaceTrustService.isWorkspaceTrusted();
+
       this.orchestrator = createNexcodeOrchestrator({
         workspaceRoot,
         promptsDir: path.join(workspaceRoot, "prompts"),
@@ -1014,6 +1023,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         tavilyApiKey: rawKeys.tavilyApiKey,
         modeTemperatures: settings.modeTemperatures as any,
         agentModels: settings.agentModels,
+        allowWorkspacePrompts,
         approvalCallback: async (toolName: string, arg: string) => {
           // Check workspace trust first
           if (!this.workspaceTrustService.canRunTool(toolName)) {

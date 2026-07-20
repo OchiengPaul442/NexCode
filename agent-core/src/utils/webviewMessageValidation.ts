@@ -61,6 +61,7 @@ const ALLOWED_SETTING_KEYS = new Set([
   "searchProvider",
   "searchBaseUrl",
   "mcpServers",
+  "allowWorkspacePrompts",
 ]);
 
 // --- Size limits ---

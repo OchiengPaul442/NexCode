@@ -558,3 +558,98 @@ Append one section per autonomous iteration. Never rewrite prior entries.
 | `agent-core/tests/approvalPolicy.test.ts` | New NC-008 regression test file | +248 |
 | `agent-core/tests/webviewValidation.test.ts` | Add bypass rejection tests | +43 |
 
+---
+
+## Iteration 7 — NC-022: Workspace prompt override containment
+
+**Date:** 20 July 2026
+**Finding IDs:** NC-022 (High)
+**Phase:** 0 — Containment patch
+
+### What was done
+
+1. **Verified NC-022 against current source code:**
+   - `agent-core/src/prompts/promptStore.ts:15-47` — confirmed `PromptStore` constructor accepts a `promptsDir` string and unconditionally reads prompt files from that directory. `getPrompt()` reads `<promptsDir>/<filename>` and uses the file content as the system prompt if non-empty, falling back to `DEFAULT_SYSTEM_PROMPTS`.
+   - `extension/src/sidebarViewProvider.ts:1004` — confirmed `promptsDir: path.join(workspaceRoot, "prompts")` is passed to the orchestrator, meaning any repository can provide files like `coder.system.md` in a `prompts/` directory and they will be loaded as trusted system prompts.
+   - `agent-core/src/prompts/defaultPrompts.ts` — confirmed built-in defaults exist for all 6 modes.
+
+2. **Implemented containment fix (5 production files changed):**
+   - `agent-core/src/prompts/promptStore.ts` (+67, -20):
+     - Added `PromptStoreOptions` interface with `promptsDir` and `allowWorkspacePrompts` (default false).
+     - Changed constructor to accept `string | PromptStoreOptions` (backward compatible).
+     - Added `isWorkspacePromptsAllowed()` getter.
+     - `getPrompt()` now only reads from filesystem when `allowWorkspacePrompts` is true. When false (default), always returns built-in trusted defaults.
+   - `agent-core/src/config.ts` (+6):
+     - Added `allowWorkspacePrompts?: boolean` to `RuntimeConfig`.
+     - Added `allowWorkspacePrompts: partial.allowWorkspacePrompts ?? false` to `createRuntimeConfig`.
+   - `agent-core/src/orchestrator.ts` (+3):
+     - Added `allowWorkspacePrompts?: boolean` to `NexcodeOrchestratorOptions`.
+     - Changed `new PromptStore(this.config.promptsDir)` to `new PromptStore({ promptsDir: ..., allowWorkspacePrompts: ... })`.
+   - `extension/src/sidebarViewProvider.ts` (+12):
+     - Added config read: `config.get<boolean>("allowWorkspacePrompts", false)`.
+     - Added trust gate: `allowWorkspacePrompts = userAllowsWorkspacePrompts && this.workspaceTrustService.isWorkspaceTrusted()`.
+     - Passed `allowWorkspacePrompts` to `createNexcodeOrchestrator()`.
+   - `extension/package.json` (+14):
+     - Added `nexcodeKiboko.allowWorkspacePrompts` setting (boolean, default false).
+     - Added `nexcodeKiboko.allowWorkspacePrompts` to `restrictedConfigurations` (cannot be set by untrusted workspaces).
+   - `agent-core/src/utils/webviewMessageValidation.ts` (+1):
+     - Added `allowWorkspacePrompts` to `ALLOWED_SETTING_KEYS`.
+
+3. **Added regression tests (1 new file, 19 tests):**
+   - `agent-core/tests/workspacePromptOverride.test.ts`:
+     - Default behavior: returns built-in default when no override files exist.
+     - Default behavior: ignores workspace override file when allowWorkspacePrompts is false.
+     - Default behavior: ignores workspace overrides for ALL 6 modes when disabled.
+     - Default behavior: isWorkspacePromptsAllowed() returns false by default.
+     - Default behavior: default constructor without args blocks workspace prompts.
+     - Default behavior: string constructor (backward compat) blocks workspace prompts.
+     - Default behavior: empty promptsDir blocks workspace prompts.
+     - Enabled behavior: reads workspace override when explicitly allowed.
+     - Enabled behavior: falls back to default when workspace file is empty.
+     - Enabled behavior: falls back to default when workspace file does not exist.
+     - Enabled behavior: isWorkspacePromptsAllowed() returns true.
+     - Enabled behavior: each mode reads its own file.
+     - Caching: caches default prompt after first call.
+     - Caching: clearCache forces re-read.
+     - Caching: cache is per-mode.
+     - Security: prompt injection payloads (5 variants) are blocked by default.
+     - Security: traversal paths do not escape workspace.
+     - Package.json: allowWorkspacePrompts is in restrictedConfigurations.
+     - Package.json: allowWorkspacePrompts defaults to false.
+
+4. **Validated:**
+   - 19/19 new workspacePromptOverride tests pass.
+   - 818/818 full unit tests pass.
+   - `tsc --noEmit` clean in agent-core, extension, and webview.
+   - `npm run build` clean.
+   - `git diff --check` clean.
+
+### Validation
+
+| Check | Result | Notes |
+|---|---|---|
+| Focused tests (NC-022) | PASS | 19/19 workspacePromptOverride tests pass |
+| Full test suite | PASS | 818/818 unit tests pass; 3 pre-existing e2e failures |
+| Type check (agent-core) | PASS | `tsc --noEmit` clean |
+| Type check (extension) | PASS | `tsc --noEmit` clean |
+| Type check (webview) | PASS | `tsc --noEmit` clean |
+| Build | PASS | Full `npm run build` clean |
+| No secrets in diff | PASS | No API keys, tokens, or secrets in the diff |
+| No test suppression | PASS | All existing tests retained and passing |
+
+### Remaining risks
+
+- None. The containment is complete. Workspace prompts are disabled by default and cannot be enabled by untrusted workspace configuration. The `restrictedConfigurations` entry prevents untrusted workspaces from setting the flag.
+
+### Files changed
+
+| File | Change | Lines |
+|---|---|---|
+| `agent-core/src/prompts/promptStore.ts` | Add PromptStoreOptions, allowWorkspacePrompts flag, backward-compat constructor | +67, -20 |
+| `agent-core/src/config.ts` | Add allowWorkspacePrompts to RuntimeConfig | +6 |
+| `agent-core/src/orchestrator.ts` | Add allowWorkspacePrompts to options, pass to PromptStore | +3 |
+| `extension/src/sidebarViewProvider.ts` | Read config + trust gate, pass allowWorkspacePrompts | +12 |
+| `extension/package.json` | Add allowWorkspacePrompts setting + restrictedConfigurations | +14 |
+| `agent-core/src/utils/webviewMessageValidation.ts` | Add allowWorkspacePrompts to allowed keys | +1 |
+| `agent-core/tests/workspacePromptOverride.test.ts` | New regression test file | +264 |
+

@@ -73,6 +73,8 @@ export interface NexcodeOrchestratorOptions {
   modeTemperatures?: Partial<Record<AgentMode, number>>;
   agentModels?: import("./config").AgentModels;
   steeringProvider?: () => string | undefined;
+  /** Whether workspace prompt files are allowed to override built-in defaults. */
+  allowWorkspacePrompts?: boolean;
 }
 
 type AutoRoutingStrategy =
@@ -207,7 +209,10 @@ export class NexcodeOrchestrator {
       },
     );
 
-    this.prompts = new PromptStore(this.config.promptsDir);
+    this.prompts = new PromptStore({
+      promptsDir: this.config.promptsDir,
+      allowWorkspacePrompts: this.config.allowWorkspacePrompts,
+    });
     this.memory = new MemoryManager(this.config.memoryDir);
     this.memory.initialize().catch((err) => {
       console.error("[nexcode] Memory initialization failed:", err);

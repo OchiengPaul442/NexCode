@@ -3,28 +3,28 @@
   "project": "NexCode",
   "status": "in_progress",
   "bootstrapRequired": false,
-  "iteration": 7,
+  "iteration": 8,
   "currentPhase": 0,
   "totalFindings": 45,
   "counts": {
-    "pending": 38,
+    "pending": 37,
     "inProgress": 0,
-    "fixed": 7,
+    "fixed": 8,
     "blocked": 0,
     "obsolete": 0,
     "falsePositive": 0
   },
   "activeFindingIds": [],
-  "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004", "NC-005", "NC-007", "NC-008"],
+  "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004", "NC-005", "NC-007", "NC-008", "NC-022"],
   "blockedFindingIds": [],
-  "lastCommit": "dd2db9b",
-  "lastSummary": "NC-008 fixed: Bypass/autopilot approval mode removed for security. (1) extension/package.json: removed 'bypass' from toolApproval enum — only 'auto' and 'ask' remain. (2) sidebarViewProvider.ts: approval callback no longer returns true for bypass; removed hardcoded ['write','append','patch'] fallback auto-approve in auto mode; policy engine isAutoExecutable() is sole source of truth; legacy bypass config value falls back to 'ask'. (3) webview main.tsx: removed bypass option from Permission Mode dropdown. (4) webviewMessageValidation.ts: updateSetting rejects toolApproval=bypass. (5) toolApprovalPolicy.test.ts: updated simulateApprovalCallback to remove bypass and extension fallback. (6) approvalPolicy.test.ts: 22 new tests. (7) webviewValidation.test.ts: 4 new tests. 799/799 tests pass. Build clean.",
+  "lastCommit": "TBD",
+  "lastSummary": "NC-022 fixed: Workspace prompt override containment. (1) PromptStore constructor accepts PromptStoreOptions with allowWorkspacePrompts (default false). String constructor backward-compat preserved. (2) getPrompt() only reads from filesystem when allowWorkspacePrompts=true. (3) RuntimeConfig and NexcodeOrchestratorOptions include allowWorkspacePrompts. (4) sidebarViewProvider reads config + requires isWorkspaceTrusted() — both must be true. (5) package.json: added nexcodeKiboko.allowWorkspacePrompts (boolean, default false) to settings and restrictedConfigurations. (6) webviewMessageValidation: added allowWorkspacePrompts to ALLOWED_SETTING_KEYS. (7) 19 regression tests. 818/818 tests pass. Build clean. All type-checks clean.",
   "lastVerification": {
-    "focusedTests": "PASS — 22/22 approvalPolicy + 79/79 webviewValidation tests pass",
+    "focusedTests": "PASS — 19/19 workspacePromptOverride tests pass",
     "typecheck": "PASS — agent-core, extension, and webview tsc --noEmit all clean",
     "lint": "PASS — no lint configured beyond tsc (NC-030)",
     "build": "PASS — full npm run build clean",
-    "fullTests": "PASS — 799/799 unit tests pass (3 pre-existing e2e failures unrelated)",
+    "fullTests": "PASS — 818/818 unit tests pass (3 pre-existing e2e failures unrelated)",
     "packaging": "SKIPPED — not attempted this iteration"
   }
 }

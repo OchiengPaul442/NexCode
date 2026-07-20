@@ -33,3 +33,4 @@ export {
   containsNullBytes,
   isPathSafeCrossPlatform,
 } from "./utils/pathContainment";
+export { atomicWriteFile } from "./tools/fileSystemTool";

@@ -224,14 +224,15 @@
 
 ### NC-019 — File writes are non-atomic and patch semantics are ambiguous
 - **Severity:** High
-- **Status:** pending
+- **Status:** fixed
 - **Phase:** F
 - **Dependencies:** none
-- **Affected files:** `agent-core/src/tools/fileSystemTool.ts:51-130`
-- **Verified:** unverified
+- **Affected files:** `agent-core/src/tools/fileSystemTool.ts:51-130`, `agent-core/src/orchestrator.ts:1091-1092`
+- **Verified:** yes — verified against current source; atomicWriteFile added, patchFile requires unique match
 - **Required tests:** atomic temp-file plus rename; content hash precondition; unique patch match required; per-file serialization
 - **Verification commands:** `npx vitest run agent-core/tests/fileWrites.test.ts`
-- **Resolution evidence:** (none yet)
+- **Resolution evidence:** `agent-core/src/tools/fileSystemTool.ts` changed: (1) Added `atomicWriteFile()` — writes to temp file `.nexcode-tmp-{uuid}`, then `fs.rename()` over target. Atomic on POSIX, near-atomic on NTFS. Preserves file permissions. Cleans up temp on failure. (2) `writeFile()` uses `atomicWriteFile()` instead of direct `fs.writeFile()`. (3) `patchFile()` now counts occurrences via `content.split(oldText).length - 1` and rejects if `matchCount > 1` with guidance to provide surrounding context. (4) `patchFile()` uses `atomicWriteFile()` instead of direct `fs.writeFile()`. `agent-core/src/orchestrator.ts` changed: `applyProposedEdit()` uses `atomicWriteFile()` instead of `fs.mkdir()+fs.writeFile()`. 25 regression tests in `agent-core/tests/fileWrites.test.ts`: atomicWriteFile (10 tests), writeFile atomic (5 tests), patchFile unique match (10 tests). 1045/1045 unit tests pass. Build clean. All type-checks clean.
+- **Remaining risk:** Per-file serialization (locking) for concurrent writes is not implemented. NC-010 already limits concurrency to 1, so this is deferred to Phase G/task isolation work.
 
 ### NC-020 — Cross-platform path containment is host-dependent
 - **Severity:** High

@@ -55,6 +55,7 @@ import { SessionCompressor } from "./utils/sessionCompressor";
 import { runAgentLoop, AgentLoopConfig } from "./agents/agentLoop";
 import { getToolDefinitionsForMode } from "./tools/toolDefinitions";
 import { validateEditPreconditions } from "./utils/editValidation";
+import { atomicWriteFile } from "./tools/fileSystemTool";
 
 export interface NexcodeOrchestratorOptions {
   workspaceRoot?: string;
@@ -1088,8 +1089,7 @@ export class NexcodeOrchestrator {
       );
     }
 
-    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
-    await fs.writeFile(absolutePath, edit.newText, "utf8");
+    await atomicWriteFile(absolutePath, edit.newText);
   }
 
   private async *runSingleModeStreaming(

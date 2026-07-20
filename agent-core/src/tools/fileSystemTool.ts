@@ -6,6 +6,52 @@ import { createPatch } from "../utils/diff";
 import { ContextCompressor } from "../utils/contextCompressor";
 import { resolveWorkspacePath } from "../utils/pathContainment";
 
+/**
+ * Atomically write content to a file by writing to a temp file first, then
+ * renaming over the target. This prevents truncation on crash: the rename is
+ * atomic on POSIX (and near-atomic on NTFS), so the target is never left in a
+ * half-written state.
+ *
+ * Preserves the existing file's permissions if it exists; otherwise uses
+ * default mode.
+ */
+export async function atomicWriteFile(
+  absolutePath: string,
+  content: string,
+): Promise<void> {
+  const dir = path.dirname(absolutePath);
+  const tmpName = `.nexcode-tmp-${randomUUID()}`;
+  const tmpPath = path.join(dir, tmpName);
+
+  // Ensure the parent directory exists.
+  await fs.mkdir(dir, { recursive: true });
+
+  // Try to preserve existing file permissions.
+  let mode: number | undefined;
+  try {
+    const stat = await fs.stat(absolutePath);
+    mode = stat.mode;
+  } catch {
+    // File doesn't exist yet; use default permissions.
+  }
+
+  try {
+    await fs.writeFile(tmpPath, content, { encoding: "utf8", mode });
+    // fs.rename is atomic on POSIX and near-atomic on NTFS (within the same
+    // volume). On Windows across volumes it falls back to copy+delete which is
+    // still safer than direct writeFile truncation.
+    await fs.rename(tmpPath, absolutePath);
+  } catch (err) {
+    // Clean up the temp file on failure.
+    try {
+      await fs.unlink(tmpPath);
+    } catch {
+      // Ignore cleanup errors — the original file is still intact.
+    }
+    throw err;
+  }
+}
+
 function enhanceFileSystemError(error: unknown, operation: string, targetPath: string): string {
   const msg = String(error);
   if (msg.includes("ENOENT") || msg.includes("no such file") || msg.includes("cannot find")) {
@@ -54,8 +100,7 @@ export class FileSystemTool {
   ): Promise<ToolResult> {
     try {
       const absolutePath = await this.resolveWorkspacePathSafe(targetPath);
-      await fs.mkdir(path.dirname(absolutePath), { recursive: true });
-      await fs.writeFile(absolutePath, content, "utf8");
+      await atomicWriteFile(absolutePath, content);
       return {
         ok: true,
         output: `Wrote ${targetPath}`,
@@ -104,8 +149,17 @@ export class FileSystemTool {
         };
       }
 
+      // Count occurrences of oldText to require an unambiguous (unique) match.
+      const matchCount = content.split(oldText).length - 1;
+      if (matchCount > 1) {
+        return {
+          ok: false,
+          output: `The old text appears ${matchCount} times in ${targetPath}. Provide a unique snippet to avoid ambiguity. Include surrounding context to disambiguate.`,
+        };
+      }
+
       const newContent = content.replace(oldText, () => newText);
-      await fs.writeFile(absolutePath, newContent, "utf8");
+      await atomicWriteFile(absolutePath, newContent);
 
       return {
         ok: true,

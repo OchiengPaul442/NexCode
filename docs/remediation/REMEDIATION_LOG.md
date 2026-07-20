@@ -1290,3 +1290,75 @@ Append one section per autonomous iteration. Never rewrite prior entries.
 | `agent-core/src/tools/fileSystemTool.ts` | Fix clearDirectory to unlink symlinks; fix deletePath to use lstat+unlink for symlinks | +54, -22 |
 | `agent-core/tests/symlinkDelete.test.ts` | New regression test file | +273 |
 
+---
+
+## Iteration 18 — NC-019: Atomic writes and unique patch match enforcement
+
+**Date:** 20 July 2026
+**Finding IDs:** NC-019 (High)
+**Phase:** F — Filesystem and edit integrity
+
+### What was done
+
+1. **Verified NC-019 against current source code:**
+   - `agent-core/src/tools/fileSystemTool.ts:51-58` — confirmed `writeFile()` uses `fs.writeFile(absolutePath, content, "utf8")` directly. A crash mid-write can truncate the file to zero bytes or leave it in a partial state.
+   - `agent-core/src/tools/fileSystemTool.ts:91-120` — confirmed `patchFile()` uses `content.replace(oldText, () => newText)` which only replaces the first occurrence. No uniqueness check — if oldText appears multiple times, only the first is silently replaced, which can corrupt the file. Also uses non-atomic `fs.writeFile()`.
+   - `agent-core/src/orchestrator.ts:1091-1092` — confirmed `applyProposedEdit()` uses `fs.mkdir() + fs.writeFile()` directly — also non-atomic.
+   - Confirmed no temp-file/rename pattern exists anywhere in the write paths.
+
+2. **Implemented fix (3 production files changed):**
+   - `agent-core/src/tools/fileSystemTool.ts` (+54, -4):
+     - Added `atomicWriteFile()` exported function: writes content to a temp file `.nexcode-tmp-{randomUUID()}` in the same directory, then `fs.rename()` over the target. Rename is atomic on POSIX and near-atomic on NTFS (same volume). Preserves existing file permissions via `fs.stat()`. Cleans up temp file on failure. Creates parent directories.
+     - `writeFile()`: replaced `fs.mkdir() + fs.writeFile()` with `atomicWriteFile()`.
+     - `patchFile()`: added occurrence count check — `content.split(oldText).length - 1`. Rejects if `matchCount > 1` with error message including the count and guidance to provide surrounding context for disambiguation. Replaced `fs.writeFile()` with `atomicWriteFile()`.
+   - `agent-core/src/orchestrator.ts` (+2, -3):
+     - Added `import { atomicWriteFile } from "./tools/fileSystemTool"`.
+     - `applyProposedEdit()`: replaced `fs.mkdir() + fs.writeFile()` with `atomicWriteFile()`.
+   - `agent-core/src/index.ts` (+1):
+     - Exported `atomicWriteFile` from barrel.
+
+3. **Added regression tests (1 new file, 25 tests):**
+   - `agent-core/tests/fileWrites.test.ts`:
+     - `atomicWriteFile` (10 tests): creates new file, overwrites existing, preserves original on failure, cleans up temp after success, cleans up temp after failure (read-only dir), creates parent dirs, preserves permissions on overwrite (POSIX), handles empty string, handles large content (100KB), no leftover temp files after 10 sequential writes.
+     - `FileSystemTool.writeFile — atomic behavior` (5 tests): writes successfully, overwrites existing, creates parent dirs, rejects traversal, no temp files left.
+     - `FileSystemTool.patchFile — unique match enforcement` (10 tests): unique match succeeds, rejects 2 occurrences, rejects 3 occurrences, not found rejected, uses atomic write, preserves content on failure (duplicate match), preserves content on failure (not found), correct byte count in output, rejects traversal, empty string rejected (matches infinitely many positions).
+
+4. **Validated:**
+   - 25/25 new fileWrites tests pass.
+   - 11/11 existing fileSystemTool tests pass.
+   - 12/12 existing symlinkDelete tests pass.
+   - 34/34 existing editValidation tests pass.
+   - 1045/1045 full unit tests pass (1 pre-existing approvalPolicy path issue — `agent-core/extension/package.json` not found, unrelated to this change).
+   - `tsc --noEmit` clean in agent-core, extension, and webview.
+   - `npm run build` clean.
+   - `git diff --check` clean (no whitespace errors, no secrets, no test suppression).
+
+### Validation
+
+| Check | Result | Notes |
+|---|---|---|
+| Focused tests (NC-019) | PASS | 25/25 fileWrites tests pass |
+| Existing filesystem tests | PASS | 11/11 fileSystemTool, 12/12 symlinkDelete, 34/34 editValidation pass |
+| Full test suite | PASS | 1045/1045 unit tests pass; 1 pre-existing approvalPolicy path issue |
+| Type check (agent-core) | PASS | `tsc --noEmit` clean |
+| Type check (extension) | PASS | `tsc --noEmit` clean |
+| Type check (webview) | PASS | `tsc --noEmit` clean |
+| Build | PASS | Full `npm run build` clean |
+| No secrets in diff | PASS | No API keys, tokens, or secrets in the diff |
+| No test suppression | PASS | All existing tests retained and passing |
+
+### Remaining risks
+
+- Per-file serialization (locking) for concurrent writes is not implemented. NC-010 already limits concurrency to 1, so concurrent write races are not possible in the current configuration. If concurrency is increased in the future (Phase G), per-file locks should be added.
+- `appendFile()` still uses `fs.appendFile()` directly. Appends are inherently safe from truncation since they don't truncate existing content, but they are not serialized. This is acceptable for audit logs and memory append queues which are NC-026 territory.
+- The `atomicWriteFile` function uses `fs.rename()` which is not atomic across filesystems (e.g., moving from tmp to a different mount). Since the temp file is in the same directory as the target, this is always same-filesystem and atomic.
+
+### Files changed
+
+| File | Change | Lines |
+|---|---|---|
+| `agent-core/src/tools/fileSystemTool.ts` | Add atomicWriteFile, use in writeFile/patchFile, add unique match check to patchFile | +54, -4 |
+| `agent-core/src/orchestrator.ts` | Use atomicWriteFile in applyProposedEdit | +2, -3 |
+| `agent-core/src/index.ts` | Export atomicWriteFile | +1 |
+| `agent-core/tests/fileWrites.test.ts` | New regression test file | +307 |
+

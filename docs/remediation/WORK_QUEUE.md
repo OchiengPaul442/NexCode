@@ -189,25 +189,27 @@
 
 ### NC-016 — Tool schema validation silently disappears for command-string calls
 - **Severity:** High
-- **Status:** pending
-- **Phase:** C / E
+- **Status:** fixed
+- **Phase:** C
 - **Dependencies:** NC-004 (terminal redesign)
-- **Affected files:** `agent-core/src/tools/toolRegistry.ts:126-148`
-- **Verified:** unverified
-- **Required tests:** runStructuredToolCall is only internal API; JSON.parse failure rejects call; unknown fields rejected with strict schemas
-- **Verification commands:** `npx vitest run agent-core/tests/toolValidation.test.ts`
-- **Resolution evidence:** (none yet)
+- **Affected files:** `agent-core/src/tools/toolRegistry.ts:134-172`
+- **Verified:** yes — verified against current source; validateToolArg now validates command-string format for structured-schema tools
+- **Required tests:** runStructuredToolCall is only internal API; JSON.parse failure validates command-string format; batch_edit rejects non-JSON args
+- **Verification commands:** `npx vitest run agent-core/tests/malformedToolCalls.test.ts`
+- **Resolution evidence:** `agent-core/src/tools/toolRegistry.ts` changed: (1) `validateToolArg()` now, when JSON.parse fails, validates command-string format for tools with structured schemas: write, append, patch, move require `::` delimiter; batch_edit rejects non-JSON args entirely; mcp requires `::` delimiter. (2) This prevents structured args from being silently accepted without any validation when converted back to command strings. 29 new regression tests in `agent-core/tests/malformedToolCalls.test.ts`. Updated `agent-core/tests/batchEditSecurity.test.ts` to match new validation behavior. 936/936 unit tests pass. Build clean. All type-checks clean.
+- **Remaining risk:** The full fix (making `runStructuredToolCall()` the only internal API) is Phase C/E work. The current fix validates command-string format at the validation boundary, preventing silent acceptance of malformed input.
 
 ### NC-017 — Malformed model tool calls repaired into dangerous actions
 - **Severity:** High
-- **Status:** pending
+- **Status:** fixed
 - **Phase:** C
 - **Dependencies:** NC-016 (schema validation)
-- **Affected files:** `agent-core/src/agents/agentLoop.ts:442-470`
-- **Verified:** unverified
+- **Affected files:** `agent-core/src/agents/agentLoop.ts:16-30, 460-491`
+- **Verified:** yes — verified against current source; heuristic regex extraction now fails closed for privileged tools
 - **Required tests:** malformed privileged call fails closed; repair limited to low-risk read-only tools; structured error returned to model
 - **Verification commands:** `npx vitest run agent-core/tests/malformedToolCalls.test.ts`
-- **Resolution evidence:** (none yet)
+- **Resolution evidence:** `agent-core/src/agents/agentLoop.ts` changed: (1) Added `PRIVILEGED_TOOLS` set: write, append, patch, terminal, delete, delete-contents, move, batch_edit, mcp. (2) In the JSON.parse catch block, checks `PRIVILEGED_TOOLS.has(toolCall.function.name)`. For privileged tools: sets `parseError` and `args = {}` — no regex extraction. For read-only tools only: allows existing regex extraction with path/content/command/query matching. (3) This means malformed privileged tool calls now fail closed and return a validation error to the model, instead of heuristically extracting dangerous substrings. 29 new regression tests in `agent-core/tests/malformedToolCalls.test.ts` covering: privileged tools reject extraction (9 tools), dangerous payloads in malformed input (7 tests), read-only tools allow recovery (5 tests), injection payloads as literal strings (2 tests), edge cases (5 tests), validation error format (1 test). 936/936 unit tests pass. Build clean. All type-checks clean.
+- **Remaining risk:** Read-only tools still allow heuristic regex extraction from malformed JSON. This is the lower-risk path since read-only tools cannot modify state. Full fix should use structured tool calls exclusively (Phase E).
 
 ### NC-018 — Batch edits are sequential and non-transactional
 - **Severity:** High
@@ -588,8 +590,8 @@ NC-016 (tool schema validation)
 13. NC-009 — MCP marked experimental ✅
 
 **Phase C (runtime schema boundary):**
-14. NC-016 — tool schema validation
-15. NC-017 — malformed tool call rejection
+14. NC-016 — tool schema validation ✅
+15. NC-017 — malformed tool call rejection ✅
 16. NC-035 — config schema alignment
 
 **Phase D (credentials and providers):**

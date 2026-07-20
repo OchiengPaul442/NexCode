@@ -996,3 +996,82 @@ Append one section per autonomous iteration. Never rewrite prior entries.
 | `agent-core/src/orchestrator.ts` | Import FilesystemAdapter, register built-in adapter on McpRegistry | +5 |
 | `agent-core/tests/mcpRegistry.test.ts` | New regression test file | +310 |
 
+---
+
+## Iteration 14 — NC-016 + NC-017: Tool schema validation and malformed tool call rejection
+
+**Date:** 20 July 2026
+**Finding IDs:** NC-016 (High), NC-017 (High)
+**Phase:** C — Runtime schema boundary
+
+### What was done
+
+1. **Verified NC-017 against current source code:**
+   - `agent-core/src/agents/agentLoop.ts:442-470` — confirmed that when tool-call JSON is malformed, regexes attempt to extract path, content, command, or query fields and then continue toward execution. This applies to ALL tools including privileged ones (write, terminal, delete, etc.). A malformed privileged request should fail closed; heuristic recovery can change semantics or extract a dangerous substring from otherwise invalid text.
+
+2. **Verified NC-016 against current source code:**
+   - `agent-core/src/tools/toolRegistry.ts:134-148` — confirmed `validateToolArg()` tries `JSON.parse(arg)` and if it fails, catches the error and skips schema validation entirely. Tools with structured schemas (write, append, patch, move, batch_edit, mcp) that receive command strings (not JSON) bypass all validation.
+
+3. **Implemented NC-017 fix (1 file changed):**
+   - `agent-core/src/agents/agentLoop.ts` (+25, -15):
+     - Added `PRIVILEGED_TOOLS` set: write, append, patch, terminal, delete, delete-contents, move, batch_edit, mcp.
+     - In the JSON.parse catch block, checks `PRIVILEGED_TOOLS.has(toolCall.function.name)`.
+     - For privileged tools: sets `parseError` and `args = {}` — no regex extraction. Fail closed.
+     - For read-only tools only: allows existing regex extraction with path/content/command/query matching.
+
+4. **Implemented NC-016 fix (1 file changed):**
+   - `agent-core/src/tools/toolRegistry.ts` (+18, -5):
+     - `validateToolArg()` now, when JSON.parse fails, validates command-string format for tools with structured schemas:
+       - write, append, patch: require `::` delimiter
+       - move: requires `::` delimiter
+       - batch_edit: rejects non-JSON args entirely
+       - mcp: requires `::` delimiter
+
+5. **Updated existing test:**
+   - `agent-core/tests/batchEditSecurity.test.ts`: Updated "batch_edit handles malformed JSON gracefully" test to expect the new validation error message ("batch_edit requires JSON arguments") instead of "Batch edit failed".
+
+6. **Added regression tests (1 new file, 29 tests):**
+   - `agent-core/tests/malformedToolCalls.test.ts`:
+     - Privileged tools fail closed (9 tools × 1 test = 9 tests)
+     - Dangerous payloads in malformed input (7 tests: write path traversal, terminal command injection, delete, patch, move, batch_edit, mcp)
+     - Read-only tools allow heuristic recovery (5 tests: read, search, git-status, git-diff, test)
+     - Injection payloads as literal strings (2 tests: read path traversal, search shell metacharacters)
+     - Edge cases (5 tests: empty input, completely invalid input, privileged tool coverage, read-only tool coverage)
+     - Validation error format (1 test: truncated input in error message)
+
+7. **Validated:**
+   - 29/29 new malformedToolCalls tests pass.
+   - 936/936 full unit tests pass.
+   - `tsc --noEmit` clean in agent-core, extension, and webview.
+   - `npm run build` clean.
+   - `git diff --check` clean.
+
+### Validation
+
+| Check | Result | Notes |
+|---|---|---|
+| Focused tests (NC-016 + NC-017) | PASS | 29/29 malformedToolCalls tests pass |
+| Existing batch edit tests | PASS | Updated test matches new validation behavior |
+| Full test suite | PASS | 936/936 unit tests pass; 3 pre-existing e2e failures |
+| Type check (agent-core) | PASS | `tsc --noEmit` clean |
+| Type check (extension) | PASS | `tsc --noEmit` clean |
+| Type check (webview) | PASS | `tsc --noEmit` clean |
+| Build | PASS | Full `npm run build` clean |
+| No secrets in diff | PASS | No API keys, tokens, or secrets in the diff |
+| No test suppression | PASS | All existing tests retained and passing |
+
+### Remaining risks
+
+- Read-only tools still allow heuristic regex extraction from malformed JSON. This is the lower-risk path since read-only tools cannot modify state. Full fix should use structured tool calls exclusively (Phase E).
+- The full fix for NC-016 (making `runStructuredToolCall()` the only internal API) is Phase E work. The current fix validates command-string format at the validation boundary, preventing silent acceptance of malformed input.
+- The `PRIVILEGED_TOOLS` set must be kept in sync with tool definitions as new tools are added. A future improvement could derive this from tool risk levels in the tool definitions.
+
+### Files changed
+
+| File | Change | Lines |
+|---|---|---|
+| `agent-core/src/agents/agentLoop.ts` | Add PRIVILEGED_TOOLS set, fail closed for privileged tools on malformed JSON | +25, -15 |
+| `agent-core/src/tools/toolRegistry.ts` | Add command-string format validation for structured-schema tools in validateToolArg | +18, -5 |
+| `agent-core/tests/malformedToolCalls.test.ts` | New regression test file | +210 |
+| `agent-core/tests/batchEditSecurity.test.ts` | Update test to match new validation behavior | +4, -3 |
+

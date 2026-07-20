@@ -71,12 +71,13 @@ describe("F-015: batch_edit security vulnerabilities", () => {
 
   describe("batch_edit error handling", () => {
     it("batch_edit handles malformed JSON gracefully", async () => {
-      // batch_edit requires approval first (it's in DESTRUCTIVE_TOOLS)
-      // After approval, malformed JSON causes "Batch edit failed"
+      // NC-016: batch_edit now rejects non-JSON args at validation boundary
+      // rather than letting them fall through to the handler.
       registry.markApproved("batch_edit", "not-json");
       const result = await registry.runToolCall("batch_edit not-json");
       expect(result.ok).toBe(false);
-      expect(result.output).toContain("Batch edit failed");
+      expect(result.output).toContain("Invalid input");
+      expect(result.output).toContain("batch_edit requires JSON arguments");
     });
 
     it("batch_edit handles missing edits array via schema validation", async () => {

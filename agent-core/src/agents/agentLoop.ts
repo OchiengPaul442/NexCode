@@ -19,6 +19,18 @@ export interface AgentLoopConfig {
   timeoutMs: number;
 }
 
+/**
+ * NC-017: Privileged tools that must NOT have heuristic regex extraction.
+ * When JSON parsing fails for these tools, we fail closed and return a
+ * validation error to the model instead of trying to extract fields from
+ * malformed input. Heuristic repair of privileged tool calls can change
+ * semantics or extract dangerous substrings from otherwise invalid text.
+ */
+const PRIVILEGED_TOOLS = new Set([
+  "write", "append", "patch", "terminal", "delete", "delete-contents",
+  "move", "batch_edit", "mcp",
+]);
+
 function formatToolArgs(
   toolName: string,
   args: Record<string, unknown>,
@@ -446,26 +458,35 @@ export async function* runAgentLoop(
         const repaired = repairTruncatedJson(toolCall.function.arguments);
         args = JSON.parse(repaired);
       } catch {
-        // Malformed tool call args from model - try to recover with regex extraction
+        // NC-017: For privileged tools, fail closed — do not heuristically
+        // repair write, terminal, delete, git-write, credential, or MCP calls.
+        // Heuristic recovery can change semantics or extract a dangerous
+        // substring from otherwise invalid text.
+        const isPrivileged = PRIVILEGED_TOOLS.has(toolCall.function.name);
         args = {};
         parseError = `Invalid JSON in tool arguments: ${toolCall.function.arguments.slice(0, 200)}`;
-        // Try to extract path from raw arguments string
-        const pathMatch = toolCall.function.arguments.match(/["']?(?:path|filePath|file)["']?\s*[:=]\s*["']([^"']+)["']/i);
-        if (pathMatch) {
-          args.path = pathMatch[1];
-        }
-        const contentMatch = toolCall.function.arguments.match(/["'](?:content|text|command)["']?\s*[:=]\s*["']([\s\S]*?)["']/i);
-        if (contentMatch) {
-          args.content = contentMatch[1];
-          args.command = contentMatch[1];
-        }
-        const commandMatch = toolCall.function.arguments.match(/["'](?:cmd)["']?\s*[:=]\s*["']([\s\S]*?)["']/i);
-        if (commandMatch) {
-          args.command = commandMatch[1];
-        }
-        const queryMatch = toolCall.function.arguments.match(/["'](?:query|search)["']?\s*[:=]\s*["']([\s\S]*?)["']/i);
-        if (queryMatch) {
-          args.query = queryMatch[1];
+        if (isPrivileged) {
+          // Fail closed for privileged tools — no regex extraction
+        } else {
+          // For read-only tools only, allow heuristic recovery and log it
+          // Try to extract path from raw arguments string
+          const pathMatch = toolCall.function.arguments.match(/["']?(?:path|filePath|file)["']?\s*[:=]\s*["']([^"']+)["']/i);
+          if (pathMatch) {
+            args.path = pathMatch[1];
+          }
+          const contentMatch = toolCall.function.arguments.match(/["'](?:content|text|command)["']?\s*[:=]\s*["']([\s\S]*?)["']/i);
+          if (contentMatch) {
+            args.content = contentMatch[1];
+            args.command = contentMatch[1];
+          }
+          const commandMatch = toolCall.function.arguments.match(/["'](?:cmd)["']?\s*[:=]\s*["']([\s\S]*?)["']/i);
+          if (commandMatch) {
+            args.command = commandMatch[1];
+          }
+          const queryMatch = toolCall.function.arguments.match(/["'](?:query|search)["']?\s*[:=]\s*["']([\s\S]*?)["']/i);
+          if (queryMatch) {
+            args.query = queryMatch[1];
+          }
         }
       }
 

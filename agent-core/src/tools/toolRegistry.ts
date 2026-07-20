@@ -142,7 +142,28 @@ export class ToolRegistry {
         return errors.map((e) => `${e.field}: ${e.message}`).join(", ");
       }
     } catch {
-      // If arg is not JSON, skip schema validation
+      // NC-016: If arg is not JSON, validate command-string format for tools
+      // with structured schemas. This catches cases where structured args
+      // are converted back to command strings without schema validation.
+      const structuredTools: Record<string, (a: string) => string | null> = {
+        write: (a) => a.includes("::") ? null : "Use: write <path> :: <content>",
+        append: (a) => a.includes("::") ? null : "Use: append <path> :: <content>",
+        patch: (a) => {
+          const parts = a.split("::");
+          return parts.length >= 2 ? null : "Use: patch <path> :: <oldText> :: <newText>";
+        },
+        move: (a) => a.includes("::") ? null : "Use: move <source> :: <destination>",
+        batch_edit: (a) => {
+          // batch_edit requires JSON args — reject command strings
+          try { JSON.parse(a); return null; } catch { return "batch_edit requires JSON arguments"; }
+        },
+        mcp: (a) => a.includes("::") ? null : "Use: mcp <server>:<tool> :: <input>",
+      };
+      const formatCheck = structuredTools[toolName];
+      if (formatCheck) {
+        const err = formatCheck(arg);
+        if (err) return err;
+      }
     }
 
     return null;

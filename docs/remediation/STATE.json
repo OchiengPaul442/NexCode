@@ -3,28 +3,28 @@
   "project": "NexCode",
   "status": "in_progress",
   "bootstrapRequired": false,
-  "iteration": 13,
-  "currentPhase": 0,
+  "iteration": 14,
+  "currentPhase": "C",
   "totalFindings": 45,
   "counts": {
-    "pending": 32,
+    "pending": 30,
     "inProgress": 0,
-    "fixed": 13,
+    "fixed": 15,
     "blocked": 0,
     "obsolete": 0,
     "falsePositive": 0
   },
   "activeFindingIds": [],
-  "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004", "NC-005", "NC-006", "NC-007", "NC-008", "NC-009", "NC-010", "NC-022", "NC-024", "NC-028"],
+  "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004", "NC-005", "NC-006", "NC-007", "NC-008", "NC-009", "NC-010", "NC-016", "NC-017", "NC-022", "NC-024", "NC-028"],
   "blockedFindingIds": [],
-  "lastCommit": "75b16c5",
-  "lastSummary": "NC-009 fixed: MCP built-in filesystem adapter registered so server list is not silently empty. (1) Added FilesystemAdapter import to orchestrator.ts. (2) Registered FilesystemAdapter on the McpRegistry after construction. 19 regression tests in agent-core/tests/mcpRegistry.test.ts: orchestrator lists filesystem server by default, orchestrator lists only built-in servers, orchestrator lists filesystem tools, orchestrator invokes filesystem MCP tool, McpRegistry stores/unregisters adapters, McpRegistry rejects unknown servers, McpRegistry is in-process only (no MCP protocol methods), FilesystemAdapter enforces workspace containment, FilesystemAdapter rejects traversal. 907/907 unit tests pass. Build clean. All type-checks clean.",
+  "lastCommit": "pending",
+  "lastSummary": "NC-016 + NC-017 fixed: (1) NC-017: Malformed tool call heuristic repair now fails closed for privileged tools (write, append, patch, terminal, delete, delete-contents, move, batch_edit, mcp). Regex extraction only allowed for read-only tools. (2) NC-016: validateToolArg() now validates command-string format for tools with structured schemas (write, append, patch, move, batch_edit, mcp) when JSON.parse fails, instead of silently skipping validation. batch_edit rejects non-JSON args. 29 new regression tests in agent-core/tests/malformedToolCalls.test.ts. Updated batchEditSecurity.test.ts for new validation behavior. 936/936 unit tests pass. Build clean. All type-checks clean.",
   "lastVerification": {
-    "focusedTests": "PASS — 19/19 mcpRegistry tests pass",
+    "focusedTests": "PASS — 29/29 malformedToolCalls tests pass",
     "typecheck": "PASS — agent-core, extension, and webview tsc --noEmit all clean",
     "lint": "PASS — no lint configured beyond tsc (NC-030)",
     "build": "PASS — full npm run build clean",
-    "fullTests": "PASS — 907/907 unit tests pass (3 pre-existing e2e failures unrelated)",
+    "fullTests": "PASS — 936/936 unit tests pass (3 pre-existing e2e failures unrelated)",
     "packaging": "SKIPPED — not attempted this iteration"
   }
 }

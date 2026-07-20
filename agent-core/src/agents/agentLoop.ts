@@ -12,6 +12,7 @@ import { ToolDefinition, validateInput } from "../tools/toolProtocol";
 import { ApprovalCallback } from "../tools/toolApprovalPolicy";
 import { EvidenceStore } from "../tools/evidenceStore";
 import { repairTruncatedJson } from "../utils/jsonRepair";
+import { createDefaultRetryBudget, RetryBudget } from "../utils/retryBudget";
 
 export interface AgentLoopConfig {
   maxTurns: number;
@@ -294,6 +295,14 @@ export async function* runAgentLoop(
   const MAX_TOOL_OUTPUT_TOKENS = 2000;
   const evidenceStore = new EvidenceStore();
   let timedOut = false;
+
+  // NC-040: Create a shared retry budget for the entire agent loop run.
+  // This prevents unbounded retry multiplication across provider HTTP retries,
+  // cross-provider fallback candidates, and agent-loop retries.
+  // Default: 8 total fetch attempts — covers the common case (1 explicit +
+  // 2 HTTP retries per attempt) with headroom for one fallback candidate.
+  const retryBudget = createDefaultRetryBudget();
+
   for (let turn = 0; turn < config.maxTurns; turn++) {
     if (Date.now() - startedAt > config.timeoutMs) {
       timedOut = true;
@@ -347,6 +356,7 @@ export async function* runAgentLoop(
           maxTokens: config.maxTokensPerTurn,
           signal,
           reasoningEffort,
+          retryBudget,
         });
         break; // Success, exit retry loop
       } catch (error) {
@@ -659,6 +669,7 @@ export async function* runAgentLoop(
       maxTokens: config.maxTokensPerTurn,
       signal,
       reasoningEffort,
+      retryBudget,
     });
 
     messages.push({ role: "assistant", content: finalResponse.text });

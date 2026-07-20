@@ -42,3 +42,8 @@ export {
   isPathSafeCrossPlatform,
 } from "./utils/pathContainment";
 export { atomicWriteFile } from "./tools/fileSystemTool";
+export {
+  RetryBudget,
+  createDefaultRetryBudget,
+  type RetryBudgetConfig,
+} from "./utils/retryBudget";

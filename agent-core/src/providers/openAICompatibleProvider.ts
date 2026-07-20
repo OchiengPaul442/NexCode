@@ -193,6 +193,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
     url: string,
     initFactory: () => RequestInit,
     signal: AbortSignal,
+    retryBudget?: { canAttempt(): boolean; recordAttempt(): void },
   ): Promise<Response> {
     let lastResponse: Response | undefined;
 
@@ -200,6 +201,13 @@ export class OpenAICompatibleProvider implements ModelProvider {
       if (signal.aborted) {
         throw new Error("Request aborted.");
       }
+
+      // Respect shared retry budget — stop HTTP retries if budget exhausted
+      if (retryBudget && !retryBudget.canAttempt()) {
+        break;
+      }
+
+      retryBudget?.recordAttempt();
 
       const response = await fetch(url, {
         ...initFactory(),
@@ -320,6 +328,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
           body: JSON.stringify(body),
         }),
         abort.controller.signal,
+        request.retryBudget,
       );
 
       if (!response.ok) {
@@ -417,6 +426,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
           body: JSON.stringify(streamBody),
         }),
         abort.controller.signal,
+        request.retryBudget,
       );
 
       if (!response.ok || !response.body) {

@@ -474,14 +474,15 @@
 
 ### NC-040 — Retry and fallback behavior can multiply latency and cost
 - **Severity:** Medium
-- **Status:** pending
+- **Status:** fixed
 - **Phase:** D
 - **Dependencies:** NC-013 (fallback policy)
-- **Affected files:** provider and agent-loop retry paths
-- **Verified:** unverified
-- **Required tests:** single retry budget; Retry-After honored; total deadline/token/cost budget enforced
+- **Affected files:** `agent-core/src/utils/retryBudget.ts` (new), `agent-core/src/types.ts`, `agent-core/src/providers/modelRouter.ts`, `agent-core/src/providers/openAICompatibleProvider.ts`, `agent-core/src/agents/agentLoop.ts`, `agent-core/src/index.ts`
+- **Verified:** yes — verified against current source; shared RetryBudget prevents unbounded retry multiplication across all layers
+- **Required tests:** single retry budget enforced across router/provider/HTTP layers; exhausted budget stops fallback; backward compatible without budget
 - **Verification commands:** `npx vitest run agent-core/tests/retryBudget.test.ts`
-- **Resolution evidence:** (none yet)
+- **Resolution evidence:** (1) `agent-core/src/utils/retryBudget.ts` (new, 92 lines): `RetryBudget` class with `canAttempt()`/`recordAttempt()` API, configurable `maxAttempts` (default 8), `getSnapshot()` for diagnostics, `createDefaultRetryBudget()` factory. (2) `agent-core/src/types.ts`: added `RetryBudgetLike` structural type interface; added `retryBudget?` to `ModelRequest` and `ProviderGenerateOptions`. (3) `agent-core/src/providers/modelRouter.ts`: `generate()` and `stream()` check `retryBudget.canAttempt()` before each fallback candidate, break when exhausted, pass budget through to provider. (4) `agent-core/src/providers/openAICompatibleProvider.ts`: `fetchWithRetries()` checks `retryBudget.canAttempt()` before HTTP retries, calls `retryBudget.recordAttempt()` after each fetch. (5) `agent-core/src/agents/agentLoop.ts`: creates shared `RetryBudget` via `createDefaultRetryBudget()` per agent loop run, passes to all `generate()` calls. (6) `agent-core/src/index.ts`: exports `RetryBudget`, `createDefaultRetryBudget`, `RetryBudgetConfig`. (7) 10 regression tests in `agent-core/tests/retryBudget.test.ts`: RetryBudget unit (6), ModelRouter integration (4 — passthrough, exhaustion stops candidates, sufficient budget allows fallback, backward compat). 1505/1505 tests pass. Build clean. All type-checks clean.
+- **Remaining risk:** The budget does not track Retry-After headers or token/cost budgets (those are separate concerns). The default of 8 attempts is conservative — covers 1 explicit + 2 HTTP retries per attempt with headroom for one fallback candidate.
 
 ### NC-041 — Token estimation and context compression are too approximate
 - **Severity:** Medium

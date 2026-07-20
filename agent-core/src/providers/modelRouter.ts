@@ -263,7 +263,7 @@ export class ModelRouter {
     messages: ChatMessage[],
     options: ProviderGenerateOptions = {},
   ): Promise<ModelResponse> {
-    const { signal, ...cacheableOptions } = options;
+    const { signal, retryBudget, ...cacheableOptions } = options;
     const cacheKey = JSON.stringify({ messages, options: cacheableOptions });
     const cached = this.responseCache.get(cacheKey);
     if (cached) return JSON.parse(cached);
@@ -272,6 +272,11 @@ export class ModelRouter {
     const failures: CandidateFailure[] = [];
 
     for (const candidate of candidates) {
+      // Respect shared retry budget — skip candidates if budget exhausted
+      if (retryBudget && !retryBudget.canAttempt()) {
+        break;
+      }
+
       try {
         const result = await candidate.provider.generate({
           model: candidate.model,
@@ -281,6 +286,7 @@ export class ModelRouter {
           signal: options.signal,
           tools: options.tools,
           reasoningEffort: options.reasoningEffort,
+          retryBudget,
         });
 
         // NC-025: Do not cache action-producing responses.  Responses that
@@ -316,10 +322,16 @@ export class ModelRouter {
     messages: ChatMessage[],
     options: ProviderGenerateOptions = {},
   ): AsyncGenerator<string> {
+    const { retryBudget } = options;
     const candidates = this.resolveCandidates(options);
     const failures: CandidateFailure[] = [];
 
     for (const candidate of candidates) {
+      // Respect shared retry budget — skip candidates if budget exhausted
+      if (retryBudget && !retryBudget.canAttempt()) {
+        break;
+      }
+
       let emittedAnyToken = false;
 
       try {
@@ -332,6 +344,7 @@ export class ModelRouter {
             signal: options.signal,
             tools: options.tools,
             reasoningEffort: options.reasoningEffort,
+            retryBudget,
           });
 
           if (result.text) {
@@ -349,6 +362,7 @@ export class ModelRouter {
           signal: options.signal,
           tools: options.tools,
           reasoningEffort: options.reasoningEffort,
+          retryBudget,
         })) {
           if (!token) {
             continue;

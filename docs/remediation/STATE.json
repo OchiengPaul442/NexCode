@@ -3,28 +3,28 @@
   "project": "NexCode",
   "status": "in_progress",
   "bootstrapRequired": false,
-  "iteration": 21,
+  "iteration": 22,
   "currentPhase": "D",
   "totalFindings": 45,
   "counts": {
-    "pending": 23,
+    "pending": 22,
     "inProgress": 0,
-    "fixed": 22,
+    "fixed": 23,
     "blocked": 0,
     "obsolete": 0,
     "falsePositive": 0
   },
   "activeFindingIds": [],
-  "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004", "NC-005", "NC-006", "NC-007", "NC-008", "NC-009", "NC-010", "NC-014", "NC-016", "NC-017", "NC-018", "NC-019", "NC-020", "NC-021", "NC-022", "NC-024", "NC-028", "NC-034", "NC-035"],
+  "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004", "NC-005", "NC-006", "NC-007", "NC-008", "NC-009", "NC-010", "NC-014", "NC-016", "NC-017", "NC-018", "NC-019", "NC-020", "NC-021", "NC-022", "NC-024", "NC-025", "NC-028", "NC-034", "NC-035"],
   "blockedFindingIds": [],
-  "lastCommit": "39fae9b",
-  "lastSummary": "NC-014 fixed: Provider identity no longer collapses to 'openai-compatible'. (1) OpenAICompatibleProvider constructor now accepts optional providerId parameter (defaults to 'openai-compatible' for backward compat). (2) All 8 instantiation sites in orchestrator.ts pass their concrete provider ID. (3) 15 regression tests in providerIdentity.test.ts: default ID (1), explicit ID (1), each provider reports correct ID (8 via it.each), distinct IDs across providers (1), no duplication (1), unique instances (1), not hardcoded to openai-compatible (1), orchestrator integration (1). 1089/1090 tests pass (1 pre-existing failure in approvalPolicy.test.ts — wrong path to extension/package.json). Build clean. All type-checks clean.",
+  "lastCommit": "pending",
+  "lastSummary": "NC-025 fixed: Response cache bounded LRU and action-producing responses no longer cached. (1) ContextCache now has configurable maxSize with LRU eviction (default 100 entries). (2) Real hit/miss/eviction counters replace the hardcoded hitRate:0. (3) ModelRouter.generate() skips caching responses that contain toolCalls — only text-only (safe, read-only) responses are cached. (4) 21 regression tests in contextCacheAndResponseCaching.test.ts: ContextCache LRU eviction (5), TTL expiration (2), has() (3), invalidate (1), clear (1), stats/metrics (3), unbounded mode (1), defaults (1), ModelRouter text-only caching (1), tool-call responses not cached (1), empty toolCalls safe (1), different messages different keys (1). 1110/1111 tests pass (1 pre-existing failure in approvalPolicy.test.ts). Build clean. All type-checks clean.",
   "lastVerification": {
-    "focusedTests": "PASS — 15/15 providerIdentity tests pass",
+    "focusedTests": "PASS — 21/21 contextCacheAndResponseCaching tests pass",
     "typecheck": "PASS — agent-core, extension, and webview tsc --noEmit all clean",
     "lint": "PASS — no lint configured beyond tsc (NC-030)",
     "build": "PASS — full npm run build clean",
-    "fullTests": "PASS — 1089/1090 tests pass (1 pre-existing failure in approvalPolicy.test.ts)",
+    "fullTests": "PASS — 1110/1111 tests pass (1 pre-existing failure in approvalPolicy.test.ts)",
     "packaging": "SKIPPED — not attempted this iteration"
   }
 }

@@ -297,14 +297,14 @@
 
 ### NC-025 — Response cache can return stale model actions and grows without true bound
 - **Severity:** High
-- **Status:** pending
+- **Status:** fixed
 - **Phase:** D
 - **Dependencies:** none
-- **Affected files:** `agent-core/src/providers/modelRouter.ts:72-73,161-185`, `agent-core/src/utils/contextCache.ts`
-- **Verified:** unverified
-- **Required tests:** agent action responses not cached; cache partitioned by provider/model/workspace/task/content hash; bounded LRU/TTL
-- **Verification commands:** `npx vitest run agent-core/tests/contextCache.test.ts`
-- **Resolution evidence:** (none yet)
+- **Affected files:** `agent-core/src/utils/contextCache.ts`, `agent-core/src/providers/modelRouter.ts:72-73,161-185`
+- **Verified:** yes — verified against current source; ContextCache now has bounded LRU eviction, real metrics, and ModelRouter skips caching tool-call responses
+- **Required tests:** agent action responses not cached; bounded LRU/TTL; real hit/miss metrics
+- **Verification commands:** `npx vitest run agent-core/tests/contextCacheAndResponseCaching.test.ts`
+- **Resolution evidence:** `agent-core/src/utils/contextCache.ts` rewritten (95 lines): (1) `ContextCache` now accepts `maxSize` parameter (default 100); when exceeded, LRU entry is evicted. (2) `get()` promotes accessed entry to MRU. (3) Real hits/misses/evictions counters with accurate `hitRate`. (4) `has()` and `resetStats()` methods. (5) Unbounded mode via `maxSize=0`. `agent-core/src/providers/modelRouter.ts` changed: `generate()` now skips caching responses that contain toolCalls — only text-only (safe) responses cached. 21 regression tests in `agent-core/tests/contextCacheAndResponseCaching.test.ts`. 1110/1111 tests pass (1 pre-existing failure). Build clean. All type-checks clean.
 
 ### NC-026 — Memory and audit persistence are race-prone and failures are swallowed
 - **Severity:** High

@@ -181,7 +181,16 @@ export class ModelRouter {
           tools: options.tools,
           reasoningEffort: options.reasoningEffort,
         });
-        this.responseCache.set(cacheKey, JSON.stringify(result));
+
+        // NC-025: Do not cache action-producing responses.  Responses that
+        // include tool calls (edits, file writes, terminal commands) reference
+        // workspace state that may change within the TTL window.  Caching them
+        // risks returning stale edit proposals or file content that no longer
+        // matches the current workspace.
+        const hasToolCalls = Array.isArray(result.toolCalls) && result.toolCalls.length > 0;
+        if (!hasToolCalls) {
+          this.responseCache.set(cacheKey, JSON.stringify(result));
+        }
         return result;
       } catch (error) {
         if (this.isAbortError(error)) {

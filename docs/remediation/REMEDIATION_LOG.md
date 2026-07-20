@@ -1554,3 +1554,77 @@ Append one section per autonomous iteration. Never rewrite prior entries.
 | `agent-core/src/orchestrator.ts` | Pass concrete provider ID at all 8 instantiation sites | +8 |
 | `agent-core/tests/providerIdentity.test.ts` | New regression test file | +131 |
 
+---
+
+## Iteration 22 — NC-025: Bounded LRU response cache, skip caching action-producing responses
+
+**Date:** 20 July 2026
+**Finding IDs:** NC-025 (High)
+**Phase:** D — Credentials and providers
+
+### What was done
+
+1. **Verified NC-025 against current source code:**
+   - `agent-core/src/utils/contextCache.ts` — confirmed `ContextCache` is a simple `Map<string, {value, timestamp}>` with TTL-based lazy eviction on `get()` only. No maximum size limit — the cache grows indefinitely as entries are added. `getStats()` returns hardcoded `{size, hitRate: 0}` — no real hit/miss tracking.
+   - `agent-core/src/providers/modelRouter.ts:73` — confirmed `responseCache = new ContextCache(10000)` (10 second TTL) caches ALL model responses including those with tool calls.
+   - `agent-core/src/providers/modelRouter.ts:166-184` — confirmed `generate()` caches the full `ModelResponse` (including `toolCalls` array with edit proposals, file writes, terminal commands) after a successful provider call. A repeated identical prompt within 10 seconds returns the cached response even if workspace state changed.
+   - `agent-core/src/orchestrator/contextBuilder.ts:8-11` — confirmed ContextCache is also used for workspace context, file trees, manifests, and recently-modified files (read-only, safe to cache).
+
+2. **Implemented fix (2 production files changed):**
+   - `agent-core/src/utils/contextCache.ts` (rewritten, +95 lines):
+     - Added `maxSize` constructor parameter (default 100). When the cache exceeds `maxSize`, the least-recently-used entry is evicted.
+     - LRU is maintained by deleting and re-inserting entries at the end of the Map on every `get()` and `set()` call.
+     - Added real `hits`, `misses`, `evictions` counters. `getStats()` returns accurate `hitRate`.
+     - Added `has(key)` method that checks existence without affecting LRU order.
+     - Added `resetStats()` method for test resets.
+     - Added `ContextCacheStats` interface export.
+     - Unbounded mode via `maxSize=0` (for backward compatibility with callers that don't need bounds).
+   - `agent-core/src/providers/modelRouter.ts` (+8):
+     - `generate()` now checks `result.toolCalls` after receiving the provider response. If the response contains tool calls (edit proposals, file writes, terminal commands), it is NOT cached. Only text-only (safe, read-only) responses are cached.
+     - This prevents stale workspace-state actions from being returned on subsequent identical prompts. The workspace state (files, tools, edits) is not part of the cache key, so caching action-producing responses is inherently unsafe.
+
+3. **Added regression tests (1 new file, 21 tests):**
+   - `agent-core/tests/contextCacheAndResponseCaching.test.ts`:
+     - ContextCache LRU eviction (5 tests): evicts LRU when full, promotes on get, promotes on re-set, never exceeds maxSize, unbounded mode.
+     - ContextCache TTL (2 tests): expired entries return null, expired entries removed on access.
+     - ContextCache has() (3 tests): returns true for present entries, false for absent, false and evicts for expired.
+     - ContextCache invalidate/clear/stats (5 tests): invalidate by pattern, clear empties cache, accurate hit/miss/eviction counters, resetStats, unbounded mode never evicts.
+     - ContextCache defaults (1 test): default constructor creates cache with sensible defaults.
+     - ModelRouter caching (4 tests): text-only response IS cached, response with tool calls is NOT cached, empty toolCalls array treated as safe, different messages produce different cache keys.
+
+4. **Validated:**
+   - 21/21 new contextCacheAndResponseCaching tests pass.
+   - 1110/1111 full unit tests pass (1 pre-existing failure in approvalPolicy.test.ts — wrong path to extension/package.json).
+   - `tsc --noEmit` clean in agent-core, extension, and webview.
+   - `npm run build` clean.
+   - `git diff --check` clean.
+
+### Validation
+
+| Check | Result | Notes |
+|---|---|---|
+| Focused tests (NC-025) | PASS | 21/21 contextCacheAndResponseCaching tests pass |
+| Context builder tests | PASS | 23/23 contextBuilder tests pass |
+| Model router integration | PASS | 8/8 orchestrator tests pass (uses ModelRouter) |
+| Full test suite | PASS | 1110/1111 tests pass (1 pre-existing approvalPolicy path issue) |
+| Type check (agent-core) | PASS | `tsc --noEmit` clean |
+| Type check (extension) | PASS | `tsc --noEmit` clean |
+| Type check (webview) | PASS | `tsc --noEmit` clean |
+| Build | PASS | Full `npm run build` clean |
+| No secrets in diff | PASS | No API keys, tokens, or secrets in the diff |
+| No test suppression | PASS | All existing tests retained and passing |
+
+### Remaining risks
+
+- The contextBuilder's workspace/fileTree/manifest/recentlyModified caches still use ContextCache with the new bounded LRU. These are read-only caches and are safe, but the 100-entry max may be slightly small for workspaces with many manifest types. The `maxSize=0` unbounded option is available if needed.
+- The ModelRouter `stream()` method does not use the response cache (streaming responses are not cached). This is correct behavior.
+- The cache key for `generate()` still includes only `messages` and `cacheableOptions` (excluding `signal`). It does not include workspace state, task ID, or tool schema version. This is acceptable now because action-producing responses are never cached. If caching were desired for other artifacts, the key would need to be expanded.
+
+### Files changed
+
+| File | Change | Lines |
+|---|---|---|
+| `agent-core/src/utils/contextCache.ts` | Rewrite with LRU eviction, max size, real hit/miss metrics, has(), resetStats() | +95 |
+| `agent-core/src/providers/modelRouter.ts` | Skip caching responses with toolCalls in generate() | +8 |
+| `agent-core/tests/contextCacheAndResponseCaching.test.ts` | New regression test file | +290 |
+

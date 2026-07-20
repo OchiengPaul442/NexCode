@@ -14,6 +14,12 @@ export {
   type FallbackCandidate,
   type CandidateFailure,
 } from "./providers/modelRouter";
+export {
+  ModelCapabilityRegistry,
+  getModelCapabilityRegistry,
+  resetModelCapabilityRegistry,
+  type ModelCapabilityEntry,
+} from "./utils/modelCapabilityRegistry";
 export { TaskQueue, classifyPromptIntent } from "./taskQueue";
 export { TaskQueueManager } from "./taskManager";
 export {

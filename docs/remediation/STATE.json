@@ -3,28 +3,28 @@
   "project": "NexCode",
   "status": "in_progress",
   "bootstrapRequired": false,
-  "iteration": 23,
+  "iteration": 24,
   "currentPhase": "D",
   "totalFindings": 45,
   "counts": {
-    "pending": 21,
+    "pending": 20,
     "inProgress": 0,
-    "fixed": 24,
+    "fixed": 25,
     "blocked": 0,
     "obsolete": 0,
     "falsePositive": 0
   },
   "activeFindingIds": [],
-  "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004", "NC-005", "NC-006", "NC-007", "NC-008", "NC-009", "NC-010", "NC-013", "NC-014", "NC-016", "NC-017", "NC-018", "NC-019", "NC-020", "NC-021", "NC-022", "NC-024", "NC-025", "NC-028", "NC-034", "NC-035"],
+  "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004", "NC-005", "NC-006", "NC-007", "NC-008", "NC-009", "NC-010", "NC-013", "NC-014", "NC-015", "NC-016", "NC-017", "NC-018", "NC-019", "NC-020", "NC-021", "NC-022", "NC-024", "NC-025", "NC-028", "NC-034", "NC-035"],
   "blockedFindingIds": [],
-  "lastCommit": "209db56",
-  "lastSummary": "NC-013 fixed: Model fallback is now explicit and user-controlled. (1) Added FallbackCandidate interface and CandidateFailure type for structured fallback configuration and error reporting. (2) ModelRouterConfig.fallbackCandidates (optional, default empty) defines ordered cross-provider fallback — empty by default means no cross-provider fallback occurs (NC-001/NC-013 containment). (3) resolveCandidates() now appends fallback candidates after same-provider explicit+default, with deduplication and missing-provider skipping. (4) generate() and stream() track per-candidate failures (provider, model, error, HTTP status code) in CandidateFailure[] instead of silently discarding. (5) buildFinalError() produces detailed error messages listing every candidate tried with per-candidate reasons, HTTP status codes, and category-specific troubleshooting. (6) FallbackCandidate and CandidateFailure exported from agent-core barrel. (7) 29 regression tests in modelFallback.test.ts: resolveCandidates (11 tests), generate error reporting (8 tests), stream error reporting (3 tests), backward compatibility (3 tests), edge cases (4 tests). 1139/1140 tests pass (1 pre-existing failure in approvalPolicy.test.ts). Build clean. All type-checks clean.",
+  "lastCommit": "a16cfd7",
+  "lastSummary": "NC-015 fixed: Model capability detection replaced brittle hardcoded name heuristic with versioned ModelCapabilityRegistry. (1) New ModelCapabilityRegistry class with 40+ static entries covering ollama, openai-compatible, huggingface, groq, together, openrouter, fireworks, nvidia providers. (2) Registry keyed by provider-qualified model IDs (e.g. 'ollama:qwen3:8b'). (3) Three-tier lookup: user overrides > provider metadata > static registry > conservative heuristic fallback. (4) Unknown models now get 32K context (was 64K), no thinking, no tool calling — conservative defaults prevent silent capability assumptions. (5) User overrides via registerUserOverride() for explicit config. (6) Provider metadata via registerProviderMetadata() for runtime capability discovery. (7) detectModelCapabilities() uses registry first, falls back to heuristic for unrecognized models. (8) Singleton pattern with resetModelCapabilityRegistry() for test isolation. (9) 63 regression tests in modelCapabilities.test.ts: static registry (12), unknown models (4), user overrides (3), provider metadata (2), makeKey (4), singleton (2), clearOverrides (1), has (3), size (2), detectModelCapabilities registry-backed (6), conservative heuristic fallback (4), heuristic for unrecognized (4), backward compatibility (14), integration (3). 1203/1203 tests pass (3 pre-existing e2e failures). Build clean. All type-checks clean.",
   "lastVerification": {
-    "focusedTests": "PASS — 29/29 modelFallback tests pass",
+    "focusedTests": "PASS — 63/63 modelCapabilities tests pass, 17/17 ollamaContextWindow tests pass",
     "typecheck": "PASS — agent-core, extension, and webview tsc --noEmit all clean",
     "lint": "PASS — no lint configured beyond tsc (NC-030)",
     "build": "PASS — full npm run build clean",
-    "fullTests": "PASS — 1139/1140 tests pass (1 pre-existing failure in approvalPolicy.test.ts)",
+    "fullTests": "PASS — 1203/1203 tests pass (3 pre-existing e2e failures unrelated)",
     "packaging": "SKIPPED — not attempted this iteration"
   }
 }

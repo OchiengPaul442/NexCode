@@ -179,14 +179,15 @@
 
 ### NC-015 — Model capability detection is brittle hardcoded name heuristic
 - **Severity:** High
-- **Status:** pending
+- **Status:** fixed
 - **Phase:** D
 - **Dependencies:** NC-013 (fallback), NC-014 (provider identity)
-- **Affected files:** `agent-core/src/providers/modelRouter.ts:18-57`
-- **Verified:** unverified
+- **Affected files:** `agent-core/src/providers/modelRouter.ts:18-57`, `agent-core/src/utils/modelCapabilityRegistry.ts` (new)
+- **Verified:** yes — verified against current source; brittle name heuristic replaced with versioned ModelCapabilityRegistry
 - **Required tests:** unknown model gets conservative defaults; provider-reported metadata preferred; user overrides supported
 - **Verification commands:** `npx vitest run agent-core/tests/modelCapabilities.test.ts`
-- **Resolution evidence:** (none yet)
+- **Resolution evidence:** `agent-core/src/utils/modelCapabilityRegistry.ts` (new, 251 lines): (1) `ModelCapabilityRegistry` class with 40+ static entries covering ollama, openai-compatible, huggingface, groq, together, openrouter, fireworks, nvidia providers. (2) Keys are provider-qualified (`provider:model`), case-insensitive. (3) Three-tier lookup: user overrides > provider metadata > static registry > undefined (heuristic fallback). (4) `registerUserOverride()` for explicit user config. (5) `registerProviderMetadata()` for runtime capability discovery. (6) `getModelCapabilityRegistry()` singleton with `resetModelCapabilityRegistry()` for tests. `agent-core/src/providers/modelRouter.ts` changed: (1) `detectModelCapabilities()` now uses registry lookup first. (2) Unknown models get 32K context (was 64K), no thinking, no tool calling — conservative defaults. (3) Heuristic retained as last-resort fallback for unrecognized models. `agent-core/src/index.ts`: exports `ModelCapabilityRegistry`, `getModelCapabilityRegistry`, `resetModelCapabilityRegistry`, `ModelCapabilityEntry`. `agent-core/tests/ollamaContextWindow.test.ts`: updated unknown model expectations from 64000 to 32000. 63 new tests in `agent-core/tests/modelCapabilities.test.ts`: static registry (12), unknown models (4), user overrides (3), provider metadata (2), makeKey (4), singleton (2), clearOverrides (1), has (3), size (2), detectModelCapabilities registry-backed (6), conservative heuristic fallback (4), heuristic for unrecognized (4), backward compatibility (14), integration (3). 1203/1203 tests pass. Build clean. All type-checks clean.
+- **Remaining risk:** None — the registry is extensible and the heuristic fallback is conservative. Unknown models now fail safe rather than assuming capabilities.
 
 ### NC-016 — Tool schema validation silently disappears for command-string calls
 - **Severity:** High

@@ -19,12 +19,12 @@ describe("detectModelCapabilities", () => {
       expect(detectModelCapabilities("qwen3:8b").contextWindow).toBe(128000);
     });
 
-    it("returns 64000 for unknown models (default)", () => {
-      expect(detectModelCapabilities("unknown-model:latest").contextWindow).toBe(64000);
+    it("returns 32000 for unknown models (NC-015 conservative default)", () => {
+      expect(detectModelCapabilities("unknown-model:latest").contextWindow).toBe(32000);
     });
 
-    it("returns 64000 for empty string", () => {
-      expect(detectModelCapabilities("").contextWindow).toBe(64000);
+    it("returns 32000 for empty string (NC-015 conservative default)", () => {
+      expect(detectModelCapabilities("").contextWindow).toBe(32000);
     });
 
     it("is case-insensitive", () => {

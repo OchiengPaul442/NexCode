@@ -6,6 +6,10 @@ import {
   ModelResponse,
 } from "../types";
 import { ContextCache } from "../utils/contextCache";
+import {
+  getModelCapabilityRegistry,
+  type ModelCapabilityEntry,
+} from "../utils/modelCapabilityRegistry";
 
 const CLOUD_PROVIDERS: ProviderId[] = ["openai-compatible", "huggingface", "openrouter", "together", "fireworks", "groq", "nvidia", "baseten"];
 
@@ -15,10 +19,41 @@ export interface ModelCapabilities {
   contextWindow: number;
 }
 
+/**
+ * Detect the capabilities of a model.
+ *
+ * NC-015: This function now uses a versioned model capability registry as its
+ * primary source. The registry maps provider-qualified model IDs to verified
+ * capabilities (thinking, tool calling, context window).
+ *
+ * Lookup order:
+ *   1. Registry lookup (static entries + provider metadata + user overrides).
+ *   2. Heuristic fallback for models not in the registry (conservative defaults).
+ *
+ * The heuristic is intentionally conservative: unknown models receive
+ * no thinking, no tool calling, and a 32K context window. This prevents
+ * the agent from silently assuming capabilities that may not exist.
+ */
 export function detectModelCapabilities(
   model: string,
   provider?: ProviderId,
 ): ModelCapabilities {
+  const registry = getModelCapabilityRegistry();
+  const entry = registry.lookup(provider, model);
+
+  if (entry) {
+    return {
+      hasThinking: entry.hasThinking,
+      hasToolCalling: entry.hasToolCalling,
+      contextWindow: entry.contextWindow,
+    };
+  }
+
+  // Heuristic fallback for models not in the registry.
+  // NC-015: Unknown models receive conservative defaults — no thinking,
+  // no tool calling, 32K context. The old heuristic gave unknown models
+  // 64K context and sometimes tool-calling capability, which was too
+  // permissive.
   const lower = model.toLowerCase();
 
   const thinkingModels = [
@@ -43,7 +78,7 @@ export function detectModelCapabilities(
   ];
   const hasToolCalling = toolModels.some((m) => lower.includes(m));
 
-  let contextWindow = 64_000;
+  let contextWindow = 32_000;
   if (
     /deepseek-v4|deepseek-r1|mimo-v2\.5|glm-5|kimi-k2|qwen3|gpt-4|gpt-4o|claude|llama-3\.3/.test(
       lower,

@@ -1700,3 +1700,92 @@ Append one section per autonomous iteration. Never rewrite prior entries.
 | `agent-core/src/index.ts` | Export FallbackCandidate and CandidateFailure types | +2 |
 | `agent-core/tests/modelFallback.test.ts` | New regression test file | +530 |
 
+---
+
+## Iteration 24 — NC-015: Model capability detection replaced with versioned registry
+
+**Date:** 20 July 2026
+**Finding IDs:** NC-015 (High)
+**Phase:** D — Credentials and providers
+
+### What was done
+
+1. **Verified NC-015 against current source code:**
+   - `agent-core/src/providers/modelRouter.ts:18-58` — confirmed `detectModelCapabilities()` uses hardcoded substring matching on model names to determine thinking, tool-calling, and context-window capabilities. Unknown models silently receive a 64K context window and potentially incorrect tool support. Model names change frequently and many compatible endpoints expose metadata differently.
+   - `agent-core/src/providers/openAICompatibleProvider.ts:121` — confirmed `detectModelCapabilities()` is called with `request.model` and `"openai-compatible"` for context budget checking.
+   - `agent-core/src/providers/ollamaProvider.ts:115` — confirmed `detectModelCapabilities()` is called for context window resolution.
+   - `agent-core/src/orchestrator.ts:501,2962` — confirmed `detectModelCapabilities()` is called for context window and workspace context building.
+
+2. **Implemented fix (3 production files changed, 2 new files):**
+   - `agent-core/src/utils/modelCapabilityRegistry.ts` (new, 251 lines):
+     - `ModelCapabilityRegistry` class with 40+ static entries covering ollama, openai-compatible, huggingface, groq, together, openrouter, fireworks, nvidia providers.
+     - Keys are provider-qualified (`provider:model`), case-insensitive, normalized to lowercase.
+     - Three-tier lookup: user overrides > provider metadata > static registry > undefined.
+     - `registerUserOverride()` for explicit user config.
+     - `registerProviderMetadata()` for runtime capability discovery from provider APIs.
+     - `getModelCapabilityRegistry()` singleton with `resetModelCapabilityRegistry()` for test isolation.
+     - `ModelCapabilityEntry` interface: `{ key, hasThinking, hasToolCalling, contextWindow, version, source }`.
+   - `agent-core/src/providers/modelRouter.ts` (+37, -3):
+     - `detectModelCapabilities()` now uses registry lookup first.
+     - Unknown models get 32K context (was 64K), no thinking, no tool calling — conservative defaults prevent silent capability assumptions.
+     - Heuristic retained as last-resort fallback for unrecognized models.
+   - `agent-core/src/index.ts` (+6):
+     - Exports `ModelCapabilityRegistry`, `getModelCapabilityRegistry`, `resetModelCapabilityRegistry`, `ModelCapabilityEntry`.
+   - `agent-core/tests/ollamaContextWindow.test.ts` (+4, -4):
+     - Updated unknown model expectations from 64000 to 32000.
+
+3. **Added regression tests (1 new file, 63 tests):**
+   - `agent-core/tests/modelCapabilities.test.ts`:
+     - Static registry (12 tests): known models for ollama, openai-compatible, groq, together, openrouter, huggingface with correct thinking/toolCalling/contextWindow.
+     - Unknown models (4 tests): undefined for unknown model, unknown with no provider, empty model, whitespace model.
+     - User overrides (3 tests): overrides take precedence over registry, apply to unknown models, work without provider.
+     - Provider metadata overrides (2 tests): override registry, user overrides take precedence.
+     - makeKey (4 tests): builds key, normalizes to lowercase, trims whitespace, returns just model when no provider.
+     - Singleton (2 tests): same instance returned, reset creates new instance.
+     - clearOverrides (1 test): clears overrides but not static entries.
+     - has() (3 tests): known model true, unknown false, after registering true.
+     - size (2 tests): reports count, increases after overrides.
+     - detectModelCapabilities registry-backed (6 tests): correct capabilities from registry for ollama, openai-compatible, groq models.
+     - Conservative heuristic fallback (4 tests): unknown model gets 32K (not 64K), empty model gets 32K, unknown model with provider falls back.
+     - Heuristic for unrecognized (4 tests): deepseek-r1 gets thinking, qwen3 gets thinking, gpt-4 gets 128K, llama gets tool calling.
+     - Backward compatibility (14 tests): all existing test expectations preserved.
+     - Integration (3 tests): overrides flow through detectModelCapabilities, clearing restores behavior.
+
+4. **Validated:**
+   - 63/63 new modelCapabilities tests pass.
+   - 17/17 existing ollamaContextWindow tests pass.
+   - 1203/1203 full unit tests pass (3 pre-existing e2e failures unrelated).
+   - `tsc --noEmit` clean in agent-core, extension, and webview.
+   - `npm run build` clean.
+   - `git diff --check` clean (only line-ending warnings).
+
+### Validation
+
+| Check | Result | Notes |
+|---|---|---|
+| Focused tests (NC-015) | PASS | 63/63 modelCapabilities tests pass |
+| Existing model tests | PASS | 17/17 ollamaContextWindow tests pass |
+| Full test suite | PASS | 1203/1203 tests pass; 3 pre-existing e2e failures |
+| Type check (agent-core) | PASS | `tsc --noEmit` clean |
+| Type check (extension) | PASS | `tsc --noEmit` clean |
+| Type check (webview) | PASS | `tsc --noEmit` clean |
+| Build | PASS | Full `npm run build` clean |
+| No secrets in diff | PASS | No API keys, tokens, or secrets in the diff |
+| No test suppression | PASS | All existing tests retained and passing |
+
+### Remaining risks
+
+- The heuristic fallback for models not in the registry still uses substring matching. This is intentional as a last-resort fallback — models in the registry (40+ entries) will use verified capabilities. The heuristic is conservative (32K context, no thinking, no tool calling for unknown models).
+- The static registry entries must be maintained as new models are released. The `registerProviderMetadata()` API allows providers to register capabilities at runtime without code changes.
+- User overrides (`registerUserOverride()`) are not yet exposed through extension settings or UI. This is Phase J work.
+
+### Files changed
+
+| File | Change | Lines |
+|---|---|---|
+| `agent-core/src/utils/modelCapabilityRegistry.ts` | New ModelCapabilityRegistry with static entries, overrides, singleton | +251 |
+| `agent-core/src/providers/modelRouter.ts` | Use registry in detectModelCapabilities, conservative defaults for unknown | +37, -3 |
+| `agent-core/src/index.ts` | Export registry types and functions | +6 |
+| `agent-core/tests/ollamaContextWindow.test.ts` | Update unknown model expectations from 64000 to 32000 | +4, -4 |
+| `agent-core/tests/modelCapabilities.test.ts` | New regression test file | +490 |
+

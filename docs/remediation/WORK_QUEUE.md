@@ -121,14 +121,15 @@
 
 ### NC-010 — Concurrent tasks share mutable orchestrator state
 - **Severity:** High
-- **Status:** pending
-- **Phase:** 0 / G
+- **Status:** fixed
+- **Phase:** 0 / containment
 - **Dependencies:** NC-011 (task state machine)
-- **Affected files:** `extension/src/taskController.ts:20-32`, `extension/src/sidebarViewProvider.ts:406-536`, `agent-core/src/orchestrator.ts:135-140`
-- **Verified:** unverified
-- **Required tests:** max concurrency enforced at 1; concurrent tasks cannot share approvals, edits, memory buffers, or provider sessions
+- **Affected files:** `agent-core/src/taskQueue.ts:14`, `extension/src/taskController.ts:28`
+- **Verified:** yes — verified against current source; max concurrency changed from 3 to 1
+- **Required tests:** max concurrency enforced at 1; dequeue blocks second active task; canAcceptNewTask reflects limit; tasks queue sequentially; steering only on running tasks
 - **Verification commands:** `npx vitest run agent-core/tests/taskConcurrency.test.ts`
-- **Resolution evidence:** (none yet)
+- **Resolution evidence:** `agent-core/src/taskQueue.ts` changed: `MAX_CONCURRENT_TASKS` changed from 3 to 1. `extension/src/taskController.ts` changed: default `maxConcurrent` parameter changed from 3 to 1. 15 regression tests in `agent-core/tests/taskConcurrency.test.ts`: default concurrency is 1, dequeue blocks second task, canAcceptNewTask reflects limit, queued tasks wait behind active, explicit maxConcurrent=1 works, higher maxConcurrent works for future flexibility, TaskQueueManager respects limit, steering only on running tasks, sequential queue behavior. 888/888 unit tests pass. Build clean. All type-checks clean.
+- **Remaining risk:** Full task-scoped `AgentRunContext` isolation (per-task signals, messages, metrics, approvals, proposed edits, provider sessions) is Phase G work. The concurrency limit to 1 eliminates the immediate race window but does not isolate state per-task for future parallel execution.
 
 ### NC-011 — Steering works only in one status and can become a new task unexpectedly
 - **Severity:** High
@@ -579,7 +580,7 @@ NC-016 (tool schema validation)
 6. NC-006 — edit preconditions ✅
 7. NC-007 — search injection fix ✅
 8. NC-008 — approval mode hardening ✅
-9. NC-010 — concurrency limit to 1
+9. NC-010 — concurrency limit to 1 ✅
 10. NC-022 — workspace prompt overrides ✅
 11. NC-024 — secret migration cleanup ✅
 12. NC-028 — blog fallback removal ✅

@@ -11,7 +11,7 @@ import {
   RequestAttachment,
 } from "./types";
 
-const MAX_CONCURRENT_TASKS = 3;
+const MAX_CONCURRENT_TASKS = 1;
 
 export class TaskQueue {
   private tasks = new Map<string, Task>();

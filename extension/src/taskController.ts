@@ -25,7 +25,7 @@ export class TaskController {
 
   constructor(
     postMessage: (message: unknown) => void,
-    maxConcurrent: number = 3,
+    maxConcurrent: number = 1,
   ) {
     this.postMessage = postMessage;
     this.taskManager = new TaskQueueManager({ maxConcurrent });

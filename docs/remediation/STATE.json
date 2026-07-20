@@ -3,28 +3,28 @@
   "project": "NexCode",
   "status": "in_progress",
   "bootstrapRequired": false,
-  "iteration": 11,
+  "iteration": 12,
   "currentPhase": 0,
   "totalFindings": 45,
   "counts": {
-    "pending": 34,
+    "pending": 33,
     "inProgress": 0,
-    "fixed": 11,
+    "fixed": 12,
     "blocked": 0,
     "obsolete": 0,
     "falsePositive": 0
   },
   "activeFindingIds": [],
-  "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004", "NC-005", "NC-006", "NC-007", "NC-008", "NC-022", "NC-024", "NC-028"],
+  "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004", "NC-005", "NC-006", "NC-007", "NC-008", "NC-010", "NC-022", "NC-024", "NC-028"],
   "blockedFindingIds": [],
-  "lastCommit": "3765994",
-  "lastSummary": "NC-028 fixed: Removed hardcoded blog landing page fallback from orchestrator. (1) Removed shouldUseBlogLandingFallback() private method — checked if instruction mentions blog/homepage/landing page AND file is TSX/JSX AND generated text lacks blog keywords. (2) Removed createBlogLandingPageFallback() private method — hardcoded Tailwind blog homepage component. (3) Removed calling code that replaced model output with the hardcoded fallback. Total: 76 lines deleted from agent-core/src/orchestrator.ts. 4 regression tests in agent-core/tests/blogFallbackRemoval.test.ts: methods no longer exist on orchestrator class, orchestrator class source does not contain hardcoded blog strings. 873/873 unit tests pass. Build clean. All type-checks clean.",
+  "lastCommit": "d44181c",
+  "lastSummary": "NC-010 fixed: Task concurrency limited to 1 to prevent shared mutable orchestrator state races. (1) Changed MAX_CONCURRENT_TASKS from 3 to 1 in agent-core/src/taskQueue.ts. (2) Changed TaskController default maxConcurrent from 3 to 1 in extension/src/taskController.ts. 15 regression tests in agent-core/tests/taskConcurrency.test.ts: default concurrency is 1, dequeue blocks second task, canAcceptNewTask reflects limit, tasks queue sequentially, steering only on running tasks, TaskQueueManager respects limit. 888/888 unit tests pass. Build clean. All type-checks clean.",
   "lastVerification": {
-    "focusedTests": "PASS — 4/4 blogFallbackRemoval tests pass, 8/8 orchestrator tests pass",
+    "focusedTests": "PASS — 15/15 taskConcurrency tests pass",
     "typecheck": "PASS — agent-core, extension, and webview tsc --noEmit all clean",
     "lint": "PASS — no lint configured beyond tsc (NC-030)",
     "build": "PASS — full npm run build clean",
-    "fullTests": "PASS — 873/873 unit tests pass (3 pre-existing e2e failures unrelated)",
+    "fullTests": "PASS — 888/888 unit tests pass (3 pre-existing e2e failures unrelated)",
     "packaging": "SKIPPED — not attempted this iteration"
   }
 }

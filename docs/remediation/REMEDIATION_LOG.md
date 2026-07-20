@@ -862,3 +862,75 @@ Append one section per autonomous iteration. Never rewrite prior entries.
 | `agent-core/src/orchestrator.ts` | Remove shouldUseBlogLandingFallback, createBlogLandingPageFallback, and calling code | -76 |
 | `agent-core/tests/blogFallbackRemoval.test.ts` | New regression test file | +82 |
 
+---
+
+## Iteration 12 — NC-010: Limit task concurrency to 1
+
+**Date:** 20 July 2026
+**Finding IDs:** NC-010 (High)
+**Phase:** 0 — Containment patch
+
+### What was done
+
+1. **Verified NC-010 against current source code:**
+   - `agent-core/src/taskQueue.ts:14` — confirmed `MAX_CONCURRENT_TASKS = 3`, allowing up to 3 tasks to be active simultaneously.
+   - `extension/src/taskController.ts:28` — confirmed `maxConcurrent: number = 3` default parameter.
+   - `agent-core/src/taskManager.ts:32` — confirmed `TaskQueueManager` passes `options.maxConcurrent` to `TaskQueue`.
+   - `extension/src/sidebarViewProvider.ts:219` — confirmed `TaskController` is instantiated without specifying `maxConcurrent` (uses default 3).
+
+2. **Implemented containment fix (2 production files changed):**
+   - `agent-core/src/taskQueue.ts` (+1, -1):
+     - Changed `MAX_CONCURRENT_TASKS` from `3` to `1`.
+   - `extension/src/taskController.ts` (+1, -1):
+     - Changed default `maxConcurrent` parameter from `3` to `1`.
+
+3. **Added regression tests (1 new file, 15 tests):**
+   - `agent-core/tests/taskConcurrency.test.ts`:
+     - Default concurrency is 1: queue only allows one dequeue when two tasks exist.
+     - Dequeue returns undefined when one task already active.
+     - canAcceptNewTask returns false when at limit.
+     - canAcceptNewTask returns true when no active tasks.
+     - canAcceptNewTask returns true after active task completes.
+     - getActiveCount returns at most 1.
+     - Queued tasks wait behind active task.
+     - Explicit maxConcurrent=1 behaves same as default.
+     - maxConcurrent=3 allows 3 concurrent tasks (future flexibility).
+     - TaskQueueManager default maxConcurrent is 1.
+     - TaskQueueManager canAcceptNewTask reflects limit.
+     - TaskQueueManager can accept new task after completion.
+     - No two tasks active simultaneously with default concurrency.
+     - Steering only works on running tasks, not queued.
+     - Two task submissions queue sequentially.
+
+4. **Validated:**
+   - 15/15 new taskConcurrency tests pass.
+   - 888/888 full unit tests pass (3 pre-existing e2e failures unrelated).
+   - `tsc --noEmit` clean in agent-core, extension, and webview.
+   - `npm run build` clean.
+   - `git diff --check` clean (only line-ending warnings).
+
+### Validation
+
+| Check | Result | Notes |
+|---|---|---|
+| Focused tests (NC-010) | PASS | 15/15 taskConcurrency tests pass |
+| Full test suite | PASS | 888/888 unit tests pass; 3 pre-existing e2e failures |
+| Type check (agent-core) | PASS | `tsc --noEmit` clean |
+| Type check (extension) | PASS | `tsc --noEmit` clean |
+| Type check (webview) | PASS | `tsc --noEmit` clean |
+| Build | PASS | Full `npm run build` clean |
+| No secrets in diff | PASS | No API keys, tokens, or secrets in the diff |
+| No test suppression | PASS | All existing tests retained and passing |
+
+### Remaining risks
+
+- Full task-scoped `AgentRunContext` isolation (per-task signals, messages, metrics, approvals, proposed edits, provider sessions) is Phase G work. The concurrency limit to 1 eliminates the immediate race window but does not isolate state per-task for future parallel execution.
+
+### Files changed
+
+| File | Change | Lines |
+|---|---|---|
+| `agent-core/src/taskQueue.ts` | Change MAX_CONCURRENT_TASKS from 3 to 1 | +1, -1 |
+| `extension/src/taskController.ts` | Change default maxConcurrent from 3 to 1 | +1, -1 |
+| `agent-core/tests/taskConcurrency.test.ts` | New regression test file | +230 |
+

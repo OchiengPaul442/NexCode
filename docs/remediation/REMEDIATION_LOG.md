@@ -653,3 +653,77 @@ Append one section per autonomous iteration. Never rewrite prior entries.
 | `agent-core/src/utils/webviewMessageValidation.ts` | Add allowWorkspacePrompts to allowed keys | +1 |
 | `agent-core/tests/workspacePromptOverride.test.ts` | New regression test file | +264 |
 
+---
+
+## Iteration 8 — NC-024: Secret migration deletes plaintext settings
+
+**Date:** 20 July 2026
+**Finding IDs:** NC-024 (High)
+**Phase:** 0 — Containment patch
+
+### What was done
+
+1. **Verified NC-024 against current source code:**
+   - `extension/src/secretService.ts:16-34` — confirmed `migrateFromSettings()` copies plaintext values from workspace configuration (`openAIApiKey`, `searchApiKey`, `tavilyApiKey`) into `SecretStorage`, but never removes the plaintext values from the config. The migration flag (`nexcode.secrets.migrated`) is set after copying, preventing retry on subsequent activations.
+   - `extension/src/extension.ts:10` — confirmed `secretService.migrateFromSettings()` is called during activation.
+   - No `config.update(key, undefined)` pattern exists anywhere in the codebase for removing settings.
+
+2. **Implemented containment fix (1 production file changed):**
+   - `extension/src/secretService.ts` (+66, -7):
+     - Removed early-return when migration flag is set — `migrateFromSettings()` now always runs cleanup to handle pre-fix remnants.
+     - After storing each secret via `secretStorage.store()`, calls `config.update(key, undefined, ConfigurationTarget.Workspace)` to remove the plaintext value from workspace settings.
+     - Added `cleanupPlaintextRemnants()` private method: checks for any remaining plaintext keys and removes them. Called when the primary pass finds nothing to migrate (idempotent path).
+     - Added `hasPlaintextRemnants()` public method: returns `true` if any legacy plaintext secret values still exist in config. Useful for migration health checks and UI notices.
+     - Added `LEGACY_PLAINTEXT_KEYS` exported constant: the set of workspace config keys that may hold legacy plaintext secrets.
+
+3. **Added regression tests (1 new file, 17 tests):**
+   - `agent-core/tests/secretMigration.test.ts`:
+     - Migration logic: copies plaintext to SecretStorage (3 keys).
+     - Migration logic: removes plaintext from config after copying.
+     - Migration logic: sets migration flag after completion.
+     - Migration logic: does not migrate empty/whitespace values.
+     - Migration logic: handles no plaintext gracefully.
+     - Migration logic: idempotent — running twice is safe (no re-migration).
+     - Migration logic: cleans up plaintext remnants even if migration was previously flagged (pre-fix behavior recovery).
+     - hasPlaintextRemnants: returns true when plaintext exists.
+     - hasPlaintextRemnants: returns false when no plaintext.
+     - hasPlaintextRemnants: returns false for empty/whitespace.
+     - hasPlaintextRemnants: returns true if any one key has plaintext.
+     - Canary secret safety: canary does not survive into config.
+     - Canary secret safety: serialized post-migration config has no canary.
+     - LEGACY_PLAINTEXT_KEYS coverage: all expected keys present.
+     - SECRET_STORAGE_KEYS mapping: correct SecretStorage names.
+     - Sequential ordering: store comes before update for the same key.
+     - Partial migration recovery: cleans up remaining keys if some already cleaned.
+
+4. **Validated:**
+   - 17/17 new secretMigration tests pass.
+   - 835/835 full unit tests pass (3 pre-existing e2e failures unrelated).
+   - `tsc --noEmit` clean in agent-core, extension, and webview.
+   - `npm run build` clean.
+   - `git diff --check` clean (only line-ending warnings).
+
+### Validation
+
+| Check | Result | Notes |
+|---|---|---|
+| Focused tests (NC-024) | PASS | 17/17 secretMigration tests pass |
+| Full test suite | PASS | 835/835 unit tests pass; 3 pre-existing e2e failures |
+| Type check (agent-core) | PASS | `tsc --noEmit` clean |
+| Type check (extension) | PASS | `tsc --noEmit` clean |
+| Type check (webview) | PASS | `tsc --noEmit` clean |
+| Build | PASS | Full `npm run build` clean |
+| No secrets in diff | PASS | No API keys, tokens, or secrets in the diff |
+| No test suppression | PASS | All existing tests retained and passing |
+
+### Remaining risks
+
+- None. The migration is now idempotent and always cleans up plaintext. The `hasPlaintextRemnants()` method can be used by the UI to warn users if plaintext secrets are detected.
+
+### Files changed
+
+| File | Change | Lines |
+|---|---|---|
+| `extension/src/secretService.ts` | Add plaintext removal, idempotent cleanup, hasPlaintextRemnants, LEGACY_PLAINTEXT_KEYS | +66, -7 |
+| `agent-core/tests/secretMigration.test.ts` | New regression test file | +290 |
+

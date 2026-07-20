@@ -275,14 +275,15 @@
 
 ### NC-024 — Secret migration copies but does not delete plaintext settings
 - **Severity:** High
-- **Status:** pending
+- **Status:** fixed
 - **Phase:** 0
 - **Dependencies:** NC-003 (webview secrets)
 - **Affected files:** `extension/src/secretService.ts:16-34`
-- **Verified:** unverified
+- **Verified:** yes — verified against current source; migration now removes plaintext after copying to SecretStorage
 - **Required tests:** legacy value removed from config after migration; migration idempotent; one-time notice if plaintext remnants found
 - **Verification commands:** `npx vitest run agent-core/tests/secretMigration.test.ts`
-- **Resolution evidence:** (none yet)
+- **Resolution evidence:** `extension/src/secretService.ts` changed: (1) `migrateFromSettings()` removed early-return on migration flag — now always runs cleanup. (2) After storing each secret, calls `config.update(key, undefined, ConfigurationTarget.Workspace)` to remove plaintext from workspace settings. (3) Idempotent: `cleanupPlaintextRemnants()` checks for any remaining plaintext and removes it even on re-runs. (4) `hasPlaintextRemnants()` public method for health checks. (5) `LEGACY_PLAINTEXT_KEYS` exported for test coverage. (6) 17 regression tests in `agent-core/tests/secretMigration.test.ts`: copy+delete, empty values, idempotent runs, canary secrets, sequential store-before-delete, partial recovery, SECRET_STORAGE_KEYS mapping. 835/835 tests pass. Build clean. All type-checks clean.
+- **Remaining risk:** None — the migration is now idempotent and always cleans up plaintext.
 
 ### NC-025 — Response cache can return stale model actions and grows without true bound
 - **Severity:** High
@@ -578,7 +579,7 @@ NC-016 (tool schema validation)
 8. NC-008 — approval mode hardening
 9. NC-010 — concurrency limit to 1
 10. NC-022 — workspace prompt overrides ✅
-11. NC-024 — secret migration cleanup
+11. NC-024 — secret migration cleanup ✅
 12. NC-028 — blog fallback removal
 13. NC-009 — MCP marked experimental
 

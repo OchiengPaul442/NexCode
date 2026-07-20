@@ -3,28 +3,28 @@
   "project": "NexCode",
   "status": "in_progress",
   "bootstrapRequired": false,
-  "iteration": 8,
+  "iteration": 9,
   "currentPhase": 0,
   "totalFindings": 45,
   "counts": {
-    "pending": 37,
+    "pending": 36,
     "inProgress": 0,
-    "fixed": 8,
+    "fixed": 9,
     "blocked": 0,
     "obsolete": 0,
     "falsePositive": 0
   },
   "activeFindingIds": [],
-  "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004", "NC-005", "NC-007", "NC-008", "NC-022"],
+  "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004", "NC-005", "NC-007", "NC-008", "NC-022", "NC-024"],
   "blockedFindingIds": [],
-  "lastCommit": "ab0ddf9",
-  "lastSummary": "NC-022 fixed: Workspace prompt override containment. (1) PromptStore constructor accepts PromptStoreOptions with allowWorkspacePrompts (default false). String constructor backward-compat preserved. (2) getPrompt() only reads from filesystem when allowWorkspacePrompts=true. (3) RuntimeConfig and NexcodeOrchestratorOptions include allowWorkspacePrompts. (4) sidebarViewProvider reads config + requires isWorkspaceTrusted() — both must be true. (5) package.json: added nexcodeKiboko.allowWorkspacePrompts (boolean, default false) to settings and restrictedConfigurations. (6) webviewMessageValidation: added allowWorkspacePrompts to ALLOWED_SETTING_KEYS. (7) 19 regression tests. 818/818 tests pass. Build clean. All type-checks clean.",
+  "lastCommit": "pending",
+  "lastSummary": "NC-024 fixed: Secret migration now deletes plaintext settings after copying to SecretStorage. (1) migrateFromSettings() removed early-return on migration flag — now always runs cleanup. (2) After storing each secret, calls config.update(key, undefined) to remove plaintext from workspace settings. (3) Idempotent: if no plaintext was found in primary pass, cleanupPlaintextRemnants() checks for any remaining plaintext and removes it. (4) hasPlaintextRemnants() public method for health checks. (5) LEGACY_PLAINTEXT_KEYS exported for test coverage. (6) 17 regression tests in agent-core/tests/secretMigration.test.ts covering: copy+delete, idempotent runs, canary secrets, sequential store-before-delete, partial recovery. 835/835 tests pass. Build clean. All type-checks clean.",
   "lastVerification": {
-    "focusedTests": "PASS — 19/19 workspacePromptOverride tests pass",
+    "focusedTests": "PASS — 17/17 secretMigration tests pass",
     "typecheck": "PASS — agent-core, extension, and webview tsc --noEmit all clean",
     "lint": "PASS — no lint configured beyond tsc (NC-030)",
     "build": "PASS — full npm run build clean",
-    "fullTests": "PASS — 818/818 unit tests pass (3 pre-existing e2e failures unrelated)",
+    "fullTests": "PASS — 835/835 unit tests pass (3 pre-existing e2e failures unrelated)",
     "packaging": "SKIPPED — not attempted this iteration"
   }
 }

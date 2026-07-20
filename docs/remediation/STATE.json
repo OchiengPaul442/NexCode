@@ -17,7 +17,7 @@
   "activeFindingIds": [],
   "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004", "NC-005", "NC-007", "NC-008", "NC-022"],
   "blockedFindingIds": [],
-  "lastCommit": "TBD",
+  "lastCommit": "ab0ddf9",
   "lastSummary": "NC-022 fixed: Workspace prompt override containment. (1) PromptStore constructor accepts PromptStoreOptions with allowWorkspacePrompts (default false). String constructor backward-compat preserved. (2) getPrompt() only reads from filesystem when allowWorkspacePrompts=true. (3) RuntimeConfig and NexcodeOrchestratorOptions include allowWorkspacePrompts. (4) sidebarViewProvider reads config + requires isWorkspaceTrusted() — both must be true. (5) package.json: added nexcodeKiboko.allowWorkspacePrompts (boolean, default false) to settings and restrictedConfigurations. (6) webviewMessageValidation: added allowWorkspacePrompts to ALLOWED_SETTING_KEYS. (7) 19 regression tests. 818/818 tests pass. Build clean. All type-checks clean.",
   "lastVerification": {
     "focusedTests": "PASS — 19/19 workspacePromptOverride tests pass",

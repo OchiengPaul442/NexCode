@@ -1,31 +1,31 @@
 {
   "schemaVersion": 1,
   "project": "NexCode",
-  "status": "in_progress",
+  "status": "complete",
   "bootstrapRequired": false,
-  "iteration": 40,
+  "iteration": 41,
   "currentPhase": "J",
   "totalFindings": 45,
   "counts": {
-    "pending": 2,
+    "pending": 0,
     "inProgress": 0,
-    "fixed": 43,
+    "fixed": 45,
     "blocked": 0,
     "obsolete": 0,
     "falsePositive": 0
   },
   "activeFindingIds": [],
-  "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004", "NC-005", "NC-006", "NC-007", "NC-008", "NC-009", "NC-010", "NC-011", "NC-012", "NC-013", "NC-014", "NC-015", "NC-016", "NC-017", "NC-018", "NC-019", "NC-020", "NC-021", "NC-022", "NC-023", "NC-024", "NC-025", "NC-026", "NC-027", "NC-028", "NC-029", "NC-030", "NC-031", "NC-032", "NC-033", "NC-034", "NC-035", "NC-038", "NC-039", "NC-040", "NC-041", "NC-042", "NC-043", "NC-044", "NC-045"],
+  "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004", "NC-005", "NC-006", "NC-007", "NC-008", "NC-009", "NC-010", "NC-011", "NC-012", "NC-013", "NC-014", "NC-015", "NC-016", "NC-017", "NC-018", "NC-019", "NC-020", "NC-021", "NC-022", "NC-023", "NC-024", "NC-025", "NC-026", "NC-027", "NC-028", "NC-029", "NC-030", "NC-031", "NC-032", "NC-033", "NC-034", "NC-035", "NC-036", "NC-037", "NC-038", "NC-039", "NC-040", "NC-041", "NC-042", "NC-043", "NC-044", "NC-045"],
   "blockedFindingIds": [],
   "lastCommit": "pending",
-  "lastSummary": "NC-032 fixed: No VS Code Extension Host integration tests. (1) Installed @vscode/test-electron, @vscode/test-cli, mocha, @types/mocha as devDependencies in extension/. (2) Created extension/src/test/runTest.ts — downloads VS Code and launches Extension Development Host with test runner. (3) Created extension/src/test/suite/index.ts — Mocha suite loader with TDD UI. (4) Created extension/src/test/suite/secretStorage.test.ts — 13 tests validating manifest schema (NC-035, NC-008, NC-022, NC-042, NC-002, NC-003): toolApproval enum, default values, capabilities.untrustedWorkspaces, restrictedConfigurations, no secrets in manifest, temperature range. (5) Created extension/src/test/suite/workspaceTrust.test.ts — 6 tests validating trust declaration (NC-002), restricted configuration keys, bypass removal (NC-008), allowWorkspacePrompts default (NC-022), read-only settings unrestricted. (6) Created extension/src/test/suite/editReview.test.ts — 17 tests: path traversal/containment (NC-006, NC-020), stale content detection (NC-006), content hash determinism (NC-006), webview message validation (NC-005), setting key allowlist (NC-003), VS Code WorkspaceEdit application, multi-root folder info (NC-023). (7) Created extension/src/test/suite/extensionActivation.test.ts — 10 tests: activation events, command registration, webview view, activity bar, engine version, entry point, semver, dependencies, settings schema completeness (NC-035), generated artifacts gitignore (NC-038). (8) Created extension/tsconfig.test.json — separate TypeScript config for test files with mocha types. (9) Created extension/.vscode-test.mjs — @vscode/test-cli configuration. (10) Updated extension/tsconfig.json to exclude src/test from main compilation. (11) Added build:test, test:integration, test:integration:cli scripts to extension/package.json. (12) 46/46 integration tests pass in VS Code Extension Development Host. (13) 1911/1911 unit tests pass. (14) Build clean. All type-checks clean.",
+  "lastSummary": "NC-036 and NC-037 fixed: Monolithic main.tsx split and bundle budget. (1) extension/webview/src/types.ts (341 lines): all TypeScript types/interfaces extracted from main.tsx. (2) extension/webview/src/utils.ts (489 lines): all pure utility functions extracted. (3) extension/webview/src/store.ts (726 lines): Zustand store extracted. (4) main.tsx reduced from 5648 to 3999 lines (29% reduction). (5) No circular dependencies between extracted modules. (6) Bundle size: main.js 876 KB (under 920 KB budget), main.css 97 KB (under 120 KB budget). (7) 41 regression tests in agent-core/tests/webviewSplit.test.ts. (8) 1952/1952 unit tests pass. Build clean. All type-checks clean. ALL 45 FINDINGS NOW FIXED.",
   "lastVerification": {
-    "focusedTests": "PASS — 46/46 integration tests pass in VS Code Extension Development Host",
-    "unitTests": "PASS — 1911/1911 unit tests pass",
-    "typecheck": "PASS — agent-core, extension, extension test, webview tsc --noEmit clean",
+    "focusedTests": "PASS — 41/41 webviewSplit tests pass",
+    "unitTests": "PASS — 1952/1952 unit tests pass",
+    "typecheck": "PASS — agent-core, extension, webview tsc --noEmit clean",
     "lint": "PASS — eslint config validated",
-    "build": "PASS — full npm run build clean",
-    "fullTests": "PASS — 1911/1911 unit tests + 46/46 integration tests pass",
+    "build": "PASS — full npm run build clean (main.js 876 KB, main.css 97 KB)",
+    "fullTests": "PASS — 1952/1952 unit tests pass",
     "packaging": "SKIPPED — not attempted this iteration"
   }
 }

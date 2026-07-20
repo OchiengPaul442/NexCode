@@ -238,6 +238,9 @@
     "build": "npm run build:webview && npm run build:node",
     "watch": "npm run build:webview && esbuild src/extension.ts --bundle --platform=node --target=node18 --format=cjs --outfile=out/extension.js --external:vscode --watch",
     "lint": "tsc -p . --noEmit",
+    "build:test": "tsc -p tsconfig.test.json",
+    "test:integration": "npm run build:test && node out/test/runTest.js",
+    "test:integration:cli": "npx @vscode/test-cli",
     "package": "node ../tools/extension-release.mjs --no-bump --no-install"
   },
   "dependencies": {
@@ -250,13 +253,17 @@
     "remark-math": "^6.0.0"
   },
   "devDependencies": {
+    "@types/mocha": "^10.0.10",
     "@types/node": "^22.13.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@types/vscode": "^1.95.0",
+    "@vscode/test-cli": "^0.0.15",
+    "@vscode/test-electron": "^3.0.0",
     "@vscode/vsce": "^3.2.2",
     "esbuild": "^0.25.11",
     "framer-motion": "^12.23.24",
+    "mocha": "^11.7.6",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^9.0.1",

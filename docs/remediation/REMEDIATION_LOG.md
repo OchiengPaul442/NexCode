@@ -2825,3 +2825,79 @@ Append one section per autonomous iteration. Never rewrite prior entries.
 | `agent-core/tests/contextBudget.test.ts` | Fix hardcoded /4 to use estimateTokens() | +5, -3 |
 | `agent-core/tests/realModelSecurity.test.ts` | Fix dedup test for content-hash behavior | +9, -3 |
 
+---
+
+## Iteration 40 — NC-032: VS Code Extension Host integration tests
+
+**Date:** 20 July 2026  
+**Finding IDs:** NC-032 (Medium)  
+**Phase:** J — Quality gates  
+
+### What was done
+
+1. **Verified NC-032 against current source code:**
+   - Confirmed no `@vscode/test-electron` or `@vscode/test-cli` packages exist in any `package.json`.
+   - Confirmed no `extension/src/test/` directory exists.
+   - Confirmed `extension/tsconfig.json` has no test-related configuration.
+   - Unit tests in `agent-core/tests/` cannot validate SecretStorage, Workspace Trust, webview messaging, multi-root behavior, or VS Code WorkspaceEdit — all require a real Extension Development Host.
+
+2. **Implemented fix (4 new files, 3 modified files, 1 new config file):**
+   - **Installed test packages** in `extension/package.json`:
+     - `@vscode/test-electron` (^3.0.0): downloads VS Code and runs tests in Extension Development Host
+     - `@vscode/test-cli` (^0.0.15): modern CLI for VS Code integration tests
+     - `mocha` (^11.7.6): test framework (VS Code uses Mocha internally)
+     - `@types/mocha` (^10.0.10): TypeScript types for Mocha
+   - `extension/src/test/runTest.ts` (new, 38 lines): Test runner entry point. Downloads VS Code stable, launches with `--disable-extensions --disable-gpu --no-sandbox` and opens the extension directory as workspace. Calls the suite loader.
+   - `extension/src/test/suite/index.ts` (new, 48 lines): Mocha TDD suite loader. Discovers `*.test.js` files recursively and runs them.
+   - `extension/src/test/suite/secretStorage.test.ts` (new, 13 tests): Manifest validation — toolApproval enum (NC-008), defaultProvider/showReasoning/allowWorkspacePrompts defaults (NC-022, NC-042), capabilities.untrustedWorkspaces (NC-002), restrictedConfigurations (NC-002), settings completeness (NC-035), no secrets in manifest (NC-003), temperature range validation.
+   - `extension/src/test/suite/workspaceTrust.test.ts` (new, 6 tests): Trust state accessibility, manifest declaration (NC-002), restricted configuration keys (NC-002), bypass removal (NC-008), allowWorkspacePrompts default (NC-022), read-only settings unrestricted.
+   - `extension/src/test/suite/editReview.test.ts` (new, 17 tests): Path containment via `checkPathWithinWorkspace` (NC-006, NC-020) — traversal, absolute paths, relative paths, empty, null bytes. Edit precondition validation (NC-006) — stale content, new file, traversal. Content hash determinism (NC-006). Webview message validation (NC-005) — unknown types, valid types, non-objects, empty prompt. Setting key allowlist (NC-003, NC-005) — secret keys rejected, safe keys allowed, prototype pollution. VS Code WorkspaceEdit application. Multi-root workspace folder info (NC-023).
+   - `extension/src/test/suite/extensionActivation.test.ts` (new, 10 tests): Activation events, command registration, webview view, activity bar container, engine version, entry point, semver, agent-core dependency, settings schema completeness (NC-035), generated artifacts gitignore (NC-038).
+   - `extension/tsconfig.test.json` (new): Separate TypeScript config for test files with `mocha` types. Extends `tsconfig.base.json`.
+   - `extension/.vscode-test.mjs` (new): `@vscode/test-cli` configuration.
+   - `extension/tsconfig.json` (modified): Added `src/test` to `exclude` array to prevent test files from being type-checked by the main lint/typecheck target.
+   - `extension/package.json` (modified): Added `build:test`, `test:integration`, `test:integration:cli` scripts.
+
+3. **Validated:**
+   - 46/46 integration tests pass in VS Code Extension Development Host (VS Code 1.129.1 downloaded and launched).
+   - 1911/1911 unit tests pass (no regressions).
+   - `tsc --noEmit` clean in agent-core, extension (main tsconfig), extension (test tsconfig), and webview.
+   - `npm run build` clean.
+   - `git diff --check` clean (only CRLF warning).
+
+### Validation
+
+| Check | Result | Notes |
+|---|---|---|
+| Integration tests (NC-032) | PASS | 46/46 pass in VS Code Extension Development Host |
+| Full test suite | PASS | 1911/1911 unit tests pass |
+| Type check (agent-core) | PASS | `tsc --noEmit` clean |
+| Type check (extension) | PASS | `tsc --noEmit` clean (main tsconfig excludes test/) |
+| Type check (extension test) | PASS | `tsc -p tsconfig.test.json --noEmit` clean |
+| Type check (webview) | PASS | `tsc --noEmit` clean |
+| Build | PASS | Full `npm run build` clean |
+| No secrets in diff | PASS | No API keys, tokens, or secrets in the diff |
+| No test suppression | PASS | All existing tests retained and passing |
+
+### Remaining risks
+
+- The integration tests validate manifest schema, path containment, edit preconditions, webview message validation, and extension activation through the real VS Code API. They do NOT yet test SecretStorage round-trips (store/get/delete) or Workspace Trust state changes because those require explicit extension activation and SecretStorage API access, which needs the extension to be fully activated in the test host.
+- VS Code integration tests run sequentially with a ~500ms overhead for VS Code launch. Running them in CI requires a display server (Xvfb on Linux) or headless mode (which is used here via `--disable-gpu`).
+- The `@vscode/test-cli` configuration (`.vscode-test.mjs`) is set up but the primary test runner is `@vscode/test-electron` via `runTest.ts` since it provides more control over launch arguments.
+
+### Files changed
+
+| File | Change | Lines |
+|---|---|---|
+| `extension/package.json` | Add test dependencies and integration test scripts | +7 |
+| `extension/tsconfig.json` | Exclude src/test from main compilation | +1, -1 |
+| `extension/src/test/runTest.ts` | New VS Code test runner entry point | +38 |
+| `extension/src/test/suite/index.ts` | New Mocha TDD suite loader | +48 |
+| `extension/src/test/suite/secretStorage.test.ts` | New manifest validation integration tests | +160 |
+| `extension/src/test/suite/workspaceTrust.test.ts` | New workspace trust integration tests | +105 |
+| `extension/src/test/suite/editReview.test.ts` | New edit review and validation integration tests | +230 |
+| `extension/src/test/suite/extensionActivation.test.ts` | New extension activation integration tests | +165 |
+| `extension/tsconfig.test.json` | New TypeScript config for test files | +12 |
+| `extension/.vscode-test.mjs` | New @vscode/test-cli configuration | +9 |
+
+

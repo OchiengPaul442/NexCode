@@ -6,5 +6,5 @@
     "types": ["node", "vscode"]
   },
   "include": ["src/**/*"],
-  "exclude": ["out", "node_modules"]
+  "exclude": ["out", "node_modules", "src/test"]
 }

@@ -400,14 +400,14 @@
 
 ### NC-034 — Three source modules are dead/disconnected
 - **Severity:** Medium
-- **Status:** pending
+- **Status:** fixed
 - **Phase:** F
 - **Dependencies:** none
 - **Affected files:** `agent-core/src/agents/subagent.ts`, `agent-core/src/tools/batchEditor.ts`, `extension/webview/src/components/StreamingText.tsx`
-- **Verified:** unverified
-- **Required tests:** dead modules removed or connected with tests
-- **Verification commands:** import graph analysis, `npx vitest run`
-- **Resolution evidence:** (none yet)
+- **Verified:** yes — verified against current source; all three files are dead code with no imports
+- **Required tests:** dead modules removed; no barrel exports reference them; no imports found
+- **Verification commands:** `npx vitest run agent-core/tests/deadModuleRemoval.test.ts`
+- **Resolution evidence:** (1) `agent-core/src/agents/subagent.ts` deleted — comment-only placeholder for removed SubAgentManager, no imports anywhere. (2) `agent-core/src/tools/batchEditor.ts` deleted — unused BatchEditor class, no imports or instantiation anywhere. (3) `extension/webview/src/components/StreamingText.tsx` deleted — unused React component, not imported by any other component (StreamingMessage uses useStreamingText hook, not StreamingText). (4) 9 regression tests in `agent-core/tests/deadModuleRemoval.test.ts`: file existence checks (3), no barrel exports (2), no imports in agent-core source (2), no imports in webview source (1), no other dead code references (1). 1075/1075 unit tests pass. Build clean. All type-checks clean.
 
 ### NC-035 — Configuration schema and runtime usage disagree
 - **Severity:** Medium

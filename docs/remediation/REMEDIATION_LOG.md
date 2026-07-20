@@ -1430,3 +1430,65 @@ Append one section per autonomous iteration. Never rewrite prior entries.
 | `agent-core/src/tools/toolRegistry.ts` | Add transactional batch_edit with pre-validation, atomic writes, rollback; import atomicWriteFile; remove dead executeBatchEditItem | +140, -30 |
 | `agent-core/tests/batchEditTransactional.test.ts` | New regression test file | +310 |
 
+---
+
+## Iteration 20 — NC-034: Remove dead/disconnected source modules
+
+**Date:** 20 July 2026
+**Finding IDs:** NC-034 (Medium)
+**Phase:** F — Filesystem and edit integrity
+
+### What was done
+
+1. **Verified NC-034 against current source code:**
+   - `agent-core/src/agents/subagent.ts` — confirmed 10-line file containing only a comment about removed SubAgentManager. No imports from any other file. The `subagentSpawned`/`subagentCompleted` event types in `types.ts` are unused type variants in the AgentEvent union (never emitted).
+   - `agent-core/src/tools/batchEditor.ts` — confirmed 39-line file exporting `BatchEdit` interface and `BatchEditor` class. Never imported or instantiated anywhere in the codebase. The actual batch-edit logic is in `toolRegistry.ts`'s `batch_edit` handler (NC-018 territory).
+   - `extension/webview/src/components/StreamingText.tsx` — confirmed 47-line React component never imported by any other file. `StreamingMessage.tsx` imports `useStreamingText` hook (different module), not `StreamingText` component.
+
+2. **Implemented fix (3 files deleted, 1 new file):**
+   - Deleted `agent-core/src/agents/subagent.ts` (10 lines).
+   - Deleted `agent-core/src/tools/batchEditor.ts` (39 lines).
+   - Deleted `extension/webview/src/components/StreamingText.tsx` (47 lines).
+   - Total: 96 lines of dead code removed.
+
+3. **Added regression tests (1 new file, 9 tests):**
+   - `agent-core/tests/deadModuleRemoval.test.ts`:
+     - subagent.ts removed: file no longer exists (1), no barrel export references it (1).
+     - batchEditor.ts removed: file no longer exists (1), no barrel export references it (1), BatchEditor not imported in agent-core source (1).
+     - StreamingText.tsx removed: file no longer exists (1), not imported by any webview source (1).
+     - No other dead code references: no import of subagent module (1), no import of batchEditor module (1).
+
+4. **Validated:**
+   - 9/9 new deadModuleRemoval tests pass.
+   - 1075/1075 full unit tests pass (3 pre-existing e2e failures unrelated).
+   - `tsc --noEmit` clean in agent-core, extension, and webview.
+   - `npm run build` clean (agent-core + extension + webview).
+   - `git diff --check` clean.
+
+### Validation
+
+| Check | Result | Notes |
+|---|---|---|
+| Focused tests (NC-034) | PASS | 9/9 deadModuleRemoval tests pass |
+| Full test suite | PASS | 1075/1075 unit tests pass; 3 pre-existing e2e failures |
+| Type check (agent-core) | PASS | `tsc --noEmit` clean |
+| Type check (extension) | PASS | `tsc --noEmit` clean |
+| Type check (webview) | PASS | `tsc --noEmit` clean |
+| Build | PASS | Full `npm run build` clean |
+| No secrets in diff | PASS | No API keys or tokens in the diff |
+| No test suppression | PASS | All existing tests retained and passing |
+
+### Remaining risks
+
+- The `subagentSpawned`/`subagentCompleted` event types remain in `agent-core/src/types.ts` as unused variants in the AgentEvent union. The webview's `main.tsx` has case handlers for these events. These are dead code (never emitted by the backend) but are part of the BackgroundAgents UI feature which may be intended for future use. Cleaning them up is a larger UI refactor beyond the scope of NC-034.
+- The `BackgroundAgents` component and related store actions (`addBackgroundAgent`, `updateBackgroundAgent`, `removeBackgroundAgent`) in `main.tsx` are also dead code since no subagent events are ever emitted. This is part of the broader NC-036 monolithic file refactoring.
+
+### Files changed
+
+| File | Change | Lines |
+|---|---|---|
+| `agent-core/src/agents/subagent.ts` | Delete dead comment-only placeholder | -10 |
+| `agent-core/src/tools/batchEditor.ts` | Delete unused BatchEditor class | -39 |
+| `extension/webview/src/components/StreamingText.tsx` | Delete unused React component | -47 |
+| `agent-core/tests/deadModuleRemoval.test.ts` | New regression test file | +157 |
+

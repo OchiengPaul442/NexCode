@@ -934,3 +934,65 @@ Append one section per autonomous iteration. Never rewrite prior entries.
 | `extension/src/taskController.ts` | Change default maxConcurrent from 3 to 1 | +1, -1 |
 | `agent-core/tests/taskConcurrency.test.ts` | New regression test file | +230 |
 
+---
+
+## Iteration 13 — NC-009: Register built-in MCP filesystem adapter
+
+**Date:** 20 July 2026
+**Finding IDs:** NC-009 (High)
+**Phase:** 0 — Containment patch
+
+### What was done
+
+1. **Verified NC-009 against current source code:**
+   - `agent-core/src/orchestrator.ts:221` — confirmed orchestrator creates `new McpRegistry()` (empty) and passes it to `ToolRegistry` (line 228).
+   - `agent-core/src/tools/toolRegistry.ts:62-68` — confirmed `ToolRegistry` only creates a default `FilesystemAdapter` when NO `mcpRegistry` is provided. Since the orchestrator always provides one, the default adapter is never registered.
+   - `agent-core/src/orchestrator.ts:243-244` — confirmed `registerMcpAdapter()` exists but is never called by any extension code.
+   - `agent-core/src/mcp/mcpRegistry.ts` — confirmed it is a simple in-process adapter registry with no MCP protocol support (no JSON-RPC transport, capability negotiation, lifecycle, etc.).
+   - `agent-core/src/mcp/adapters/filesystemAdapter.ts` — confirmed it implements `McpAdapter` with `list_directory` and `file_info` tools, enforcing workspace containment.
+
+2. **Implemented containment fix (1 production file changed):**
+   - `agent-core/src/orchestrator.ts` (+5):
+     - Added `import { FilesystemAdapter } from "./mcp/adapters/filesystemAdapter"`.
+     - After creating the empty `McpRegistry`, registered `new FilesystemAdapter(workspaceRoot)` so the MCP server list is not silently empty.
+     - Added comment documenting this is an in-process adapter registry, not a real MCP protocol client.
+
+3. **Added regression tests (1 new file, 19 tests):**
+   - `agent-core/tests/mcpRegistry.test.ts`:
+     - Orchestrator MCP registration (5 tests): lists "filesystem" by default, lists only built-in servers, lists filesystem tools, returns empty for unknown server, invokes filesystem MCP tool via list_directory.
+     - McpRegistry as in-process adapter registry (6 tests): stores adapters by ID, unregisters adapters, returns error for unregistered servers, has no MCP protocol methods (initialize/connect/disconnect/negotiate/ping/listResources/readResource/listPrompts/getPrompt/subscribe/unsubscribe/sendNotification/setTransport/getTransport), has no transport/lifecycle/auth properties.
+     - FilesystemAdapter workspace containment (6 tests): list_directory works within workspace, rejects traversal, file_info works, rejects traversal, rejects empty path, unknown tool returns available tools.
+     - FilesystemAdapter registered in orchestrator (2 tests): orchestrator can call filesystem:list_directory via MCP, MCP call to unknown server returns error.
+
+4. **Validated:**
+   - 19/19 new mcpRegistry tests pass.
+   - 907/907 full unit tests pass (3 pre-existing e2e failures unrelated).
+   - `tsc --noEmit` clean in agent-core, extension, and webview.
+   - `npm run build` clean.
+   - `git diff --check` clean.
+
+### Validation
+
+| Check | Result | Notes |
+|---|---|---|
+| Focused tests (NC-009) | PASS | 19/19 mcpRegistry tests pass |
+| Full test suite | PASS | 907/907 unit tests pass; 3 pre-existing e2e failures |
+| Type check (agent-core) | PASS | `tsc --noEmit` clean |
+| Type check (extension) | PASS | `tsc --noEmit` clean |
+| Type check (webview) | PASS | `tsc --noEmit` clean |
+| Build | PASS | Full `npm run build` clean |
+| No secrets in diff | PASS | No API keys, tokens, or secrets in the diff |
+| No test suppression | PASS | All existing tests retained and passing |
+
+### Remaining risks
+
+- MCP is still an in-process adapter registry with no real MCP protocol support. Full MCP support requires the official `@modelcontextprotocol/sdk` (Phase H work). The containment fix ensures the built-in filesystem adapter is registered so the webview MCP server list is not silently empty.
+- The `ToolRegistry` constructor still has dead code that creates a default `FilesystemAdapter` when no `mcpRegistry` is provided (lines 64-68). This code path is never hit because the orchestrator always provides one. Phase J should clean this up.
+
+### Files changed
+
+| File | Change | Lines |
+|---|---|---|
+| `agent-core/src/orchestrator.ts` | Import FilesystemAdapter, register built-in adapter on McpRegistry | +5 |
+| `agent-core/tests/mcpRegistry.test.ts` | New regression test file | +310 |
+

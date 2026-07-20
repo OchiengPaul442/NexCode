@@ -110,14 +110,15 @@
 
 ### NC-009 — MCP implementation is a disconnected custom stub, not full MCP
 - **Severity:** High
-- **Status:** pending
-- **Phase:** H
+- **Status:** fixed
+- **Phase:** 0 / containment
 - **Dependencies:** none (de-scoping decision first)
-- **Affected files:** `agent-core/src/mcp/mcpRegistry.ts`, `agent-core/src/mcp/adapters/filesystemAdapter.ts`, `agent-core/src/orchestrator.ts:219-253`, `agent-core/src/tools/toolRegistry.ts:61-69`
-- **Verified:** unverified
-- **Required tests:** MCP features marked experimental/incomplete; built-in adapter deliberately registered and visible in UI; or renamed to InternalAdapterRegistry
+- **Affected files:** `agent-core/src/orchestrator.ts:27,221-226`
+- **Verified:** yes — verified against current source; built-in filesystem adapter now registered, MCP marked as in-process adapter registry
+- **Required tests:** built-in adapter deliberately registered and visible; MCP is in-process only (no real protocol); FilesystemAdapter enforces workspace containment
 - **Verification commands:** `npx vitest run agent-core/tests/mcpRegistry.test.ts`
-- **Resolution evidence:** (none yet)
+- **Resolution evidence:** `agent-core/src/orchestrator.ts` changed: (1) Added `import { FilesystemAdapter }` from `./mcp/adapters/filesystemAdapter`. (2) After creating empty `McpRegistry`, registered `FilesystemAdapter` so the MCP server list is not silently empty. Comment documents this is an in-process adapter registry, not a real MCP protocol client. 19 regression tests in `agent-core/tests/mcpRegistry.test.ts`: orchestrator lists filesystem server by default, orchestrator lists only built-in servers, orchestrator lists filesystem tools, orchestrator invokes filesystem MCP tool via list_directory, McpRegistry stores/unregisters adapters by ID, McpRegistry rejects calls to unregistered servers, McpRegistry has no MCP protocol methods (initialize/connect/disconnect/negotiate/ping/listResources/readResource/listPrompts/getPrompt/subscribe/unsubscribe/sendNotification/setTransport/getTransport), McpRegistry has no transport/lifecycle/auth properties, FilesystemAdapter enforces workspace containment (list_directory/file_info reject traversal), FilesystemAdapter rejects empty path, unknown tool returns available tools, listTools returns expected tools. 907/907 unit tests pass. Build clean. All type-checks clean.
+- **Remaining risk:** MCP is still an in-process adapter registry with no real MCP protocol support (no JSON-RPC transport, capability negotiation, lifecycle, server configuration, authentication, notifications, resource/prompt support, timeouts, or protocol-version handling). Full MCP support requires the official `@modelcontextprotocol/sdk`. The containment fix ensures the built-in filesystem adapter is registered so the webview MCP server list is not silently empty.
 
 ### NC-010 — Concurrent tasks share mutable orchestrator state
 - **Severity:** High
@@ -584,7 +585,7 @@ NC-016 (tool schema validation)
 10. NC-022 — workspace prompt overrides ✅
 11. NC-024 — secret migration cleanup ✅
 12. NC-028 — blog fallback removal ✅
-13. NC-009 — MCP marked experimental
+13. NC-009 — MCP marked experimental ✅
 
 **Phase C (runtime schema boundary):**
 14. NC-016 — tool schema validation

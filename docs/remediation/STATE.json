@@ -3,28 +3,28 @@
   "project": "NexCode",
   "status": "in_progress",
   "bootstrapRequired": false,
-  "iteration": 12,
+  "iteration": 13,
   "currentPhase": 0,
   "totalFindings": 45,
   "counts": {
-    "pending": 33,
+    "pending": 32,
     "inProgress": 0,
-    "fixed": 12,
+    "fixed": 13,
     "blocked": 0,
     "obsolete": 0,
     "falsePositive": 0
   },
   "activeFindingIds": [],
-  "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004", "NC-005", "NC-006", "NC-007", "NC-008", "NC-010", "NC-022", "NC-024", "NC-028"],
+  "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004", "NC-005", "NC-006", "NC-007", "NC-008", "NC-009", "NC-010", "NC-022", "NC-024", "NC-028"],
   "blockedFindingIds": [],
-  "lastCommit": "d44181c",
-  "lastSummary": "NC-010 fixed: Task concurrency limited to 1 to prevent shared mutable orchestrator state races. (1) Changed MAX_CONCURRENT_TASKS from 3 to 1 in agent-core/src/taskQueue.ts. (2) Changed TaskController default maxConcurrent from 3 to 1 in extension/src/taskController.ts. 15 regression tests in agent-core/tests/taskConcurrency.test.ts: default concurrency is 1, dequeue blocks second task, canAcceptNewTask reflects limit, tasks queue sequentially, steering only on running tasks, TaskQueueManager respects limit. 888/888 unit tests pass. Build clean. All type-checks clean.",
+  "lastCommit": "TBD",
+  "lastSummary": "NC-009 fixed: MCP built-in filesystem adapter registered so server list is not silently empty. (1) Added FilesystemAdapter import to orchestrator.ts. (2) Registered FilesystemAdapter on the McpRegistry after construction. 19 regression tests in agent-core/tests/mcpRegistry.test.ts: orchestrator lists filesystem server by default, orchestrator lists only built-in servers, orchestrator lists filesystem tools, orchestrator invokes filesystem MCP tool, McpRegistry stores/unregisters adapters, McpRegistry rejects unknown servers, McpRegistry is in-process only (no MCP protocol methods), FilesystemAdapter enforces workspace containment, FilesystemAdapter rejects traversal. 907/907 unit tests pass. Build clean. All type-checks clean.",
   "lastVerification": {
-    "focusedTests": "PASS — 15/15 taskConcurrency tests pass",
+    "focusedTests": "PASS — 19/19 mcpRegistry tests pass",
     "typecheck": "PASS — agent-core, extension, and webview tsc --noEmit all clean",
     "lint": "PASS — no lint configured beyond tsc (NC-030)",
     "build": "PASS — full npm run build clean",
-    "fullTests": "PASS — 888/888 unit tests pass (3 pre-existing e2e failures unrelated)",
+    "fullTests": "PASS — 907/907 unit tests pass (3 pre-existing e2e failures unrelated)",
     "packaging": "SKIPPED — not attempted this iteration"
   }
 }

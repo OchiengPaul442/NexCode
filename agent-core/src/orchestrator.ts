@@ -25,6 +25,7 @@ import {
 } from "./types";
 import { McpAdapter, McpToolCall, McpToolResult } from "./mcp";
 import { McpRegistry } from "./mcp/mcpRegistry";
+import { FilesystemAdapter } from "./mcp/adapters/filesystemAdapter";
 import { MemoryManager } from "./memory/memoryManager";
 import { PromptStore } from "./prompts/promptStore";
 import { FeedbackLogger } from "./self-improve/feedbackLogger";
@@ -219,6 +220,10 @@ export class NexcodeOrchestrator {
       console.error("[nexcode] Memory initialization failed:", err);
     });
     this.mcpRegistry = new McpRegistry();
+    // Register the built-in filesystem adapter so MCP is not silently empty.
+    // NOTE: This is an in-process adapter registry, not a real MCP protocol client.
+    // Full MCP support requires the official @modelcontextprotocol/sdk.
+    this.mcpRegistry.register(new FilesystemAdapter(this.config.workspaceRoot));
     this.tools = new ToolRegistry(this.config.workspaceRoot, {
       searchProvider: this.config.toolDefaults.searchProvider,
       searchApiKey: this.config.toolDefaults.searchApiKey,

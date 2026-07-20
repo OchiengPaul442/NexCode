@@ -186,20 +186,31 @@ describe("NC-010: Task concurrency limit (max 1)", () => {
       expect(maxObserved).toBeLessThanOrEqual(1);
     });
 
-    it("steering only works on running tasks, not queued ones", () => {
+    it("steering works on active tasks (planning/running/verifying), not queued or terminal", () => {
       const queue = new TaskQueue();
       const task1 = queue.createTask("first", "s1");
       const task2 = queue.createTask("second", "s1");
 
-      // task2 is queued, not running
+      // task2 is queued, not active — steering rejected
       expect(queue.steer(task2.id, "change direction")).toBe(false);
 
-      // Dequeue and start task1
+      // Dequeue task1 → planning — steering allowed
       queue.dequeue();
-      queue.updateStatus(task1.id, "running");
-
-      // Now steering works on task1
+      expect(task1.status).toBe("planning");
       expect(queue.steer(task1.id, "change direction")).toBe(true);
+
+      // Advance to running — steering still allowed
+      queue.updateStatus(task1.id, "running");
+      expect(queue.steer(task1.id, "another correction")).toBe(true);
+
+      // Advance to verifying — steering still allowed
+      queue.updateStatus(task1.id, "verifying");
+      expect(queue.steer(task1.id, "check tests too")).toBe(true);
+
+      // Complete — steering rejected
+      queue.updateStatus(task1.id, "running");
+      queue.complete(task1.id, "done");
+      expect(queue.steer(task1.id, "oops")).toBe(false);
     });
   });
 

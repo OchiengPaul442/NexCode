@@ -134,14 +134,14 @@
 
 ### NC-011 — Steering works only in one status and can become a new task unexpectedly
 - **Severity:** High
-- **Status:** pending
+- **Status:** fixed
 - **Phase:** G
 - **Dependencies:** NC-010 (task isolation)
-- **Affected files:** `agent-core/src/taskQueue.ts:98-106,109-125`, `agent-core/src/taskManager.ts:62-89`
-- **Verified:** unverified
+- **Affected files:** `agent-core/src/taskQueue.ts:98-126`, `agent-core/src/taskManager.ts:62-108`, `agent-core/src/taskManager.ts:137-148`
+- **Verified:** yes — verified against current source; steering now allowed in planning/running/verifying states, routed by session ID
 - **Required tests:** steering during planning/running/verifying follows state machine; route by session/task not first global active
-- **Verification commands:** `npx vitest run agent-core/tests/steering.test.ts`
-- **Resolution evidence:** (none yet)
+- **Verification commands:** `npx vitest run agent-core/tests/steeringStateMachine.test.ts && npx vitest run agent-core/tests/taskConcurrency.test.ts`
+- **Resolution evidence:** (1) `TaskQueue.STEERING_ELIGIBLE_STATES` = Set{running, planning, verifying} — queued, waiting-for-user, completed, failed, cancelled rejected. (2) `TaskQueue.getActiveTaskBySession(sessionId)` — finds active task belonging to a specific session. (3) `classifyAndRoute()` first checks session task via `getActiveTaskBySession()`, then falls back to explicit `activeTaskId` for backward compat. Steering allowed in planning, running, and verifying states. (4) State machine documented with transition diagram in JSDoc. (5) 39 regression tests in `agent-core/tests/steeringStateMachine.test.ts`: steer eligibility by status (10), session-based lookup (6), classifyAndRoute session routing (8), classifyPromptIntent classification (6), transition matrix (9). (6) Updated existing `taskConcurrency.test.ts` test to reflect new steering-eligible states. 1242/1242 tests pass. Build clean. All type-checks clean.
 
 ### NC-012 — Cancellation does not propagate through all tools and child processes
 - **Severity:** High
@@ -625,7 +625,7 @@ NC-016 (tool schema validation)
 
 **Phase G (task state machine and concurrency):**
 33. NC-010 is done in Phase 0
-34. NC-011 — steering state machine
+34. NC-011 — steering state machine ✅
 35. NC-043 — task history bounds
 
 **Phase I (persistence and observability):**

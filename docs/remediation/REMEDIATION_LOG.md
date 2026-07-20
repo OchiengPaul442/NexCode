@@ -1789,3 +1789,77 @@ Append one section per autonomous iteration. Never rewrite prior entries.
 | `agent-core/tests/ollamaContextWindow.test.ts` | Update unknown model expectations from 64000 to 32000 | +4, -4 |
 | `agent-core/tests/modelCapabilities.test.ts` | New regression test file | +490 |
 
+---
+
+## Iteration 25 — NC-011: Steering state machine and session-based routing
+
+**Date:** 20 July 2026
+**Finding IDs:** NC-011 (High)
+**Phase:** G — Task state machine and concurrency
+
+### What was done
+
+1. **Verified NC-011 against current source code:**
+   - `agent-core/src/taskQueue.ts:98-107` — confirmed `steer()` checks `task.status !== "running"` and returns false for any non-running task. This means messages sent while a task is in `planning` or `verifying` state are queued as new tasks instead of being injected.
+   - `agent-core/src/taskManager.ts:62-89` — confirmed `classifyAndRoute()` checks `activeTask.status === "running"` (line 78) before allowing steering. Same running-only restriction.
+   - `extension/src/sidebarViewProvider.ts:471-472` — confirmed `handlePrompt()` picks `activeTasks[0]` regardless of session ID. This means in multi-session scenarios, steering could target the wrong task.
+
+2. **Implemented fix (3 production files changed):**
+   - `agent-core/src/taskQueue.ts` (+25, -2):
+     - Added `STEERING_ELIGIBLE_STATES` static set: `{running, planning, verifying}` — documented with state machine diagram in JSDoc.
+     - `steer()` now checks `TaskQueue.STEERING_ELIGIBLE_STATES.has(task.status)` instead of `task.status !== "running"`.
+     - Added `getActiveTaskBySession(sessionId)` method: finds the first active task belonging to a specific session.
+   - `agent-core/src/taskManager.ts` (+27, -5):
+     - `classifyAndRoute()` now first calls `this.queue.getActiveTaskBySession(sessionId)` to find the session's active task. Steering is attempted on the session task if intent is detected.
+     - Falls back to explicit `activeTaskId` parameter for backward compatibility.
+     - Both paths allow steering in planning, running, and verifying states.
+     - Added `getActiveTaskBySession(sessionId)` pass-through method.
+
+3. **Added regression tests (1 new file, 39 tests):**
+   - `agent-core/tests/steeringStateMachine.test.ts`:
+     - TaskQueue.steer() — steering eligibility by status (10 tests): allows running, allows planning, allows verifying, rejects queued, rejects waiting-for-user, rejects completed, rejects failed, rejects cancelled, rejects non-existent, message appended, event emitted.
+     - TaskQueue.getActiveTaskBySession() — session-based lookup (6 tests): no tasks, no active in session, found active task, wrong session, multiple active tasks, distinguishes sessions.
+     - TaskQueueManager.classifyAndRoute() — session-based routing (8 tests): steers same session, queues when no active, routes to correct session, steers planning task, steers verifying task, queues on new-task intent, queues on terminal state, backward compat with explicit activeTaskId.
+     - classifyPromptIntent — steering vs new-task (6 tests): short corrections, "no", "stop", "use X instead", long prompts, "fix the bug".
+     - Transition matrix (9 tests): `it.each` for steering-eligible states (planning/running/verifying) and non-steering states (queued/waiting-for-user/completed/failed/cancelled).
+
+4. **Updated existing test:**
+   - `agent-core/tests/taskConcurrency.test.ts`: Updated "steering only works on running tasks" test to reflect new behavior — steering now works in planning, running, and verifying states, not just running.
+
+5. **Validated:**
+   - 39/39 new steeringStateMachine tests pass.
+   - 15/15 existing taskConcurrency tests pass.
+   - 1242/1242 full unit tests pass (3 pre-existing e2e failures unrelated).
+   - `tsc --noEmit` clean in agent-core, extension, and webview.
+   - `npm run build` clean.
+   - `git diff --check` clean (only line-ending warnings).
+
+### Validation
+
+| Check | Result | Notes |
+|---|---|---|
+| Focused tests (NC-011) | PASS | 39/39 steeringStateMachine tests pass |
+| Existing task tests | PASS | 15/15 taskConcurrency tests pass |
+| Full test suite | PASS | 1242/1242 tests pass; 3 pre-existing e2e failures |
+| Type check (agent-core) | PASS | `tsc --noEmit` clean |
+| Type check (extension) | PASS | `tsc --noEmit` clean |
+| Type check (webview) | PASS | `tsc --noEmit` clean |
+| Build | PASS | Full `npm run build` clean |
+| No secrets in diff | PASS | No API keys, tokens, or secrets in the diff |
+| No test suppression | PASS | All existing tests retained and passing |
+
+### Remaining risks
+
+- Full per-task `AgentRunContext` isolation (per-task signals, messages, metrics, approvals, proposed edits, provider sessions) is still pending. The current fix corrects the steering state machine and session routing, but concurrent tasks (if concurrency is increased beyond 1) would still share mutable orchestrator state.
+- The `classifyPromptIntent` heuristic is pattern-based and may misclassify edge cases. It is a best-effort heuristic; the UI should also provide explicit "Steer current task" vs "Queue next" vs "Start parallel task" choices (per NC-011 audit recommendation).
+- The `waiting-for-user` state is not steering-eligible. If a task is waiting for user approval, the user must respond through the approval flow, not through steering. This is intentional.
+
+### Files changed
+
+| File | Change | Lines |
+|---|---|---|
+| `agent-core/src/taskQueue.ts` | Add STEERING_ELIGIBLE_STATES, getActiveTaskBySession, update steer() | +25, -2 |
+| `agent-core/src/taskManager.ts` | Session-based routing in classifyAndRoute(), add getActiveTaskBySession | +27, -5 |
+| `agent-core/tests/taskConcurrency.test.ts` | Update steering test to reflect new eligible states | +10, -5 |
+| `agent-core/tests/steeringStateMachine.test.ts` | New regression test file | +420 |
+

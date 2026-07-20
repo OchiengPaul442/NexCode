@@ -73,13 +73,32 @@ export class TaskQueueManager {
       attachmentIds?: string[];
     } = {},
   ): { action: "steer" | "queue"; task: Task } {
-    if (activeTaskId) {
+    // First, try to steer an existing active task in the same session.
+    // Steering is allowed in planning, running, and verifying states.
+    const sessionTask = this.queue.getActiveTaskBySession(sessionId);
+    if (sessionTask) {
+      const intent = classifyPromptIntent(sessionTask.prompt, newPrompt);
+      if (intent === "steering") {
+        this.queue.steer(sessionTask.id, newPrompt);
+        return { action: "steer", task: sessionTask };
+      }
+    }
+
+    // Fallback: if an explicit activeTaskId was provided, try that too
+    // (for backward compatibility with callers that pass activeTask.id directly)
+    if (activeTaskId && (!sessionTask || sessionTask.id !== activeTaskId)) {
       const activeTask = this.queue.getTask(activeTaskId);
-      if (activeTask && activeTask.status === "running") {
-        const intent = classifyPromptIntent(activeTask.prompt, newPrompt);
-        if (intent === "steering") {
-          this.queue.steer(activeTaskId, newPrompt);
-          return { action: "steer", task: activeTask };
+      if (activeTask) {
+        const isSteerable =
+          activeTask.status === "running" ||
+          activeTask.status === "planning" ||
+          activeTask.status === "verifying";
+        if (isSteerable) {
+          const intent = classifyPromptIntent(activeTask.prompt, newPrompt);
+          if (intent === "steering") {
+            this.queue.steer(activeTaskId, newPrompt);
+            return { action: "steer", task: activeTask };
+          }
         }
       }
     }
@@ -136,6 +155,14 @@ export class TaskQueueManager {
 
   getActiveTasks(): Task[] {
     return this.queue.getActiveTasks();
+  }
+
+  /**
+   * Find the active task belonging to a specific session.
+   * Returns the first active task in the given session, or undefined if none.
+   */
+  getActiveTaskBySession(sessionId: string): Task | undefined {
+    return this.queue.getActiveTaskBySession(sessionId);
   }
 
   getQueuedTasks(): Task[] {

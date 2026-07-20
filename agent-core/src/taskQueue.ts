@@ -95,9 +95,28 @@ export class TaskQueue {
     return task;
   }
 
+  /**
+   * States that accept steering messages. A task in any of these states
+   * is actively being processed and can receive mid-flight corrections.
+   *
+   * State machine for steering-eligible states:
+   *   queued → planning → running → verifying → completed/failed
+   *                                  ↕
+   *                              waiting-for-user
+   *
+   * Steering is allowed in: planning, running, verifying
+   * Steering is NOT allowed in: queued (not started), waiting-for-user (blocked on user),
+   *   completed/failed/cancelled (terminal)
+   */
+  private static readonly STEERING_ELIGIBLE_STATES = new Set<TaskStatus>([
+    "running",
+    "planning",
+    "verifying",
+  ]);
+
   steer(taskId: string, message: string): boolean {
     const task = this.tasks.get(taskId);
-    if (!task || task.status !== "running") {
+    if (!task || !TaskQueue.STEERING_ELIGIBLE_STATES.has(task.status)) {
       return false;
     }
 
@@ -230,6 +249,22 @@ export class TaskQueue {
       }
     }
     return active;
+  }
+
+  /**
+   * Find the active task belonging to a specific session.
+   * Returns the first active task in the given session, or undefined if none.
+   */
+  getActiveTaskBySession(sessionId: string): Task | undefined {
+    for (const task of this.tasks.values()) {
+      if (
+        task.sessionId === sessionId &&
+        (task.status === "running" || task.status === "planning" || task.status === "verifying")
+      ) {
+        return task;
+      }
+    }
+    return undefined;
   }
 
   getQueuedTasks(): Task[] {

@@ -728,3 +728,75 @@ Append one section per autonomous iteration. Never rewrite prior entries.
 | `extension/src/secretService.ts` | Add plaintext removal, idempotent cleanup, hasPlaintextRemnants, LEGACY_PLAINTEXT_KEYS | +66, -7 |
 | `agent-core/tests/secretMigration.test.ts` | New regression test file | +290 |
 
+---
+
+## Iteration 9 — NC-006: Edit review path containment and stale content detection
+
+**Date:** 20 July 2026
+**Finding IDs:** NC-006 (Critical)
+**Phase:** 0 — Containment patch
+
+### What was done
+
+1. **Verified NC-006 against current source code:**
+   - `extension/src/editReviewService.ts:12-29,52-95` — confirmed `applyEdit()` and `previewEdit()` use `path.join(workspaceRoot, edit.filePath)` without canonical containment validation. No content hash or version check before overwriting.
+   - `agent-core/src/orchestrator.ts:1065-1071` — confirmed `applyProposedEdit()` uses `resolveWorkspacePathSafe()` (which does containment) but does NOT verify that current content matches `edit.oldText`. A file modified after proposal can be silently overwritten.
+   - `agent-core/src/tools/fileSystemTool.ts:197-221` — confirmed `makeProposedEdit()` stores `oldText` by reading the file at proposal time, but no hash is computed or stored for later comparison.
+
+2. **Implemented containment fix (3 production files changed, 1 new utility):**
+   - `agent-core/src/utils/editValidation.ts` (new, 131 lines):
+     - `computeContentHash()` — deterministic SHA-256 content hash for fast pre-check and audit logging.
+     - `validateEditPreconditions()` — validates path containment via `checkPathWithinWorkspace()` AND verifies current file content matches `edit.oldText` exactly; returns structured `EditValidationResult` with hashes for debugging.
+     - `validateEditPreconditionsAsync()` — async variant with symlink-aware path resolution.
+   - `extension/src/editReviewService.ts` (+50, -4):
+     - `applyEdit()`: now validates path containment via `checkPathWithinWorkspace()` before joining workspace root — rejects traversal. Reads current content and calls `validateEditPreconditions()` — rejects stale edits. Uses validated absolute path for all subsequent operations.
+     - `previewEdit()`: validates path containment via `checkPathWithinWorkspace()` before joining workspace root.
+   - `agent-core/src/orchestrator.ts` (+17):
+     - `applyProposedEdit()`: now reads current content via `fs.readFile()` and calls `validateEditPreconditions()` — throws on stale content.
+   - `agent-core/src/index.ts` (+6):
+     - Exported `computeContentHash`, `validateEditPreconditions`, `EditValidationResult`, and `checkPathWithinWorkspace` from barrel.
+
+3. **Added regression tests (1 new file, 34 tests):**
+   - `agent-core/tests/editValidation.test.ts`:
+     - `computeContentHash`: determinism, differentiation, SHA-256 format, empty string, unicode (5 tests).
+     - `checkPathWithinWorkspace`: relative path, traversal, absolute path, empty, whitespace, null bytes, nested, deep traversal (8 tests).
+     - `validateEditPreconditions` path containment: valid relative, traversal via ../, absolute outside, deep traversal, backslash separators (5 tests).
+     - `validateEditPreconditions` stale content: match accepted, diff rejected, modification detection, new file creation, oldText not empty for null, empty content match, oldText empty but content exists, hash info in error (8 tests).
+     - Combined scenarios: traversal even with matching content, full valid scenario, Windows separators (3 tests).
+     - Integration: applyEdit/previewEdit traversal caught, valid path passes both, orchestrator catches traversal/stale (5 tests).
+
+4. **Validated:**
+   - 34/34 new editValidation tests pass.
+   - 869/869 full unit tests pass (3 pre-existing e2e failures unrelated).
+   - `tsc --noEmit` clean in agent-core, extension, and webview.
+   - `npm run build` clean.
+   - `git diff --check` clean (only line-ending warning).
+
+### Validation
+
+| Check | Result | Notes |
+|---|---|---|
+| Focused tests (NC-006) | PASS | 34/34 editValidation tests pass |
+| Full test suite | PASS | 869/869 unit tests pass; 3 pre-existing e2e failures |
+| Type check (agent-core) | PASS | `tsc --noEmit` clean |
+| Type check (extension) | PASS | `tsc --noEmit` clean |
+| Type check (webview) | PASS | `tsc --noEmit` clean |
+| Build | PASS | Full `npm run build` clean |
+| No secrets in diff | PASS | No API keys, tokens, or secrets in the diff |
+| No test suppression | PASS | All existing tests retained and passing |
+
+### Remaining risks
+
+- Multi-root workspace edit association (which workspace folder an edit belongs to) is still NC-023 territory. The current fix validates containment against the provided `workspaceRoot` parameter.
+- Content hash comparison is exact string equality. A future improvement could use a document version number from VS Code's `TextDocument.version` for more robust staleness detection.
+
+### Files changed
+
+| File | Change | Lines |
+|---|---|---|
+| `agent-core/src/utils/editValidation.ts` | New edit validation utility (content hash + path containment + stale content) | +131 |
+| `agent-core/src/orchestrator.ts` | Add stale content check to applyProposedEdit | +17 |
+| `extension/src/editReviewService.ts` | Add path containment and stale content checks to applyEdit/previewEdit | +50, -4 |
+| `agent-core/src/index.ts` | Export editValidation utilities and checkPathWithinWorkspace | +6 |
+| `agent-core/tests/editValidation.test.ts` | New regression test file | +340 |
+

@@ -70,14 +70,15 @@
 
 ### NC-006 — Reviewed edits can escape workspace or overwrite newer file
 - **Severity:** Critical
-- **Status:** pending
+- **Status:** fixed
 - **Phase:** 0 / F
 - **Dependencies:** NC-020 (path containment)
-- **Affected files:** `extension/src/editReviewService.ts:12-29,52-95`
-- **Verified:** unverified
+- **Affected files:** `extension/src/editReviewService.ts:12-29,52-95`, `agent-core/src/orchestrator.ts:1065-1071`, `agent-core/src/utils/editValidation.ts` (new)
+- **Verified:** yes — verified against current source; path containment and stale content checks added to both edit paths
 - **Required tests:** edit apply rejects traversal; edit apply rejects stale content; content hash/version precondition; multi-root workspace edit association
-- **Verification commands:** `npx vitest run agent-core/tests/editReview.test.ts`
-- **Resolution evidence:** (none yet)
+- **Verification commands:** `npx vitest run agent-core/tests/editValidation.test.ts`
+- **Resolution evidence:** `agent-core/src/utils/editValidation.ts` (new, 131 lines): (1) `computeContentHash()` — deterministic SHA-256 content hash for fast pre-check and audit logging. (2) `validateEditPreconditions()` — validates path containment via `checkPathWithinWorkspace()` AND verifies current file content matches `edit.oldText` exactly; returns structured `EditValidationResult` with hashes for debugging. (3) `validateEditPreconditionsAsync()` — async variant with symlink-aware path resolution. `extension/src/editReviewService.ts` changed: (1) `applyEdit()` now validates path containment via `checkPathWithinWorkspace()` before joining workspace root — rejects traversal. (2) `applyEdit()` reads current content and calls `validateEditPreconditions()` — rejects stale edits. (3) `previewEdit()` validates path containment via `checkPathWithinWorkspace()` before joining. `agent-core/src/orchestrator.ts` changed: `applyProposedEdit()` now reads current content and calls `validateEditPreconditions()` — throws on stale content. 34 regression tests in `agent-core/tests/editValidation.test.ts` covering: computeContentHash determinism/differentiation/unicode, checkPathWithinWorkspace traversal/absolute/empty/whitespace/deep, validateEditPreconditions path containment/stale content/new file creation/hash info/combined scenarios. 869/869 tests pass. Build clean. All type-checks clean.
+- **Remaining risk:** Multi-root workspace edit association (which workspace folder an edit belongs to) is still NC-023 territory. The current fix validates containment against the provided `workspaceRoot` parameter.
 
 ### NC-007 — PowerShell search fallback is injection-prone
 - **Severity:** Critical
@@ -572,11 +573,11 @@ NC-016 (tool schema validation)
 1. NC-001 — provider key isolation ✅
 2. NC-002 — workspace trust / endpoint scope ✅
 3. NC-003 — webview secret removal ✅
-4. NC-004 — terminal deny-by-default
-5. NC-005 — webview message validation
-6. NC-006 — edit preconditions
-7. NC-007 — search injection fix
-8. NC-008 — approval mode hardening
+4. NC-004 — terminal deny-by-default ✅
+5. NC-005 — webview message validation ✅
+6. NC-006 — edit preconditions ✅
+7. NC-007 — search injection fix ✅
+8. NC-008 — approval mode hardening ✅
 9. NC-010 — concurrency limit to 1
 10. NC-022 — workspace prompt overrides ✅
 11. NC-024 — secret migration cleanup ✅

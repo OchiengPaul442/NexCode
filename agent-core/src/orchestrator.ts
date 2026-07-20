@@ -53,6 +53,7 @@ import { ContextCompressor } from "./utils/contextCompressor";
 import { SessionCompressor } from "./utils/sessionCompressor";
 import { runAgentLoop, AgentLoopConfig } from "./agents/agentLoop";
 import { getToolDefinitionsForMode } from "./tools/toolDefinitions";
+import { validateEditPreconditions } from "./utils/editValidation";
 
 export interface NexcodeOrchestratorOptions {
   workspaceRoot?: string;
@@ -1066,6 +1067,22 @@ export class NexcodeOrchestrator {
     const absolutePath = await this.tools.filesystem.resolveWorkspacePathSafe(
       edit.filePath,
     );
+
+    // Check for stale content: read current file and verify it matches edit.oldText.
+    let currentContent: string | null = null;
+    try {
+      currentContent = await fs.readFile(absolutePath, "utf8");
+    } catch {
+      // File doesn't exist — currentContent stays null
+    }
+
+    const precondition = validateEditPreconditions(edit, this.config.workspaceRoot ?? "", currentContent);
+    if (!precondition.ok) {
+      throw new Error(
+        precondition.error ?? "Edit precondition check failed"
+      );
+    }
+
     await fs.mkdir(path.dirname(absolutePath), { recursive: true });
     await fs.writeFile(absolutePath, edit.newText, "utf8");
   }

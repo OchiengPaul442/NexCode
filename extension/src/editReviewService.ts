@@ -1,6 +1,10 @@
 import path from "path";
 import * as vscode from "vscode";
-import { ProposedEdit } from "@nexcode/agent-core";
+import {
+  ProposedEdit,
+  validateEditPreconditions,
+  checkPathWithinWorkspace,
+} from "@nexcode/agent-core";
 
 export class EditReviewService {
   private postMessage: (message: unknown) => void;
@@ -13,10 +17,38 @@ export class EditReviewService {
     edit: ProposedEdit,
     workspaceRoot: string,
   ): Promise<boolean> {
-    const targetUri = vscode.Uri.file(path.join(workspaceRoot, edit.filePath));
+    // 1. Validate path containment — reject traversal via "../" or absolute paths.
+    const absolutePath = checkPathWithinWorkspace(workspaceRoot, edit.filePath);
+    if (absolutePath === null) {
+      this.postMessage({
+        type: "error",
+        message: `Edit path escapes workspace root: ${edit.filePath}`,
+      });
+      return false;
+    }
+
+    const targetUri = vscode.Uri.file(absolutePath);
+
+    // 2. Read current content and check for staleness.
+    let currentContent: string | null = null;
+    if (await this.fileExists(targetUri)) {
+      const document = await vscode.workspace.openTextDocument(targetUri);
+      currentContent = document.getText();
+    }
+
+    const precondition = validateEditPreconditions(edit, workspaceRoot, currentContent);
+    if (!precondition.ok) {
+      this.postMessage({
+        type: "error",
+        message: precondition.error ?? "Edit precondition check failed.",
+      });
+      return false;
+    }
+
+    // 3. Apply the edit using the validated absolute path.
     const workspaceEdit = new vscode.WorkspaceEdit();
 
-    if (await this.fileExists(targetUri)) {
+    if (currentContent !== null) {
       const document = await vscode.workspace.openTextDocument(targetUri);
       const fullRange = this.fullDocumentRange(document);
       workspaceEdit.replace(targetUri, fullRange, edit.newText);
@@ -53,7 +85,17 @@ export class EditReviewService {
     edit: ProposedEdit,
     workspaceRoot: string,
   ): Promise<void> {
-    const targetUri = vscode.Uri.file(path.join(workspaceRoot, edit.filePath));
+    // Validate path containment — reject traversal via "../" or absolute paths.
+    const absolutePath = checkPathWithinWorkspace(workspaceRoot, edit.filePath);
+    if (absolutePath === null) {
+      this.postMessage({
+        type: "error",
+        message: `Edit path escapes workspace root: ${edit.filePath}`,
+      });
+      return;
+    }
+
+    const targetUri = vscode.Uri.file(absolutePath);
     const previewsDir = vscode.Uri.file(
       path.join(workspaceRoot, ".nexcode", "edit-previews"),
     );

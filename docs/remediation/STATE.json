@@ -3,28 +3,28 @@
   "project": "NexCode",
   "status": "in_progress",
   "bootstrapRequired": false,
-  "iteration": 9,
+  "iteration": 10,
   "currentPhase": 0,
   "totalFindings": 45,
   "counts": {
-    "pending": 36,
+    "pending": 35,
     "inProgress": 0,
-    "fixed": 9,
+    "fixed": 10,
     "blocked": 0,
     "obsolete": 0,
     "falsePositive": 0
   },
   "activeFindingIds": [],
-  "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004", "NC-005", "NC-007", "NC-008", "NC-022", "NC-024"],
+  "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004", "NC-005", "NC-006", "NC-007", "NC-008", "NC-022", "NC-024"],
   "blockedFindingIds": [],
-  "lastCommit": "d35f765",
-  "lastSummary": "NC-024 fixed: Secret migration now deletes plaintext settings after copying to SecretStorage. (1) migrateFromSettings() removed early-return on migration flag — now always runs cleanup. (2) After storing each secret, calls config.update(key, undefined) to remove plaintext from workspace settings. (3) Idempotent: if no plaintext was found in primary pass, cleanupPlaintextRemnants() checks for any remaining plaintext and removes it. (4) hasPlaintextRemnants() public method for health checks. (5) LEGACY_PLAINTEXT_KEYS exported for test coverage. (6) 17 regression tests in agent-core/tests/secretMigration.test.ts covering: copy+delete, idempotent runs, canary secrets, sequential store-before-delete, partial recovery. 835/835 tests pass. Build clean. All type-checks clean.",
+  "lastCommit": "pending",
+  "lastSummary": "NC-006 fixed: Edit review service and orchestrator now validate path containment and stale content before applying edits. (1) New editValidation.ts utility: computeContentHash() for SHA-256 content hashing, validateEditPreconditions() checks path containment via checkPathWithinWorkspace and verifies current content matches edit.oldText. (2) editReviewService.ts: applyEdit() and previewEdit() now validate path containment before joining workspace root with filePath — rejects traversal via ../ or absolute paths. applyEdit() also reads current content and checks for staleness before overwriting. (3) orchestrator.ts applyProposedEdit() now reads current content and calls validateEditPreconditions() — throws on stale content. (4) 34 regression tests in agent-core/tests/editValidation.test.ts covering: computeContentHash determinism/differentiation, checkPathWithinWorkspace traversal/absolute/empty/whitespace, validateEditPreconditions path containment/stale content/new file creation/hash info. 869/869 tests pass. Build clean. All type-checks clean.",
   "lastVerification": {
-    "focusedTests": "PASS — 17/17 secretMigration tests pass",
+    "focusedTests": "PASS — 34/34 editValidation tests pass",
     "typecheck": "PASS — agent-core, extension, and webview tsc --noEmit all clean",
     "lint": "PASS — no lint configured beyond tsc (NC-030)",
     "build": "PASS — full npm run build clean",
-    "fullTests": "PASS — 835/835 unit tests pass (3 pre-existing e2e failures unrelated)",
+    "fullTests": "PASS — 869/869 unit tests pass (3 pre-existing e2e failures unrelated)",
     "packaging": "SKIPPED — not attempted this iteration"
   }
 }

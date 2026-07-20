@@ -22,3 +22,9 @@ export {
   type ValidationResult,
   type ValidMessageType,
 } from "./utils/webviewMessageValidation";
+export {
+  computeContentHash,
+  validateEditPreconditions,
+  type EditValidationResult,
+} from "./utils/editValidation";
+export { checkPathWithinWorkspace } from "./utils/pathContainment";

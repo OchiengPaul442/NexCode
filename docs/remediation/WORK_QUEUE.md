@@ -156,14 +156,14 @@
 
 ### NC-013 — Model fallback is advertised but not implemented
 - **Severity:** High
-- **Status:** pending
+- **Status:** fixed
 - **Phase:** D
 - **Dependencies:** NC-001 (provider isolation), NC-014 (provider identity)
-- **Affected files:** `agent-core/src/providers/modelRouter.ts:115-159`
-- **Verified:** unverified
+- **Affected files:** `agent-core/src/providers/modelRouter.ts`, `agent-core/src/index.ts`
+- **Verified:** yes — verified against current source; fallback policy now explicit and user-controlled, per-candidate failures tracked, detailed error messages
 - **Required tests:** fallback policy is explicit and ordered; cross-provider fallback only with user opt-in; actual attempted list reported
-- **Verification commands:** `npx vitest run agent-core/tests/modelRouter.test.ts`
-- **Resolution evidence:** (none yet)
+- **Verification commands:** `npx vitest run agent-core/tests/modelFallback.test.ts`
+- **Resolution evidence:** `agent-core/src/providers/modelRouter.ts` changed: (1) Added `FallbackCandidate` interface (providerId, model, label?) for user-controlled fallback chain entries. (2) Added `CandidateFailure` interface (providerId, model, label?, error, statusCode?) for structured failure tracking. (3) `ModelRouterConfig.fallbackCandidates?: FallbackCandidate[]` — optional ordered fallback list, empty by default (no cross-provider fallback). (4) `resolveCandidates()` now appends fallback candidates after same-provider explicit+default, with deduplication and missing-provider skipping. (5) `generate()` tracks per-candidate failures in `CandidateFailure[]` instead of silently discarding. (6) `stream()` same failure tracking. (7) `extractStatusCode()` extracts HTTP status from provider errors. (8) `buildFinalError()` produces detailed error listing every candidate tried with per-candidate reasons, HTTP status codes, and category-specific troubleshooting. (9) `FallbackCandidate` and `CandidateFailure` exported from `agent-core/src/index.ts`. 29 regression tests in `agent-core/tests/modelFallback.test.ts`: resolveCandidates (11), generate error reporting (8), stream error reporting (3), backward compatibility (3), edge cases (4). 1139/1140 tests pass (1 pre-existing failure). Build clean. All type-checks clean.
 
 ### NC-014 — Provider identity collapses to openai-compatible
 - **Severity:** High
@@ -304,7 +304,7 @@
 - **Verified:** yes — verified against current source; ContextCache now has bounded LRU eviction, real metrics, and ModelRouter skips caching tool-call responses
 - **Required tests:** agent action responses not cached; bounded LRU/TTL; real hit/miss metrics
 - **Verification commands:** `npx vitest run agent-core/tests/contextCacheAndResponseCaching.test.ts`
-- **Resolution evidence:** `agent-core/src/utils/contextCache.ts` rewritten (95 lines): (1) `ContextCache` now accepts `maxSize` parameter (default 100); when exceeded, LRU entry is evicted. (2) `get()` promotes accessed entry to MRU. (3) Real hits/misses/evictions counters with accurate `hitRate`. (4) `has()` and `resetStats()` methods. (5) Unbounded mode via `maxSize=0`. `agent-core/src/providers/modelRouter.ts` changed: `generate()` now skips caching responses that contain toolCalls — only text-only (safe) responses cached. 21 regression tests in `agent-core/tests/contextCacheAndResponseCaching.test.ts`. 1110/1111 tests pass (1 pre-existing failure). Build clean. All type-checks clean.
+- **Resolution evidence:** `3686086` — `agent-core/src/utils/contextCache.ts` rewritten (95 lines): (1) `ContextCache` now accepts `maxSize` parameter (default 100); when exceeded, LRU entry is evicted. (2) `get()` promotes accessed entry to MRU. (3) Real hits/misses/evictions counters with accurate `hitRate`. (4) `has()` and `resetStats()` methods. (5) Unbounded mode via `maxSize=0`. `agent-core/src/providers/modelRouter.ts` changed: `generate()` now skips caching responses that contain toolCalls — only text-only (safe) responses cached. 21 regression tests in `agent-core/tests/contextCacheAndResponseCaching.test.ts`. 1110/1111 tests pass (1 pre-existing failure). Build clean. All type-checks clean.
 
 ### NC-026 — Memory and audit persistence are race-prone and failures are swallowed
 - **Severity:** High

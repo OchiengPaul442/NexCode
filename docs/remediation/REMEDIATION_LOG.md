@@ -1628,3 +1628,75 @@ Append one section per autonomous iteration. Never rewrite prior entries.
 | `agent-core/src/providers/modelRouter.ts` | Skip caching responses with toolCalls in generate() | +8 |
 | `agent-core/tests/contextCacheAndResponseCaching.test.ts` | New regression test file | +290 |
 
+---
+
+## Iteration 23 — NC-013: Model fallback is explicit and user-controlled
+
+**Date:** 20 July 2026
+**Finding IDs:** NC-013 (High)
+**Phase:** D — Credentials and providers
+
+### What was done
+
+1. **Verified NC-013 against current source code:**
+   - `agent-core/src/providers/modelRouter.ts:115-159` — confirmed `resolveCandidates()` only adds the explicit model and same-provider default model. It intentionally does not add another provider. If the explicit model equals the default, there is only one candidate.
+   - `agent-core/src/providers/modelRouter.ts:204-220` — confirmed `generate()` error message says "All provider/model attempts failed" which implies broader fallback than actually exists (typically 1-2 candidates).
+   - `agent-core/src/providers/modelRouter.ts:283-299` — confirmed `stream()` has the same misleading error message.
+   - No user-controlled fallback policy existed. No per-candidate failure tracking — only the last error was captured.
+   - Cross-provider fallback did not occur by default (correct for NC-001/NC-013 containment), but there was no mechanism for users to opt in.
+
+2. **Implemented fix (2 production files changed):**
+   - `agent-core/src/providers/modelRouter.ts` (+147, -44):
+     - Added `FallbackCandidate` interface: `{ providerId, model, label? }` — a single entry in the user-controlled fallback chain.
+     - Added `CandidateFailure` interface: `{ providerId, model, label?, error, statusCode? }` — structured failure record for error reporting.
+     - Added `ModelRouterConfig.fallbackCandidates?: FallbackCandidate[]` — optional ordered fallback list, empty by default (no cross-provider fallback).
+     - `resolveCandidates()` updated: after same-provider explicit+default, appends fallback candidates with deduplication and missing-provider skipping.
+     - `generate()` updated: tracks per-candidate failures in `CandidateFailure[]` instead of silently discarding errors.
+     - `stream()` updated: same per-candidate failure tracking.
+     - Added `extractStatusCode()` private method: extracts HTTP status from provider errors.
+     - Added `buildFinalError()` private method: produces detailed error listing every candidate tried with per-candidate reasons, HTTP status codes, and category-specific troubleshooting.
+   - `agent-core/src/index.ts` (+2):
+     - Exported `FallbackCandidate` and `CandidateFailure` types from barrel.
+
+3. **Added regression tests (1 new file, 29 tests):**
+   - `agent-core/tests/modelFallback.test.ts`:
+     - resolveCandidates (11 tests): explicit model first, same-provider default second, deduplication, no cross-provider by default (empty/undefined fallbackCandidates), cross-provider only when explicitly configured, preserves fallback order, skips missing providers, deduplicates fallback matching explicit/default, cloud vs local default model selection.
+     - generate error reporting (8 tests): single candidate failure reports provider/model, multiple candidates report all attempted candidates with failure reasons, HTTP status codes in error detail, troubleshooting for connection/rate-limit/timeout errors, successful result on first candidate without trying fallback, falls back to second candidate when first fails, AbortError propagates immediately without fallback.
+     - stream error reporting (3 tests): reports failures from stream attempts, does not fallback after partial stream output, falls back to next provider when stream fails before any output.
+     - backward compatibility (3 tests): works with minimal config (no fallbackCandidates), works with empty fallbackCandidates array, existing provider config still works for generate().
+     - edge cases (4 tests): skips fallback with empty model string, trims whitespace from fallback models, label is optional and does not affect candidate matching.
+
+4. **Validated:**
+   - 29/29 new modelFallback tests pass.
+   - 1139/1140 full unit tests pass (1 pre-existing failure in approvalPolicy.test.ts — wrong path to extension/package.json).
+   - `tsc --noEmit` clean in agent-core, extension, and webview.
+   - `npm run build` clean.
+   - `git diff --check` clean.
+
+### Validation
+
+| Check | Result | Notes |
+|---|---|---|
+| Focused tests (NC-013) | PASS | 29/29 modelFallback tests pass |
+| Full test suite | PASS | 1139/1140 tests pass (1 pre-existing approvalPolicy path issue) |
+| Type check (agent-core) | PASS | `tsc --noEmit` clean |
+| Type check (extension) | PASS | `tsc --noEmit` clean |
+| Type check (webview) | PASS | `tsc --noEmit` clean |
+| Build | PASS | Full `npm run build` clean |
+| No secrets in diff | PASS | No API keys, tokens, or secrets in the diff |
+| No test suppression | PASS | All existing tests retained and passing |
+
+### Remaining risks
+
+- The orchestrator does not yet pass `fallbackCandidates` to the ModelRouter, so cross-provider fallback is not available in the default configuration. This is the correct containment behavior — cross-provider fallback requires each provider to have its own credential (NC-001). Phase D continued work should expose this option through the orchestrator configuration and extension settings.
+- The `CandidateFailure.statusCode` extraction relies on provider errors having a `status` or `statusCode` property, or the error message containing a 3-digit HTTP status code pattern. Some providers may not surface status codes in a standard way.
+- Full fallback policy with retryability, context support, tool support, privacy/locality, cost, and rate limit in routing is beyond the scope of this containment fix. The current fix provides the infrastructure (FallbackCandidate, CandidateFailure) for that future work.
+
+### Files changed
+
+| File | Change | Lines |
+|---|---|---|
+| `agent-core/src/providers/modelRouter.ts` | Add FallbackCandidate, CandidateFailure, fallbackCandidates config, resolveCandidates fallback support, per-candidate failure tracking, detailed error messages | +147, -44 |
+| `agent-core/src/index.ts` | Export FallbackCandidate and CandidateFailure types | +2 |
+| `agent-core/tests/modelFallback.test.ts` | New regression test file | +530 |
+

@@ -63,10 +63,52 @@ interface RouteCandidate {
   model: string;
 }
 
+/**
+ * A single entry in the user-controlled fallback chain. Each entry specifies
+ * which provider and model to try next when the previous attempt fails.
+ *
+ * Cross-provider fallback is only used when the user explicitly populates
+ * this array. The default (empty array) means "same-provider fallback only".
+ */
+export interface FallbackCandidate {
+  providerId: ProviderId;
+  model: string;
+  /** Optional human-readable label for error messages (e.g. "cloud fallback"). */
+  label?: string;
+}
+
+/**
+ * Per-candidate failure record captured during generate()/stream() so the
+ * final error message can report exactly what was tried and why each failed.
+ */
+export interface CandidateFailure {
+  providerId: ProviderId;
+  model: string;
+  label?: string;
+  error: string;
+  /** HTTP status code when available, otherwise undefined. */
+  statusCode?: number;
+}
+
 export interface ModelRouterConfig {
   defaultProvider: ProviderId;
   defaultModel: string;
   defaultCloudModel: string;
+  /**
+   * Ordered list of fallback candidates tried after the primary provider
+   * and its default model. Each entry is tried only if all previous
+   * candidates failed. The list is empty by default, meaning no
+   * cross-provider fallback occurs (safe default — never sends one
+   * provider's credential to another unless the user explicitly opts in).
+   *
+   * Example: if the user selects ollama with model "qwen3:8b" and the
+   * primary attempt fails, the router would try:
+   *   1. ollama / qwen3:8b  (explicit)
+   *   2. ollama / defaultModel  (same-provider default)
+   *   3. fallbackCandidates[0].providerId / fallbackCandidates[0].model
+   *   4. fallbackCandidates[1] ...
+   */
+  fallbackCandidates?: FallbackCandidate[];
 }
 
 export class ModelRouter {
@@ -112,13 +154,29 @@ export class ModelRouter {
     };
   }
 
+  /**
+   * Build the ordered list of provider/model candidates to attempt.
+   *
+   * Order of precedence:
+   *   1. User-selected provider + explicit model (if any)
+   *   2. Same-provider default model (cloud or local, depending on provider)
+   *   3. User-configured fallback candidates (only when the user explicitly
+   *      populates `config.fallbackCandidates` — never cross-provider by default)
+   *
+   * Cross-provider fallback is a deliberate opt-in: without it, one provider's
+   * credential is never sent to a different provider's endpoint (NC-001/NC-013).
+   */
   public resolveCandidates(
     options: ProviderGenerateOptions = {},
   ): RouteCandidate[] {
     const candidates: RouteCandidate[] = [];
     const selectedProviderId = this.selectProvider(options);
 
-    const addCandidate = (providerId: ProviderId, model: string): void => {
+    const addCandidate = (
+      providerId: ProviderId,
+      model: string,
+      label?: string,
+    ): void => {
       const provider = this.providers[providerId];
       const normalizedModel = model.trim();
       if (!provider || !normalizedModel) {
@@ -141,19 +199,27 @@ export class ModelRouter {
       });
     };
 
+    // 1. Explicit model on the selected provider
     const explicitModel = options.model?.trim();
     if (explicitModel) {
       addCandidate(selectedProviderId, explicitModel);
     }
 
-    // Determine the default model based on provider type
+    // 2. Same-provider default model (cloud vs local distinction)
     const sameProviderDefault = CLOUD_PROVIDERS.includes(selectedProviderId)
       ? this.config.defaultCloudModel
       : this.config.defaultModel;
     addCandidate(selectedProviderId, sameProviderDefault);
 
-    // Only add alternate provider as fallback if explicitly requested
-    // This prevents unnecessary fallback to openai-compatible when ollama is selected
+    // 3. User-configured cross-provider fallback candidates.
+    //    This is empty by default — cross-provider fallback only occurs when
+    //    the user explicitly populates the list (NC-013 / NC-001 containment).
+    const fallbacks = this.config.fallbackCandidates;
+    if (Array.isArray(fallbacks)) {
+      for (const fb of fallbacks) {
+        addCandidate(fb.providerId, fb.model, fb.label);
+      }
+    }
 
     return candidates;
   }
@@ -168,7 +234,7 @@ export class ModelRouter {
     if (cached) return JSON.parse(cached);
 
     const candidates = this.resolveCandidates(options);
-    let lastError: unknown;
+    const failures: CandidateFailure[] = [];
 
     for (const candidate of candidates) {
       try {
@@ -197,27 +263,18 @@ export class ModelRouter {
           throw error;
         }
 
-        lastError = error;
+        const errMsg = error instanceof Error ? error.message : String(error ?? "Unknown error");
+        const statusCode = this.extractStatusCode(error);
+        failures.push({
+          providerId: candidate.providerId,
+          model: candidate.model,
+          error: errMsg,
+          statusCode,
+        });
       }
     }
 
-    const attempted = candidates.map(c => `${c.providerId}/${c.model}`).join(", ");
-    const errorMsg = lastError instanceof Error ? lastError.message : String(lastError ?? "Unknown error");
-
-    let troubleshooting = "";
-    if (errorMsg.includes("ECONNREFUSED") || errorMsg.includes("upstream") || errorMsg.includes("fetch")) {
-      troubleshooting = "\n\nTroubleshooting:\n- Check if your provider is running and accessible\n- Verify the base URL in settings\n- Check your network connection";
-    } else if (errorMsg.includes("401") || errorMsg.includes("403") || errorMsg.includes("unauthorized") || errorMsg.includes("api key")) {
-      troubleshooting = "\n\nTroubleshooting:\n- Verify your API key is correct\n- Check if your API key has sufficient permissions";
-    } else if (errorMsg.includes("429") || errorMsg.includes("rate limit")) {
-      troubleshooting = "\n\nTroubleshooting:\n- You've hit rate limits. Wait a moment and try again\n- Consider using a different model or provider";
-    } else if (errorMsg.includes("timeout")) {
-      troubleshooting = "\n\nTroubleshooting:\n- The request timed out. Try a simpler prompt\n- Check your network connection";
-    }
-
-    throw new Error(
-      `All provider/model attempts failed (${attempted}): ${errorMsg}${troubleshooting}`,
-    );
+    throw this.buildFinalError(failures);
   }
 
   public async *stream(
@@ -225,7 +282,7 @@ export class ModelRouter {
     options: ProviderGenerateOptions = {},
   ): AsyncGenerator<string> {
     const candidates = this.resolveCandidates(options);
-    let lastError: unknown;
+    const failures: CandidateFailure[] = [];
 
     for (const candidate of candidates) {
       let emittedAnyToken = false;
@@ -276,27 +333,18 @@ export class ModelRouter {
           throw error;
         }
 
-        lastError = error;
+        const errMsg = error instanceof Error ? error.message : String(error ?? "Unknown error");
+        const statusCode = this.extractStatusCode(error);
+        failures.push({
+          providerId: candidate.providerId,
+          model: candidate.model,
+          error: errMsg,
+          statusCode,
+        });
       }
     }
 
-    const attempted = candidates.map(c => `${c.providerId}/${c.model}`).join(", ");
-    const errorMsg = lastError instanceof Error ? lastError.message : String(lastError ?? "Unknown error");
-
-    let troubleshooting = "";
-    if (errorMsg.includes("ECONNREFUSED") || errorMsg.includes("upstream") || errorMsg.includes("fetch")) {
-      troubleshooting = "\n\nTroubleshooting:\n- Check if your provider is running and accessible\n- Verify the base URL in settings\n- Check your network connection";
-    } else if (errorMsg.includes("401") || errorMsg.includes("403") || errorMsg.includes("unauthorized") || errorMsg.includes("api key")) {
-      troubleshooting = "\n\nTroubleshooting:\n- Verify your API key is correct\n- Check if your API key has sufficient permissions";
-    } else if (errorMsg.includes("429") || errorMsg.includes("rate limit")) {
-      troubleshooting = "\n\nTroubleshooting:\n- You've hit rate limits. Wait a moment and try again\n- Consider using a different model or provider";
-    } else if (errorMsg.includes("timeout")) {
-      troubleshooting = "\n\nTroubleshooting:\n- The request timed out. Try a simpler prompt\n- Check your network connection";
-    }
-
-    throw new Error(
-      `All provider/model attempts failed (${attempted}): ${errorMsg}${troubleshooting}`,
-    );
+    throw this.buildFinalError(failures);
   }
 
   private selectProvider(options: ProviderGenerateOptions): ProviderId {
@@ -321,5 +369,58 @@ export class ModelRouter {
 
     const message = String(error ?? "").toLowerCase();
     return message.includes("abort");
+  }
+
+  /**
+   * Attempt to extract an HTTP status code from a provider error. Returns
+   * undefined when the error does not carry a numeric status.
+   */
+  private extractStatusCode(error: unknown): number | undefined {
+    if (error && typeof error === "object") {
+      const obj = error as Record<string, unknown>;
+      if (typeof obj.status === "number") return obj.status;
+      if (typeof obj.statusCode === "number") return obj.statusCode;
+    }
+    const msg = String(error ?? "");
+    const match = msg.match(/\b(4\d{2}|5\d{2})\b/);
+    return match ? Number(match[1]) : undefined;
+  }
+
+  /**
+   * Build a detailed error message from per-candidate failure records.
+   * The message lists every candidate that was tried, the reason each failed,
+   * and provides category-specific troubleshooting guidance. This replaces the
+   * old generic "All provider/model attempts failed" message that implied
+   * broader fallback than actually existed.
+   */
+  private buildFinalError(failures: CandidateFailure[]): Error {
+    const summaryLines = failures.map((f, i) => {
+      const label = f.label ? ` (${f.label})` : "";
+      const status = f.statusCode != null ? ` [HTTP ${f.statusCode}]` : "";
+      return `  ${i + 1}. ${f.providerId}/${f.model}${label}: ${f.error}${status}`;
+    });
+
+    const attempted = failures.map(f => `${f.providerId}/${f.model}`).join(", ");
+    const lastFailure = failures[failures.length - 1];
+    const lastError = lastFailure?.error ?? "Unknown error";
+
+    let troubleshooting = "";
+    if (lastError.includes("ECONNREFUSED") || lastError.includes("upstream") || lastError.includes("fetch")) {
+      troubleshooting = "\n\nTroubleshooting:\n- Check if your provider is running and accessible\n- Verify the base URL in settings\n- Check your network connection";
+    } else if (lastError.includes("401") || lastError.includes("403") || lastError.includes("unauthorized") || lastError.includes("api key")) {
+      troubleshooting = "\n\nTroubleshooting:\n- Verify your API key is correct\n- Check if your API key has sufficient permissions";
+    } else if (lastError.includes("429") || lastError.includes("rate limit")) {
+      troubleshooting = "\n\nTroubleshooting:\n- You've hit rate limits. Wait a moment and try again\n- Consider using a different model or provider";
+    } else if (lastError.includes("timeout")) {
+      troubleshooting = "\n\nTroubleshooting:\n- The request timed out. Try a simpler prompt\n- Check your network connection";
+    }
+
+    const detail = summaryLines.length > 1
+      ? `\n\nAttempts (${failures.length}):\n${summaryLines.join("\n")}`
+      : "";
+
+    return new Error(
+      `All ${failures.length} provider/model attempt(s) failed (${attempted}): ${lastError}${detail}${troubleshooting}`,
+    );
   }
 }

@@ -11,6 +11,8 @@ export {
 export {
   detectModelCapabilities,
   type ModelCapabilities,
+  type FallbackCandidate,
+  type CandidateFailure,
 } from "./providers/modelRouter";
 export { TaskQueue, classifyPromptIntent } from "./taskQueue";
 export { TaskQueueManager } from "./taskManager";

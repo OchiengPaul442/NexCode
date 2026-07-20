@@ -17,7 +17,7 @@
   "activeFindingIds": [],
   "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004", "NC-005", "NC-007", "NC-008"],
   "blockedFindingIds": [],
-  "lastCommit": "PENDING",
+  "lastCommit": "dd2db9b",
   "lastSummary": "NC-008 fixed: Bypass/autopilot approval mode removed for security. (1) extension/package.json: removed 'bypass' from toolApproval enum — only 'auto' and 'ask' remain. (2) sidebarViewProvider.ts: approval callback no longer returns true for bypass; removed hardcoded ['write','append','patch'] fallback auto-approve in auto mode; policy engine isAutoExecutable() is sole source of truth; legacy bypass config value falls back to 'ask'. (3) webview main.tsx: removed bypass option from Permission Mode dropdown. (4) webviewMessageValidation.ts: updateSetting rejects toolApproval=bypass. (5) toolApprovalPolicy.test.ts: updated simulateApprovalCallback to remove bypass and extension fallback. (6) approvalPolicy.test.ts: 22 new tests. (7) webviewValidation.test.ts: 4 new tests. 799/799 tests pass. Build clean.",
   "lastVerification": {
     "focusedTests": "PASS — 22/22 approvalPolicy + 79/79 webviewValidation tests pass",

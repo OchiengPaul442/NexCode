@@ -2182,16 +2182,6 @@ export class NexcodeOrchestrator {
       newText = `${oldText.trimEnd()}\n${requestedAppendText.trim()}`;
     }
 
-    if (
-      this.shouldUseBlogLandingFallback(
-        parsed.filePath,
-        parsed.instruction,
-        newText,
-      )
-    ) {
-      newText = this.createBlogLandingPageFallback();
-    }
-
     const proposedEdit = await this.tools.filesystem.makeProposedEdit(
       parsed.filePath,
       newText,
@@ -2252,72 +2242,6 @@ export class NexcodeOrchestrator {
     }
 
     return null;
-  }
-
-  private shouldUseBlogLandingFallback(
-    filePath: string,
-    instruction: string,
-    generatedText: string,
-  ): boolean {
-    if (!/\b(blog|homepage|landing page|home page)\b/i.test(instruction)) {
-      return false;
-    }
-
-    if (!/\.(tsx|jsx)$/i.test(filePath)) {
-      return false;
-    }
-
-    return !/\b(blog|post|featured|recent)\b/i.test(generatedText);
-  }
-
-  private createBlogLandingPageFallback(): string {
-    return [
-      "export default function Home() {",
-      "  const featuredPosts = [",
-      "    { title: 'Featured post one', summary: 'A polished article preview for the blog homepage.' },",
-      "    { title: 'Featured post two', summary: 'Another highlighted story from the latest posts.' },",
-      "  ];",
-      "",
-      "  const recentPosts = [",
-      "    { title: 'Recent post one', summary: 'Fresh updates from the blog.' },",
-      "    { title: 'Recent post two', summary: 'Practical notes and release highlights.' },",
-      "  ];",
-      "",
-      "  return (",
-      '    <main className="min-h-screen bg-slate-950 text-slate-100">',
-      '      <section className="mx-auto max-w-5xl px-6 py-16">',
-      '        <p className="text-sm uppercase tracking-[0.3em] text-cyan-300">Blog</p>',
-      '        <h1 className="mt-4 text-4xl font-semibold">A polished blog homepage</h1>',
-      '        <p className="mt-4 max-w-2xl text-slate-300">Latest posts, featured stories, and practical notes for builders.</p>',
-      "      </section>",
-      "",
-      '      <section className="mx-auto max-w-5xl px-6 py-6">',
-      '        <h2 className="text-xl font-semibold">Featured posts</h2>',
-      '        <div className="mt-4 grid gap-4 md:grid-cols-2">',
-      "          {featuredPosts.map((post) => (",
-      '            <article key={post.title} className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">',
-      '              <h3 className="text-lg font-medium">{post.title}</h3>',
-      '              <p className="mt-2 text-sm text-slate-300">{post.summary}</p>',
-      "            </article>",
-      "          ))}",
-      "        </div>",
-      "      </section>",
-      "",
-      '      <section className="mx-auto max-w-5xl px-6 py-10">',
-      '        <h2 className="text-xl font-semibold">Recent posts</h2>',
-      '        <ul className="mt-4 space-y-3">',
-      "          {recentPosts.map((post) => (",
-      '            <li key={post.title} className="rounded-2xl border border-slate-800 bg-slate-900/50 p-4">',
-      '              <p className="font-medium">{post.title}</p>',
-      '              <p className="mt-1 text-sm text-slate-300">{post.summary}</p>',
-      "            </li>",
-      "          ))}",
-      "        </ul>",
-      "      </section>",
-      "    </main>",
-      "  );",
-      "}",
-    ].join("\n");
   }
 
   private inferNaturalLanguageEditRequest(

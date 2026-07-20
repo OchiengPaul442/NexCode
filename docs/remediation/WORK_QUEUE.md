@@ -321,14 +321,15 @@
 
 ### NC-028 — General coding agent contains hardcoded blog-page fallback
 - **Severity:** High
-- **Status:** pending
-- **Phase:** F
+- **Status:** fixed
+- **Phase:** 0 / F
 - **Dependencies:** none
-- **Affected files:** `agent-core/src/orchestrator.ts:2161-2169,2233-2300+`
-- **Verified:** unverified
-- **Required tests:** blog fallback deleted; incomplete generation fails validation
-- **Verification commands:** `npx vitest run agent-core/tests/orchestratorFallback.test.ts`
-- **Resolution evidence:** (none yet)
+- **Affected files:** `agent-core/src/orchestrator.ts:2161-2321`
+- **Verified:** yes — verified against current source; `shouldUseBlogLandingFallback()` and `createBlogLandingPageFallback()` methods removed along with calling code
+- **Required tests:** blog fallback deleted; methods no longer exist on orchestrator class
+- **Verification commands:** `npx vitest run agent-core/tests/blogFallbackRemoval.test.ts`
+- **Resolution evidence:** `agent-core/src/orchestrator.ts` changed: (1) Removed `shouldUseBlogLandingFallback()` private method (15 lines) — checked if instruction mentions blog/homepage/landing page AND file is TSX/JSX AND generated text lacks blog keywords. (2) Removed `createBlogLandingPageFallback()` private method (48 lines) — hardcoded Tailwind blog homepage component. (3) Removed calling code at lines 2185-2193 that replaced model output with the hardcoded fallback. Total: 76 lines deleted, 0 inserted. 4 regression tests in `agent-core/tests/blogFallbackRemoval.test.ts`: methods no longer exist on orchestrator, orchestrator class source does not contain hardcoded blog strings, orchestrator source does not contain fallback method names. 873/873 unit tests pass. Build clean. All type-checks clean.
+- **Remaining risk:** None — the blog fallback was entirely contained within the orchestrator and did not affect other modules. Model output is now preserved as-is regardless of blog-related keywords.
 
 ---
 
@@ -581,7 +582,7 @@ NC-016 (tool schema validation)
 9. NC-010 — concurrency limit to 1
 10. NC-022 — workspace prompt overrides ✅
 11. NC-024 — secret migration cleanup ✅
-12. NC-028 — blog fallback removal
+12. NC-028 — blog fallback removal ✅
 13. NC-009 — MCP marked experimental
 
 **Phase C (runtime schema boundary):**

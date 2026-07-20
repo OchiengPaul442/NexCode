@@ -800,3 +800,65 @@ Append one section per autonomous iteration. Never rewrite prior entries.
 | `agent-core/src/index.ts` | Export editValidation utilities and checkPathWithinWorkspace | +6 |
 | `agent-core/tests/editValidation.test.ts` | New regression test file | +340 |
 
+---
+
+## Iteration 11 — NC-028: Remove hardcoded blog landing page fallback
+
+**Date:** 20 July 2026
+**Finding IDs:** NC-028 (High)
+**Phase:** 0 — Containment patch
+
+### What was done
+
+1. **Verified NC-028 against current source code:**
+   - `agent-core/src/orchestrator.ts:2185-2193` — confirmed calling code that invokes `shouldUseBlogLandingFallback()` and replaces model output with `createBlogLandingPageFallback()` if conditions match.
+   - `agent-core/src/orchestrator.ts:2257-2271` — confirmed `shouldUseBlogLandingFallback()` checks if instruction mentions "blog/homepage/landing page" AND file is TSX/JSX AND generated text lacks "blog/post/featured/recent".
+   - `agent-core/src/orchestrator.ts:2273-2321` — confirmed `createBlogLandingPageFallback()` returns a hardcoded 48-line Tailwind blog homepage component.
+
+2. **Implemented fix (1 production file changed):**
+   - `agent-core/src/orchestrator.ts` (-76 lines):
+     - Removed the `if (this.shouldUseBlogLandingFallback(...))` block that silently replaced model output.
+     - Removed the `shouldUseBlogLandingFallback()` private method entirely.
+     - Removed the `createBlogLandingPageFallback()` private method entirely.
+     - Model output is now preserved as-is regardless of blog-related keywords in the instruction.
+
+3. **Added regression tests (1 new file, 4 tests):**
+   - `agent-core/tests/blogFallbackRemoval.test.ts`:
+     - Test 1: `shouldUseBlogLandingFallback` method does not exist on orchestrator instance.
+     - Test 2: `createBlogLandingPageFallback` method does not exist on orchestrator instance.
+     - Test 3: Orchestrator class source does not contain hardcoded blog strings ("A polished blog homepage", "Featured post one", "Recent post one", "featuredPosts", "recentPosts").
+     - Test 4: Orchestrator source does not contain fallback method names.
+
+4. **Validated:**
+   - 4/4 new blogFallbackRemoval tests pass.
+   - 8/8 existing orchestrator tests pass.
+   - 873/873 full unit tests pass (3 pre-existing e2e failures unrelated).
+   - `tsc --noEmit` clean in agent-core, extension, and webview.
+   - `npm run build` clean.
+   - `git diff --check` clean.
+
+### Validation
+
+| Check | Result | Notes |
+|---|---|---|
+| Focused tests (NC-028) | PASS | 4/4 blogFallbackRemoval tests pass |
+| Orchestrator tests | PASS | 8/8 orchestrator.test.ts tests pass |
+| Full test suite | PASS | 873/873 unit tests pass; 3 pre-existing e2e failures |
+| Type check (agent-core) | PASS | `tsc --noEmit` clean |
+| Type check (extension) | PASS | `tsc --noEmit` clean |
+| Type check (webview) | PASS | `tsc --noEmit` clean |
+| Build | PASS | Full `npm run build` clean |
+| No secrets in diff | PASS | No API keys, tokens, or secrets in the diff |
+| No test suppression | PASS | All existing tests retained and passing |
+
+### Remaining risks
+
+- None. The blog fallback was entirely contained within the orchestrator and did not affect other modules. Model output is now preserved as-is regardless of blog-related keywords.
+
+### Files changed
+
+| File | Change | Lines |
+|---|---|---|
+| `agent-core/src/orchestrator.ts` | Remove shouldUseBlogLandingFallback, createBlogLandingPageFallback, and calling code | -76 |
+| `agent-core/tests/blogFallbackRemoval.test.ts` | New regression test file | +82 |
+

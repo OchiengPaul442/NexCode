@@ -5,18 +5,42 @@ import { ChatMessage } from "../types";
 const MAX_SESSIONS = 50;
 const MAX_CONTEXT_MESSAGES = 12;
 
+export interface ShortTermMemoryOptions {
+  maxMessagesPerSession?: number;
+  persistDir?: string;
+  /** Optional callback invoked when a persistence error occurs. */
+  onError?: (error: Error) => void;
+}
+
 export class ShortTermMemory {
   private readonly sessions = new Map<string, ChatMessage[]>();
   private readonly accessOrder: string[] = [];
   private readonly persistDir?: string;
+  private readonly onError?: (error: Error) => void;
   private persistQueue = Promise.resolve();
+  private disposed = false;
+  private lastError: Error | null = null;
 
   public constructor(
-    private readonly maxMessagesPerSession = 40,
+    maxMessagesPerSessionOrOptions?: number | ShortTermMemoryOptions,
     persistDir?: string,
   ) {
-    this.persistDir = persistDir;
+    if (
+      typeof maxMessagesPerSessionOrOptions === "object" &&
+      maxMessagesPerSessionOrOptions !== null
+    ) {
+      this.maxMessagesPerSession =
+        maxMessagesPerSessionOrOptions.maxMessagesPerSession ?? 40;
+      this.persistDir = maxMessagesPerSessionOrOptions.persistDir;
+      this.onError = maxMessagesPerSessionOrOptions.onError;
+    } else {
+      this.maxMessagesPerSession = maxMessagesPerSessionOrOptions ?? 40;
+      this.persistDir = persistDir;
+      this.onError = undefined;
+    }
   }
+
+  private readonly maxMessagesPerSession: number;
 
   public append(sessionId: string, message: ChatMessage): void {
     const existing = this.sessions.get(sessionId) ?? [];
@@ -33,10 +57,12 @@ export class ShortTermMemory {
       this.evictOldest();
     }
 
-    if (this.persistDir) {
+    if (this.persistDir && !this.disposed) {
       this.persistQueue = this.persistQueue
         .then(() => this.persistSession(sessionId))
-        .catch(() => {});
+        .catch((error) => {
+          this.captureError(error, "persist session");
+        });
     }
   }
 
@@ -52,10 +78,12 @@ export class ShortTermMemory {
       this.accessOrder.splice(idx, 1);
     }
 
-    if (this.persistDir) {
+    if (this.persistDir && !this.disposed) {
       this.persistQueue = this.persistQueue
         .then(() => this.removePersistedSession(sessionId))
-        .catch(() => {});
+        .catch((error) => {
+          this.captureError(error, "remove persisted session");
+        });
     }
   }
 
@@ -96,12 +124,12 @@ export class ShortTermMemory {
             this.sessions.set(sessionId, messages);
             this.touchSession(sessionId);
           }
-        } catch {
-          // Skip unreadable files.
+        } catch (error) {
+          this.captureError(error, `load session ${sessionId}`);
         }
       }
-    } catch {
-      // No persisted sessions yet.
+    } catch (error) {
+      this.captureError(error, "read persist directory");
     }
   }
 
@@ -133,6 +161,39 @@ export class ShortTermMemory {
     return lines.join("\n");
   }
 
+  /**
+   * Waits for all queued persistence operations to complete.
+   * Returns true if all operations succeeded.
+   */
+  public async flush(): Promise<boolean> {
+    await this.persistQueue;
+    return this.lastError === null;
+  }
+
+  /**
+   * Waits for all queued persistence operations and prevents further writes.
+   * Returns true if all operations succeeded.
+   */
+  public async dispose(): Promise<boolean> {
+    this.disposed = true;
+    await this.persistQueue;
+    return this.lastError === null;
+  }
+
+  /**
+   * Returns the last persistence error, or null if none occurred.
+   */
+  public getLastError(): Error | null {
+    return this.lastError;
+  }
+
+  /**
+   * Returns true if any persistence operation has failed.
+   */
+  public hasPersistenceError(): boolean {
+    return this.lastError !== null;
+  }
+
   private touchSession(sessionId: string): void {
     const idx = this.accessOrder.indexOf(sessionId);
     if (idx !== -1) {
@@ -146,10 +207,12 @@ export class ShortTermMemory {
       const oldest = this.accessOrder.shift()!;
       this.sessions.delete(oldest);
       // Clean up persisted file
-      if (this.persistDir) {
+      if (this.persistDir && !this.disposed) {
         this.persistQueue = this.persistQueue
           .then(() => this.removePersistedSession(oldest))
-          .catch(() => {});
+          .catch((error) => {
+            this.captureError(error, "evict persisted session");
+          });
       }
     }
   }
@@ -164,14 +227,10 @@ export class ShortTermMemory {
       return;
     }
 
-    try {
-      await fs.mkdir(this.persistDir, { recursive: true });
-      const filePath = path.join(this.persistDir, `${sessionId}.jsonl`);
-      const lines = messages.map((m) => JSON.stringify(m)).join("\n");
-      await fs.writeFile(filePath, `${lines}\n`, "utf8");
-    } catch {
-      // Best-effort persistence.
-    }
+    await fs.mkdir(this.persistDir, { recursive: true });
+    const filePath = path.join(this.persistDir, `${sessionId}.jsonl`);
+    const lines = messages.map((m) => JSON.stringify(m)).join("\n");
+    await fs.writeFile(filePath, `${lines}\n`, "utf8");
   }
 
   private async removePersistedSession(sessionId: string): Promise<void> {
@@ -185,5 +244,14 @@ export class ShortTermMemory {
     } catch {
       // File may not exist.
     }
+  }
+
+  private captureError(error: unknown, context: string): void {
+    const err =
+      error instanceof Error
+        ? new Error(`ShortTermMemory ${context}: ${error.message}`)
+        : new Error(`ShortTermMemory ${context}: ${String(error)}`);
+    this.lastError = err;
+    this.onError?.(err);
   }
 }

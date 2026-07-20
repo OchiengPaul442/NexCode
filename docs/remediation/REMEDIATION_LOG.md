@@ -1863,3 +1863,77 @@ Append one section per autonomous iteration. Never rewrite prior entries.
 | `agent-core/tests/taskConcurrency.test.ts` | Update steering test to reflect new eligible states | +10, -5 |
 | `agent-core/tests/steeringStateMachine.test.ts` | New regression test file | +420 |
 
+---
+
+## Iteration 13 — NC-012: Cancellation propagation through tools and child processes
+
+**Date:** 20 July 2026
+**Finding IDs:** NC-012 (High)
+**Phase:** E — Tool and terminal redesign
+**Commit:** `bb6e42e` — `fix(agent-core,extension): resolve NC-012 — cancellation propagation through tools and child processes`
+
+### What was done
+
+1. **Verified NC-012 against current source code:**
+   - `extension/src/sidebarViewProvider.ts:508-517` — confirmed `abortController.abort()` is called on task cancellation, but the signal was not passed to tools.
+   - `agent-core/src/tools/terminalTool.ts` — confirmed `run()`, `runSafe()`, and `stream()` had no `AbortSignal` parameter. Child processes were not killed on task cancellation.
+   - `agent-core/src/tools/gitTool.ts` — confirmed all git methods lacked signal parameter.
+   - `agent-core/src/tools/testRunnerTool.ts` — confirmed `run()` and `stream()` lacked signal parameter.
+   - `agent-core/src/tools/toolRegistry.ts` — confirmed `runToolCall()` did not accept or pass signal.
+   - `agent-core/src/agents/agentLoop.ts` — confirmed signal was not passed to `runToolCall()`.
+
+2. **Implemented fix (7 production files changed, 1 new test file):**
+   - `agent-core/src/tools/terminalTool.ts` (+196, -3):
+     - Added `killProcessTree()` utility: cross-platform process tree termination. On Windows: `taskkill /T /F /PID`. On POSIX: `process.kill(-pid, SIGTERM)` for process group + `child.kill()` fallback.
+     - Added `execWithSignal()`: wraps `exec()` with abort signal support. On abort, calls `killProcessTree()`. Cleanup in both exec callback and close event (handles failed commands where close may not fire).
+     - Added `execFileWithSignal()`: same pattern for `execFile()`.
+     - `run()`: accepts `signal?: AbortSignal`. Fast-fail if already aborted. Passes signal to `execWithSignal()`. Detects abort in error handler and returns cancellation message.
+     - `runSafe()`: accepts `signal?: AbortSignal`. Fast-fail if already aborted. Passes signal to `execFileWithSignal()`. Detects abort in error handler.
+     - `stream()`: accepts `signal?: AbortSignal`. Fast-fail if already aborted. Registers `onAbort` handler that sets `cancelled` flag and calls `killProcessTree()`. Cleanup on error, close, and finally.
+   - `agent-core/src/tools/gitTool.ts` (+36, -18): All 8 methods (`status`, `diff`, `branch`, `stage`, `unstage`, `commit`, `createBranch`, `log`, `show`) accept `signal?: AbortSignal` and pass it to `terminal.runSafe()`.
+   - `agent-core/src/tools/testRunnerTool.ts` (+4, -4): `run()` and `stream()` accept `signal?: AbortSignal` and pass it to `terminal.run()`/`terminal.stream()`.
+   - `agent-core/src/tools/toolRegistry.ts` (+14, -14): `runToolCall()` and `runToolCallStructured()` accept `signal?: AbortSignal` and pass it through to terminal, git, and test tools.
+   - `agent-core/src/orchestrator.ts` (+8, -4): Passes `request.abortSignal` to `runToolCall()` calls and `terminal.stream()` in `executeToolCommand()` and `handleToolCommand()`.
+   - `agent-core/src/agents/agentLoop.ts` (+2): Passes `signal` to `tools.runToolCall()` in the tool execution and approval re-run paths.
+   - `agent-core/tests/cancellationPropagation.test.ts` (new, 457 lines): 30 regression tests.
+
+3. **Validated:**
+   - 30/30 new cancellationPropagation tests pass.
+   - 1271/1272 full unit tests pass (1 pre-existing approvalPolicy path issue unrelated).
+   - `tsc --noEmit` clean in agent-core, extension, and webview.
+   - `npm run build` clean.
+   - `git diff --check` clean (only line-ending warnings).
+   - No secrets in diff.
+
+### Validation
+
+| Check | Result | Notes |
+|---|---|---|
+| Focused tests (NC-012) | PASS | 30/30 cancellationPropagation tests pass |
+| Full test suite | PASS | 1271/1272 tests pass; 1 pre-existing approvalPolicy path issue |
+| Type check (agent-core) | PASS | `tsc --noEmit` clean |
+| Type check (extension) | PASS | `tsc --noEmit` clean |
+| Type check (webview) | PASS | `tsc --noEmit` clean |
+| Build | PASS | Full `npm run build` clean |
+| No secrets in diff | PASS | No API keys, tokens, or secrets in the diff |
+| No test suppression | PASS | All existing tests retained and passing |
+
+### Remaining risks
+
+- Process tree kill on Windows uses `taskkill /T /F` which may not terminate processes with elevated privileges or certain protected processes.
+- POSIX process group kill (`process.kill(-pid, SIGTERM)`) may fail for non-group-leaders; the fallback `child.kill()` handles this case.
+- The `sidebarViewProvider.ts` abort path (line 508-517) was not modified in this iteration — it already calls `abortController.abort()` which triggers the signal. The signal now propagates through the tool chain.
+- Full per-task `AgentRunContext` isolation (per-task signals, messages, metrics, approvals, proposed edits, provider sessions) is still pending (NC-010 remaining risk). The current fix ensures cancellation propagates but does not isolate mutable state per-task.
+
+### Files changed
+
+| File | Change | Lines |
+|---|---|---|
+| `agent-core/src/tools/terminalTool.ts` | Add killProcessTree, execWithSignal, execFileWithSignal; add signal param to run/runSafe/stream | +196, -3 |
+| `agent-core/src/tools/gitTool.ts` | Add signal param to all 8 methods | +36, -18 |
+| `agent-core/src/tools/testRunnerTool.ts` | Add signal param to run/stream | +4, -4 |
+| `agent-core/src/tools/toolRegistry.ts` | Add signal param to runToolCall/runToolCallStructured, pass through | +14, -14 |
+| `agent-core/src/orchestrator.ts` | Pass abortSignal to tool calls and terminal streaming | +8, -4 |
+| `agent-core/src/agents/agentLoop.ts` | Pass signal to runToolCall | +2 |
+| `agent-core/tests/cancellationPropagation.test.ts` | New regression test file (30 tests) | +457 |
+

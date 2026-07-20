@@ -145,14 +145,15 @@
 
 ### NC-012 — Cancellation does not propagate through all tools and child processes
 - **Severity:** High
-- **Status:** pending
-- **Phase:** E / G
+- **Status:** fixed
+- **Phase:** E
 - **Dependencies:** NC-004 (terminal tool), NC-010 (task context)
-- **Affected files:** `extension/src/sidebarViewProvider.ts:508-517`, `agent-core/src/tools/terminalTool.ts:548-653`, `agent-core/src/agents/agentLoop.ts`
-- **Verified:** unverified
+- **Affected files:** `agent-core/src/tools/terminalTool.ts`, `agent-core/src/tools/gitTool.ts`, `agent-core/src/tools/testRunnerTool.ts`, `agent-core/src/tools/toolRegistry.ts`, `agent-core/src/orchestrator.ts`, `agent-core/src/agents/agentLoop.ts`
+- **Verified:** yes — verified against current source; AbortSignal propagated through entire tool chain, process tree killed cross-platform
 - **Required tests:** task cancellation terminates child process trees; AbortSignal propagated to all tools; cleanup completes before final task state
-- **Verification commands:** `npx vitest run agent-core/tests/cancellation.test.ts`
-- **Resolution evidence:** (none yet)
+- **Verification commands:** `npx vitest run agent-core/tests/cancellationPropagation.test.ts`
+- **Resolution evidence:** `bb6e42e` — (1) `TerminalTool.run()`, `runSafe()`, `stream()` accept optional `AbortSignal` parameter. (2) `killProcessTree()` utility kills process tree cross-platform: `taskkill /T /F /PID` on Windows, `process.kill(-pid, SIGTERM)` + `child.kill()` on POSIX. (3) `execWithSignal()` and `execFileWithSignal()` wrap exec/execFile with abort signal support — cleanup in both exec callback and close event. (4) Already-aborted signal causes immediate fast-fail rejection. (5) `ToolRegistry.runToolCall()` and `runToolCallStructured()` pass signal through to terminal, git, and test tools. (6) `GitTool`: all 8 methods (status, diff, branch, stage, unstage, commit, createBranch, log, show) accept `signal?: AbortSignal`. (7) `TestRunnerTool`: `run()` and `stream()` accept signal. (8) `Orchestrator` passes `request.abortSignal` to all tool calls and terminal streaming. (9) `AgentLoop` passes `signal` to `ToolRegistry.runToolCall()`. (10) 30 regression tests in `cancellationPropagation.test.ts`: TerminalTool.run/runSafe/stream abort (11), ToolRegistry propagation (3), GitTool propagation (2), TestRunnerTool propagation (2), AgentLoop (1), process tree cleanup (1), memory leak prevention (3), edge cases (3), backward compat (4). 1271/1272 tests pass (1 pre-existing approvalPolicy path issue). Build clean. All type-checks clean.
+- **Remaining risk:** Process tree kill on Windows uses `taskkill /T /F` which may not terminate processes with elevated privileges. POSIX process group kill may fail for non-group-leaders (fallback to `child.kill()` handles this).
 
 ### NC-013 — Model fallback is advertised but not implemented
 - **Severity:** High

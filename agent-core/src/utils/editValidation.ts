@@ -1,5 +1,5 @@
 import { createHash } from "crypto";
-import { ProposedEdit } from "../types";
+import { type ProposedEdit } from "../types";
 import { checkPathWithinWorkspace, resolveWorkspacePath } from "./pathContainment";
 
 /**

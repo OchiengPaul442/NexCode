@@ -107,7 +107,7 @@ describe("ToolRegistry with approval policy", () => {
     const registry = new ToolRegistry(workspaceRoot, {
       approvalPolicy: policy,
     });
-    const result = await registry.runToolCall("move a.ts :: b.ts");
+    const result = await registry.runToolCall("move a.ts ||| b.ts");
     expect(result.requiresApproval).toBe(true);
     expect(result.toolName).toBe("move");
   });
@@ -133,7 +133,7 @@ describe("ToolRegistry with approval policy", () => {
     const registry = new ToolRegistry(workspaceRoot, {
       approvalPolicy: policy,
     });
-    const result = await registry.runToolCall("write src/file.ts :: content");
+    const result = await registry.runToolCall("write src/file.ts ||| content");
     expect(result.requiresApproval).toBe(true);
     expect(result.toolName).toBe("write");
   });
@@ -142,7 +142,7 @@ describe("ToolRegistry with approval policy", () => {
     const registry = new ToolRegistry(workspaceRoot, {
       approvalPolicy: policy,
     });
-    const result = await registry.runToolCall("append src/file.ts :: content");
+    const result = await registry.runToolCall("append src/file.ts ||| content");
     expect(result.requiresApproval).toBe(true);
     expect(result.toolName).toBe("append");
   });

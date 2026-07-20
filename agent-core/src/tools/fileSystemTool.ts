@@ -1,7 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 import { randomUUID } from "crypto";
-import { ProposedEdit, ToolResult } from "../types";
+import { type ProposedEdit, type ToolResult } from "../types";
 import { createPatch } from "../utils/diff";
 import { ContextCompressor } from "../utils/contextCompressor";
 import { resolveWorkspacePath } from "../utils/pathContainment";
@@ -205,9 +205,11 @@ export class FileSystemTool {
       try {
         stat = await fs.lstat(absolutePath);
       } catch {
-        // Path doesn't exist — let rm handle the error.
-        await fs.rm(absolutePath, { recursive: true, force: true });
-        return { ok: true, output: `Deleted ${targetPath}` };
+        // C-01: Path doesn't exist — return NOT_FOUND, never false success.
+        return {
+          ok: false,
+          output: `Nothing was deleted because ${targetPath} does not exist.`,
+        };
       }
 
       if (stat.isSymbolicLink()) {
@@ -293,7 +295,7 @@ export class FileSystemTool {
     try {
       oldText = await fs.readFile(absolutePath, "utf8");
     } catch {
-      oldText = "";
+      // File doesn't exist yet, use empty string
     }
 
     return {

@@ -1,6 +1,5 @@
 import fs from "fs/promises";
-import path from "path";
-import { McpAdapter, McpToolCall, McpToolResult } from "../types";
+import { type McpAdapter, type McpToolCall, type McpToolResult } from "../types";
 import { checkPathWithinWorkspace } from "../../utils/pathContainment";
 
 export class FilesystemAdapter implements McpAdapter {

@@ -1,5 +1,5 @@
 import path from "path";
-import { AgentMode, ProviderId } from "./types";
+import { type AgentMode, type ProviderId } from "./types";
 
 export const MODE_TEMPERATURES: Record<AgentMode, number> = {
   auto: 0.2,

@@ -246,16 +246,16 @@ describe("ToolRegistry structured methods", () => {
   });
 
   it("runToolCallStructured populates affectedFiles for write", async () => {
-    registry.markApproved("write", "/tmp/nexcode-test.txt :: hello");
+    registry.markApproved("write", "/tmp/nexcode-test.txt ||| hello");
     const result = await registry.runToolCallStructured(
-      "write /tmp/nexcode-test.txt :: hello",
+      "write /tmp/nexcode-test.txt ||| hello",
     );
     expect(result.metadata.affectedFiles).toBeDefined();
     expect(result.metadata.affectedFiles).toContain("/tmp/nexcode-test.txt");
   });
 
   it("runToolCallStructured populates affectedFiles for move", async () => {
-    const result = await registry.runToolCallStructured("move a.ts :: b.ts");
+    const result = await registry.runToolCallStructured("move a.ts ||| b.ts");
     if (result.ok) {
       expect(result.metadata.affectedFiles).toEqual(["a.ts", "b.ts"]);
     }

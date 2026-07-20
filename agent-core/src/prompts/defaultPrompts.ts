@@ -1,4 +1,4 @@
-import { AgentMode } from "../types";
+import { type AgentMode } from "../types";
 
 export const DEFAULT_SYSTEM_PROMPTS: Record<AgentMode, string> = {
   auto: [

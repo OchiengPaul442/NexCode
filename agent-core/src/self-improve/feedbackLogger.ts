@@ -1,6 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
-import { InteractionFeedback } from "../types";
+import { type InteractionFeedback } from "../types";
 
 export interface FeedbackLoggerOptions {
   memoryDir: string;

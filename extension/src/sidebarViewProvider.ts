@@ -2,203 +2,41 @@ import path from "path";
 import { randomBytes, randomUUID } from "crypto";
 import * as vscode from "vscode";
 import {
-  AgentMode,
   createNexcodeOrchestrator,
-  NexcodeOrchestrator,
-  OrchestratorRequest,
-  ProviderId,
-  ReasoningEffort,
-  RequestAttachment,
-  Task,
-  validateProviderUrl,
+  type NexcodeOrchestrator,
+  type OrchestratorRequest,
+  type RequestAttachment,
   validateWebviewMessage,
   validateOpenFilePath,
   isAllowedSettingKey,
 } from "@nexcode/agent-core";
-import { SecretService } from "./secretService";
-import { WorkspaceTrustService } from "./workspaceTrustService";
+import { type SecretService } from "./secretService";
+import { type WorkspaceTrustService } from "./workspaceTrustService";
 import { TaskController } from "./taskController";
 import { EditReviewService } from "./editReviewService";
-
-interface WebviewSendPromptMessage {
-  type: "sendPrompt";
-  prompt: string;
-  sessionId?: string;
-  provider?: ProviderId;
-  model?: string;
-  mode?: AgentMode;
-  temperature?: number;
-  reasoningEffort?: ReasoningEffort;
-  allowWebSearch?: boolean;
-  attachmentIds?: string[];
-}
-
-interface WebviewCancelPromptMessage {
-  type: "cancelPrompt";
-}
-
-interface WebviewPickAttachmentsMessage {
-  type: "pickAttachments";
-}
-
-interface WebviewRemoveAttachmentMessage {
-  type: "removeAttachment";
-  attachmentId: string;
-}
-
-interface WebviewAddAttachmentMessage {
-  type: "addAttachment";
-  attachment: {
-    id?: string;
-    fileName: string;
-    mimeType: string;
-    kind: RequestAttachment["kind"];
-    textContent?: string;
-    base64Data?: string;
-    byteSize?: number;
-  };
-}
-
-interface WebviewApplyEditMessage {
-  type: "applyEdit";
-  editId: string;
-}
-
-interface WebviewPreviewEditMessage {
-  type: "previewEdit";
-  editId: string;
-}
-
-interface WebviewRejectEditMessage {
-  type: "rejectEdit";
-  editId: string;
-}
-
-interface WebviewClearMessage {
-  type: "clearConversation";
-}
-
-interface WebviewOpenInTabMessage {
-  type: "openInTab";
-}
-
-interface WebviewRefreshProviderStatusMessage {
-  type: "refreshProviderStatus";
-  provider?: ProviderId;
-}
-
-interface WebviewRequestModelSuggestionsMessage {
-  type: "requestModelSuggestions";
-  provider?: ProviderId;
-}
-
-interface WebviewEnhancePromptMessage {
-  type: "enhancePrompt";
-  sessionId?: string;
-  prompt: string;
-  provider?: ProviderId;
-  model?: string;
-  mode?: AgentMode;
-  temperature?: number;
-}
-
-interface WebviewListMcpServersMessage {
-  type: "listMcpServers";
-}
-
-interface WebviewListMcpToolsMessage {
-  type: "listMcpTools";
-  server: string;
-}
-
-interface WebviewInvokeMcpToolQuickMessage {
-  type: "invokeMcpToolQuick";
-  server: string;
-  tool: string;
-  input?: string;
-}
-
-interface WebviewOpenSettingsMessage {
-  type: "openSettings";
-}
-
-interface WebviewOpenShortcutsMessage {
-  type: "openShortcuts";
-}
-
-interface WebviewOpenDocsMessage {
-  type: "openDocs";
-}
-
-interface WebviewUpdateSettingMessage {
-  type: "updateSetting";
-  key: string;
-  value: unknown;
-}
-
-interface WebviewToolApprovalResponseMessage {
-  type: "toolApprovalResponse";
-  requestId: string;
-  approved: boolean;
-}
-
-interface WebviewSteerTaskMessage {
-  type: "steerTask";
-  taskId: string;
-  message: string;
-}
-
-interface WebviewCancelTaskMessage {
-  type: "cancelTask";
-  taskId: string;
-}
-
-interface WebviewListTasksMessage {
-  type: "listTasks";
-}
-
-interface WebviewOpenFileMessage {
-  type: "openFile";
-  filePath: string;
-  line?: number;
-  column?: number;
-}
-
-interface WebviewTaskCompletedMessage {
-  type: "taskCompleted";
-}
-
-type InboundWebviewMessage =
-  | WebviewSendPromptMessage
-  | WebviewCancelPromptMessage
-  | WebviewApplyEditMessage
-  | WebviewPreviewEditMessage
-  | WebviewRejectEditMessage
-  | WebviewClearMessage
-  | WebviewPickAttachmentsMessage
-  | WebviewRemoveAttachmentMessage
-  | WebviewAddAttachmentMessage
-  | WebviewRefreshProviderStatusMessage
-  | WebviewRequestModelSuggestionsMessage
-  | WebviewEnhancePromptMessage
-  | WebviewListMcpServersMessage
-  | WebviewListMcpToolsMessage
-  | WebviewInvokeMcpToolQuickMessage
-  | WebviewOpenInTabMessage
-  | WebviewOpenSettingsMessage
-  | WebviewOpenShortcutsMessage
-  | WebviewOpenDocsMessage
-  | WebviewUpdateSettingMessage
-  | WebviewSteerTaskMessage
-  | WebviewCancelTaskMessage
-  | WebviewListTasksMessage
-  | WebviewToolApprovalResponseMessage
-  | WebviewOpenFileMessage
-  | WebviewTaskCompletedMessage;
-
-const MAX_ATTACHMENT_BYTES = 3_000_000;
-const MAX_ATTACHMENT_TEXT_CHARS = 750_000;
-const MAX_ATTACHMENT_NAME_LENGTH = 160;
+import {
+  type WebviewSendPromptMessage,
+  type WebviewEnhancePromptMessage,
+  type WebviewInvokeMcpToolQuickMessage,
+  type WebviewAddAttachmentMessage,
+  type InboundWebviewMessage,
+  MAX_ATTACHMENT_BYTES,
+  MAX_ATTACHMENT_TEXT_CHARS,
+  MAX_ATTACHMENT_NAME_LENGTH,
+} from "./sidebarViewProvider/webviewMessageTypes";
+import {
+  readAttachment,
+  isTextLike,
+} from "./sidebarViewProvider/attachmentIo";
+import {
+  validateProviderUrl,
+  getRuntimeSettings,
+  getRawApiKeys,
+} from "./sidebarViewProvider/runtimeSettings";
+import {
+  refreshProviderStatus,
+  provideModelSuggestions,
+} from "./sidebarViewProvider/providerProber";
 
 export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = "nexcodeKiboko.sidebarView";
@@ -249,7 +87,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
   public async notifyConfigChanged(): Promise<void> {
     this.orchestrator = undefined;
     this.currentWorkspaceRoot = undefined;
-    const settings = await this.getRuntimeSettings();
+    const settings = await getRuntimeSettings(this.secretService);
     // NC-023: Include workspace folder info on config refresh
     const workspaceFolders = this.getWorkspaceFolderInfos();
     const activeWorkspaceRoot = this.getWorkspaceRoot();
@@ -279,39 +117,6 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     });
   }
 
-  private normalizeOllamaBaseUrl(rawUrl: string): string {
-    const trimmed = rawUrl.trim();
-    if (!trimmed) {
-      return "http://localhost:11434";
-    }
-
-    const candidate = trimmed.replace(/\/$/, "");
-
-    try {
-      const url = new URL(candidate);
-      if (/^(?:www\.)?ollama\.com$/i.test(url.hostname)) {
-        return "http://localhost:11434";
-      }
-
-      return candidate;
-    } catch {
-      if (/^(?:www\.)?ollama\.com(?::\d+)?(?:\/.*)?$/i.test(candidate)) {
-        return "http://localhost:11434";
-      }
-
-      return candidate.startsWith("http://") || candidate.startsWith("https://")
-        ? candidate
-        : `http://${candidate}`;
-    }
-  }
-
-  /**
-   * NC-002: Validate that a provider base URL is safe to receive credentials.
-   * Delegates to the pure utility function in agent-core for testability.
-   */
-  private validateProviderUrl(rawUrl: string): string {
-    return validateProviderUrl(rawUrl);
-  }
 
   /**
    * NC-002: Check whether the current workspace is trusted enough to allow
@@ -362,10 +167,20 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         this.showCompletionNotification();
         return;
       case "refreshProviderStatus":
-        await this.refreshProviderStatus(msg.provider);
+        await refreshProviderStatus(
+          this.secretService,
+          (msg) => this.postMessage(msg),
+          (isCustomUrl) => this.canProbeProviderEndpoint(isCustomUrl),
+          msg.provider,
+        );
         return;
       case "requestModelSuggestions":
-        await this.provideModelSuggestions(msg.provider);
+        await provideModelSuggestions(
+          this.secretService,
+          (msg) => this.postMessage(msg),
+          (isCustomUrl) => this.canProbeProviderEndpoint(isCustomUrl),
+          msg.provider,
+        );
         return;
       case "enhancePrompt":
         await this.handleEnhancePrompt(msg);
@@ -424,7 +239,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
             // NC-002: Validate provider endpoint URLs before persisting.
             // Reject non-HTTPS, private-IP, and malformed URLs.
             if (msg.key === "openAIBaseUrl") {
-              const validated = this.validateProviderUrl(
+              const validated = validateProviderUrl(
                 String(msg.value),
               );
               if (validated !== String(msg.value).replace(/\/+$/, "")) {
@@ -480,7 +295,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     const taskManager = this.taskController.getTaskManager();
     const activeTasks = taskManager.getActiveTasks();
     const activeTask = activeTasks.length > 0 ? activeTasks[0] : undefined;
-    const settings = await this.getRuntimeSettings();
+    const settings = await getRuntimeSettings(this.secretService);
 
     const result = taskManager.classifyAndRoute(
       activeTask?.id,
@@ -536,7 +351,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     }
 
     const { task, request } = nextTask;
-    const selectedAttachments = (request.attachments ?? []) as RequestAttachment[];
+    const selectedAttachments = (request.attachments ?? []);
     const selectedAttachmentIds = selectedAttachments.map((a) => a.id);
 
     this.postMessage({
@@ -800,7 +615,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
 
     for (const uri of selected) {
       try {
-        const attachment = await this.readAttachment(uri);
+        const attachment = await readAttachment(uri);
         this.taskController.addAttachment(attachment);
       } catch (error) {
         this.postMessage({
@@ -817,7 +632,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     message: WebviewAddAttachmentMessage,
   ): Promise<void> {
     const payload = message.attachment;
-    if (!payload || !payload.fileName || !payload.mimeType || !payload.kind) {
+    if (!payload?.fileName || !payload.mimeType || !payload.kind) {
       this.postMessage({
         type: "error",
         message: "Attachment payload is invalid.",
@@ -852,12 +667,12 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     }
 
     let textContent = payload.textContent;
-    let base64Data = payload.base64Data;
+    const base64Data = payload.base64Data;
 
     if (
       payload.kind === "text" &&
       (!textContent || textContent.trim().length === 0) &&
-      this.isTextLike(normalizedMimeType, sanitizedFileName)
+      isTextLike(normalizedMimeType, sanitizedFileName)
     ) {
       // NC-023: Try all workspace folders to find the attachment file
       const folders = vscode.workspace.workspaceFolders ?? [];
@@ -920,6 +735,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
   private sanitizeAttachmentFileName(fileName: string): string {
     const sanitized = fileName
       .trim()
+      // eslint-disable-next-line no-control-regex
       .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_")
       .slice(0, MAX_ATTACHMENT_NAME_LENGTH);
     return sanitized || "attachment.txt";
@@ -1019,8 +835,8 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     workspaceRoot: string,
   ): Promise<NexcodeOrchestrator> {
     if (!this.orchestrator || this.currentWorkspaceRoot !== workspaceRoot) {
-      const settings = await this.getRuntimeSettings();
-      const rawKeys = await this.getRawApiKeys();
+      const settings = await getRuntimeSettings(this.secretService);
+      const rawKeys = await getRawApiKeys(this.secretService);
 
       // NC-022: Workspace prompt overrides are only allowed when the user has
       // explicitly opted in AND the workspace is trusted.  A malicious
@@ -1043,7 +859,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         searchApiKey: rawKeys.searchApiKey,
         searchBaseUrl: settings.searchBaseUrl,
         tavilyApiKey: rawKeys.tavilyApiKey,
-        modeTemperatures: settings.modeTemperatures as any,
+        modeTemperatures: settings.modeTemperatures,
         agentModels: settings.agentModels,
         allowWorkspacePrompts,
         approvalCallback: async (toolName: string, arg: string) => {
@@ -1070,7 +886,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
             // NC-008: Use ONLY the policy's isAutoExecutable() as the source of truth.
             // The extension must NOT add its own fallback auto-approval overrides.
             const policy = this.orchestrator?.getToolApprovalPolicy?.();
-            if (policy && policy.isAutoExecutable(toolName, arg)) {
+            if (policy?.isAutoExecutable(toolName, arg)) {
               return true;
             }
           }
@@ -1086,105 +902,6 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     }
 
     return this.orchestrator;
-  }
-
-  private async readAttachment(uri: vscode.Uri): Promise<RequestAttachment> {
-    const bytes = await vscode.workspace.fs.readFile(uri);
-    const fileName = path.basename(uri.fsPath);
-    const mimeType = this.guessMimeType(fileName);
-    const byteSize = bytes.byteLength;
-    const id = randomUUID();
-
-    if (byteSize > MAX_ATTACHMENT_BYTES) {
-      throw new Error(`Attachment is too large (${byteSize} bytes, max 3MB).`);
-    }
-
-    if (this.isTextLike(mimeType, fileName) && byteSize <= 250_000) {
-      const textContent = new TextDecoder("utf-8", { fatal: false }).decode(
-        bytes,
-      );
-      return {
-        id,
-        fileName,
-        mimeType,
-        kind: "text",
-        textContent,
-        byteSize,
-      };
-    }
-
-    const base64Data = Buffer.from(bytes).toString("base64");
-    return {
-      id,
-      fileName,
-      mimeType,
-      kind: mimeType.startsWith("image/") ? "image" : "binary",
-      base64Data,
-      byteSize,
-    };
-  }
-
-  private guessMimeType(fileName: string): string {
-    const lowered = fileName.toLowerCase();
-    if (lowered.endsWith(".png")) {
-      return "image/png";
-    }
-    if (lowered.endsWith(".jpg") || lowered.endsWith(".jpeg")) {
-      return "image/jpeg";
-    }
-    if (lowered.endsWith(".gif")) {
-      return "image/gif";
-    }
-    if (lowered.endsWith(".webp")) {
-      return "image/webp";
-    }
-    if (lowered.endsWith(".svg")) {
-      return "image/svg+xml";
-    }
-    if (lowered.endsWith(".md")) {
-      return "text/markdown";
-    }
-    if (
-      lowered.endsWith(".ts") ||
-      lowered.endsWith(".tsx") ||
-      lowered.endsWith(".js") ||
-      lowered.endsWith(".jsx") ||
-      lowered.endsWith(".json") ||
-      lowered.endsWith(".yml") ||
-      lowered.endsWith(".yaml") ||
-      lowered.endsWith(".py") ||
-      lowered.endsWith(".java") ||
-      lowered.endsWith(".go") ||
-      lowered.endsWith(".rs") ||
-      lowered.endsWith(".txt")
-    ) {
-      return "text/plain";
-    }
-    return "application/octet-stream";
-  }
-
-  private isTextLike(mimeType: string, fileName: string): boolean {
-    const lowered = fileName.toLowerCase();
-    return (
-      mimeType.startsWith("text/") ||
-      lowered.endsWith(".md") ||
-      lowered.endsWith(".json") ||
-      lowered.endsWith(".yaml") ||
-      lowered.endsWith(".yml") ||
-      lowered.endsWith(".ts") ||
-      lowered.endsWith(".tsx") ||
-      lowered.endsWith(".js") ||
-      lowered.endsWith(".jsx") ||
-      lowered.endsWith(".py") ||
-      lowered.endsWith(".csv") ||
-      lowered.endsWith(".txt") ||
-      lowered.endsWith(".xml") ||
-      lowered.endsWith(".html") ||
-      lowered.endsWith(".css") ||
-      lowered.endsWith(".java") ||
-      lowered.endsWith(".go") ||
-      lowered.endsWith(".rs")
-    );
   }
 
   /**
@@ -1240,272 +957,6 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     }));
   }
 
-  private async getRuntimeSettings(): Promise<{
-    provider: ProviderId;
-    model: string;
-    mode: AgentMode;
-    ollamaBaseUrl: string;
-    openAIBaseUrl: string;
-    openAIApiKeyConfigured: boolean;
-    tavilyApiKeyConfigured: boolean;
-    allowTools: boolean;
-    requireTerminalApproval: boolean;
-    toolApproval: "auto" | "ask";
-    temperature: number;
-    modeTemperatures: Record<string, number>;
-    agentModels: { manager?: string; primaryWorker?: string; lightweightWorker?: string; reasoningReviewer?: string };
-    showReasoning: boolean;
-    autoApplyChanges: boolean;
-    allowWebSearch: boolean;
-    searchProvider: string;
-    // NC-003: Boolean status only — never send raw secrets to the webview.
-    searchApiKeyConfigured: boolean;
-    searchBaseUrl: string;
-  }> {
-    const config = vscode.workspace.getConfiguration("nexcodeKiboko");
-    const secrets = await this.secretService.getAllSecrets();
-
-    return {
-      provider: config.get<ProviderId>("defaultProvider", "ollama"),
-      model: config.get<string>("defaultModel", "gpt-oss:120b-cloud"),
-      mode: config.get<AgentMode>("defaultMode", "auto"),
-      ollamaBaseUrl: this.normalizeOllamaBaseUrl(
-        config.get<string>("ollamaBaseUrl", "http://localhost:11434"),
-      ),
-      // NC-002: Validate the provider URL at read time to prevent workspace
-      // injection from .vscode/settings.json redirecting authenticated requests.
-      openAIBaseUrl: this.validateProviderUrl(
-        config.get<string>(
-          "openAIBaseUrl",
-          "https://opencode.ai/zen/go/v1",
-        ),
-      ),
-      openAIApiKeyConfigured: !!secrets.openAIApiKey.trim(),
-      tavilyApiKeyConfigured: !!secrets.tavilyApiKey.trim(),
-      allowTools: config.get<boolean>("allowToolCommands", true),
-      requireTerminalApproval: config.get<boolean>(
-        "requireTerminalApproval",
-        true,
-      ),
-      // NC-008: 'bypass' has been removed. Guard against legacy value.
-      toolApproval: ((): "auto" | "ask" => {
-        const raw = config.get<string>("toolApproval", "ask");
-        return raw === "auto" ? "auto" : "ask";
-      })(),
-      temperature: config.get<number>("temperature", 0.2),
-      modeTemperatures: config.get<Record<string, number>>(
-        "modeTemperatures",
-        { planner: 0.3, coder: 0.15, reviewer: 0.05, qa: 0.05, security: 0.1 },
-      ),
-      agentModels: {
-        manager: config.get<string>("agentModels.manager", ""),
-        primaryWorker: config.get<string>("agentModels.primaryWorker", ""),
-        lightweightWorker: config.get<string>("agentModels.lightweightWorker", ""),
-        reasoningReviewer: config.get<string>("agentModels.reasoningReviewer", ""),
-      },
-      showReasoning: config.get<boolean>("showReasoning", false),
-      autoApplyChanges: config.get<boolean>("autoApplyChanges", false),
-      allowWebSearch: config.get<boolean>("allowWebSearch", true),
-      searchProvider: config.get<string>("searchProvider", "tavily"),
-      // NC-003: Send boolean presence indicator, not the raw secret.
-      searchApiKeyConfigured: !!secrets.searchApiKey.trim(),
-      searchBaseUrl: config.get<string>("searchBaseUrl", ""),
-    };
-  }
-
-  private async getRawApiKeys(): Promise<{
-    openAIApiKey: string;
-    searchApiKey: string;
-    tavilyApiKey: string;
-  }> {
-    return this.secretService.getAllSecrets();
-  }
-
-  private async refreshProviderStatus(
-    providerOverride?: ProviderId,
-  ): Promise<void> {
-    const settings = await this.getRuntimeSettings();
-    const provider = providerOverride ?? settings.provider;
-    const startedAt = Date.now();
-
-    try {
-      if (provider === "ollama") {
-        const response = await this.fetchWithTimeout(
-          `${settings.ollamaBaseUrl.replace(/\/$/, "")}/api/tags`,
-          {
-            method: "GET",
-            headers: {
-              Accept: "application/json",
-            },
-          },
-          4000,
-        );
-
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-      } else {
-        // NC-002: Validate the provider URL before sending credentials.
-        // Reject non-HTTPS, private-IP, and malformed URLs.
-        const defaultBaseUrl = "https://opencode.ai/zen/go/v1";
-        const validatedBaseUrl = this.validateProviderUrl(
-          settings.openAIBaseUrl,
-        );
-
-        // NC-002: In untrusted workspaces, block probing to custom endpoints.
-        const isCustomUrl = validatedBaseUrl !== defaultBaseUrl;
-        if (!this.canProbeProviderEndpoint(isCustomUrl)) {
-          this.postMessage({
-            type: "providerStatus",
-            value: {
-              provider,
-              connected: false,
-              latencyMs: Date.now() - startedAt,
-              error: "Custom provider endpoints are blocked in untrusted workspaces.",
-            },
-          });
-          return;
-        }
-
-        const headers: Record<string, string> = {
-          Accept: "application/json",
-        };
-
-        const rawKeys = await this.getRawApiKeys();
-        if (rawKeys.openAIApiKey.trim()) {
-          headers.Authorization = `Bearer ${rawKeys.openAIApiKey.trim()}`;
-        }
-
-        const response = await this.fetchWithTimeout(
-          `${validatedBaseUrl}/models`,
-          {
-            method: "GET",
-            headers,
-          },
-          5000,
-        );
-
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-      }
-
-      this.postMessage({
-        type: "providerStatus",
-        value: {
-          provider,
-          connected: true,
-          latencyMs: Date.now() - startedAt,
-        },
-      });
-    } catch (error) {
-      this.postMessage({
-        type: "providerStatus",
-        value: {
-          provider,
-          connected: false,
-          latencyMs: Date.now() - startedAt,
-          error: String(error),
-        },
-      });
-    }
-  }
-
-  private async provideModelSuggestions(
-    providerOverride?: ProviderId,
-  ): Promise<void> {
-    const settings = await this.getRuntimeSettings();
-    const provider = providerOverride ?? settings.provider;
-
-    try {
-      let models: string[] = [];
-
-      if (provider === "ollama") {
-        const response = await this.fetchWithTimeout(
-          `${settings.ollamaBaseUrl.replace(/\/$/, "")}/api/tags`,
-          {
-            method: "GET",
-            headers: {
-              Accept: "application/json",
-            },
-          },
-          5000,
-        );
-
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-
-        const payload = (await response.json()) as {
-          models?: Array<{ name?: string }>;
-        };
-
-        models = (payload.models ?? [])
-          .map((model) => (typeof model.name === "string" ? model.name : ""))
-          .filter((name) => name.length > 0);
-      } else {
-        // NC-002: Validate the provider URL before sending credentials.
-        const defaultBaseUrl = "https://opencode.ai/zen/go/v1";
-        const validatedBaseUrl = this.validateProviderUrl(
-          settings.openAIBaseUrl,
-        );
-
-        // NC-002: In untrusted workspaces, block probing to custom endpoints.
-        const isCustomUrl = validatedBaseUrl !== defaultBaseUrl;
-        if (!this.canProbeProviderEndpoint(isCustomUrl)) {
-          this.postMessage({
-            type: "modelSuggestions",
-            provider,
-            models: [],
-          });
-          return;
-        }
-
-        const headers: Record<string, string> = {
-          Accept: "application/json",
-        };
-
-        const rawKeys = await this.getRawApiKeys();
-        if (rawKeys.openAIApiKey.trim()) {
-          headers.Authorization = `Bearer ${rawKeys.openAIApiKey.trim()}`;
-        }
-
-        const response = await this.fetchWithTimeout(
-          `${validatedBaseUrl}/models`,
-          {
-            method: "GET",
-            headers,
-          },
-          6000,
-        );
-
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-
-        const payload = (await response.json()) as {
-          data?: Array<{ id?: string }>;
-        };
-
-        models = (payload.data ?? [])
-          .map((model) => (typeof model.id === "string" ? model.id : ""))
-          .filter((id) => id.length > 0);
-      }
-
-      const uniqueModels = [...new Set(models)].slice(0, 40);
-      this.postMessage({
-        type: "modelSuggestions",
-        provider,
-        models: uniqueModels,
-      });
-    } catch {
-      this.postMessage({
-        type: "modelSuggestions",
-        provider,
-        models: [],
-      });
-    }
-  }
 
   private async fetchWithTimeout(
     input: string,
@@ -1578,7 +1029,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
   }
 
   private async pushInitialWebviewState(): Promise<void> {
-    const settings = await this.getRuntimeSettings();
+    const settings = await getRuntimeSettings(this.secretService);
     // NC-023: Include workspace folder information so the webview can display
     // a multi-root workspace picker and associate operations with the correct root.
     const workspaceFolders = this.getWorkspaceFolderInfos();

@@ -1,10 +1,9 @@
 import {
-  ChatMessage,
-  ModelProvider,
-  ModelRequest,
-  ModelResponse,
-  ProviderUsage,
-  ToolCallRequest,
+  type ChatMessage,
+  type ModelProvider,
+  type ModelRequest,
+  type ModelResponse,
+  type ToolCallRequest,
 } from "../types";
 import { detectModelCapabilities } from "./modelRouter";
 import { getModelEffortConfig } from "../utils/modelEffortConfig";
@@ -197,7 +196,7 @@ export class OllamaProvider implements ModelProvider {
       if (!response.ok) {
         const body = await response.text();
         let errorMsg = `Ollama returned status ${response.status}`;
-        let errorBody = body;
+        const errorBody = body;
         try {
           const errorJson = JSON.parse(body);
           if (errorJson.error) {
@@ -227,9 +226,9 @@ export class OllamaProvider implements ModelProvider {
           
           try {
             return await this.generateWithoutTools(request, abort);
-          } catch (fallbackError) {
+          } catch (_fallbackError) {
             // If fallback also fails, throw a user-friendly error
-            throw new Error(`The model ${request.model} couldn't process this request. Try using a different model that better supports tool calling, or simplify your request.`);
+            throw new Error(`The model ${request.model} couldn't process this request. Try using a different model that better supports tool calling, or simplify your request.`, { cause: _fallbackError });
           }
         }
 

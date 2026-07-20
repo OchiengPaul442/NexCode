@@ -16,7 +16,7 @@ export function CodeBlock({ children, className, inline }: CodeBlockProps) {
   const code = String(children).replace(/\n$/, "");
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(code);
+    void navigator.clipboard.writeText(code);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }, [code]);

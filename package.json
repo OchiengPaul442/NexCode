@@ -19,7 +19,8 @@
     "lint:eslint:fix": "eslint --fix agent-core/src/ extension/src/ extension/webview/src/",
     "typecheck:webview": "tsc -p extension/webview/tsconfig.json",
     "package:vsix": "npm run extension:package",
-    "extension:package": "node tools/extension-release.mjs --no-bump --no-install"
+    "extension:package": "node tools/extension-release.mjs --no-bump --no-install",
+    "verify:remediation": "pwsh -NoProfile -File scripts/Test-NexCodeRemediation.ps1 -ProjectPath . -Full"
   },
   "dependencies": {
     "diff": "^9.0.0"

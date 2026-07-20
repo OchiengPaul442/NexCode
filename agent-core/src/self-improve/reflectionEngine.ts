@@ -1,4 +1,4 @@
-import { InteractionFeedback } from "../types";
+import { type InteractionFeedback } from "../types";
 
 export class ReflectionEngine {
   public score(

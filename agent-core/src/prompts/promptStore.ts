@@ -1,6 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
-import { AgentMode } from "../types";
+import { type AgentMode } from "../types";
 import { DEFAULT_SYSTEM_PROMPTS } from "./defaultPrompts";
 
 const PROMPT_FILE_MAP: Record<AgentMode, string> = {

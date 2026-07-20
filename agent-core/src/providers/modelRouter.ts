@@ -1,14 +1,13 @@
 import {
-  ModelProvider,
-  ProviderGenerateOptions,
-  ProviderId,
-  ChatMessage,
-  ModelResponse,
+  type ModelProvider,
+  type ProviderGenerateOptions,
+  type ProviderId,
+  type ChatMessage,
+  type ModelResponse,
 } from "../types";
 import { ContextCache } from "../utils/contextCache";
 import {
   getModelCapabilityRegistry,
-  type ModelCapabilityEntry,
 } from "../utils/modelCapabilityRegistry";
 
 const CLOUD_PROVIDERS: ProviderId[] = ["openai-compatible", "huggingface", "openrouter", "together", "fireworks", "groq", "nvidia", "baseten"];
@@ -170,7 +169,7 @@ export class ModelRouter {
         results[id] = { ok: true };
       }
     }
-    return results as Record<ProviderId, { ok: boolean; error?: string; models?: string[] }>;
+    return results;
   }
 
   public resolve(options: ProviderGenerateOptions): {
@@ -217,7 +216,7 @@ export class ModelRouter {
     const addCandidate = (
       providerId: ProviderId,
       model: string,
-      label?: string,
+      _label?: string,
     ): void => {
       const provider = this.providers[providerId];
       const normalizedModel = model.trim();
@@ -270,7 +269,7 @@ export class ModelRouter {
     messages: ChatMessage[],
     options: ProviderGenerateOptions = {},
   ): Promise<ModelResponse> {
-    const { signal, retryBudget, ...cacheableOptions } = options;
+    const { signal: _signal, retryBudget, ...cacheableOptions } = options;
     const cacheKey = JSON.stringify({ messages, options: cacheableOptions });
     const cached = this.responseCache.get(cacheKey);
     if (cached) return JSON.parse(cached);

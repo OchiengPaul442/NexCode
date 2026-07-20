@@ -1,4 +1,4 @@
-import { ToolDefinition } from "./toolProtocol";
+import { type ToolDefinition } from "./toolProtocol";
 
 const stringSchema = (required: boolean = false): Record<string, unknown> => ({
   type: "object",

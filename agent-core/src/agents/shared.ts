@@ -1,6 +1,6 @@
-import { AgentMode, AgentResult, ChatMessage, ProviderId } from "../types";
-import { ModelRouter } from "../providers/modelRouter";
-import { PromptStore } from "../prompts/promptStore";
+import { type AgentMode, type AgentResult, type ChatMessage, type ProviderId } from "../types";
+import { type ModelRouter } from "../providers/modelRouter";
+import { type PromptStore } from "../prompts/promptStore";
 
 const FILE_REFERENCE_PATTERN =
   /(?:^|[\s("'`])(?:[A-Za-z]:\\|\.\.?\/|\/)?[A-Za-z0-9._/-]+\.(?:ts|tsx|js|jsx|mjs|cjs|json|md|py|java|cs|go|rb|rs|php|html|css|scss|yml|yaml|xml|sh|ps1|c|cpp|h|hpp|swift|kt)\b/i;

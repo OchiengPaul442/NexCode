@@ -1,10 +1,9 @@
 import {
-  ModelProvider,
-  ModelRequest,
-  ModelResponse,
-  ProviderId,
-  ProviderUsage,
-  ToolCallRequest,
+  type ModelProvider,
+  type ModelRequest,
+  type ModelResponse,
+  type ProviderId,
+  type ToolCallRequest,
 } from "../types";
 import { getModelEffortConfig } from "../utils/modelEffortConfig";
 import { detectModelCapabilities } from "./modelRouter";
@@ -325,7 +324,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
       // Add reasoning effort for supported models
       const effortConfig = getModelEffortConfig(request.model, "openai-compatible");
       if (effortConfig.supportsEffort && request.reasoningEffort && request.reasoningEffort !== "none") {
-        (body as any).reasoning_effort = request.reasoningEffort;
+        (body).reasoning_effort = request.reasoningEffort;
       }
 
       const response = await this.fetchWithRetries(
@@ -485,7 +484,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
 
         for (const rawLine of lines) {
           const line = rawLine.trim();
-          if (!line || !line.startsWith("data:")) {
+          if (!line?.startsWith("data:")) {
             continue;
           }
 

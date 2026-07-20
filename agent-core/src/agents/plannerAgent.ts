@@ -1,7 +1,7 @@
-import { AgentResult } from "../types";
-import { ModelRouter } from "../providers/modelRouter";
-import { PromptStore } from "../prompts/promptStore";
-import { AgentRunInput, runSpecialistAgent } from "./shared";
+import { type AgentResult } from "../types";
+import { type ModelRouter } from "../providers/modelRouter";
+import { type PromptStore } from "../prompts/promptStore";
+import { type AgentRunInput, runSpecialistAgent } from "./shared";
 
 export class PlannerAgent {
   public constructor(

@@ -1,18 +1,18 @@
 import {
-  ChatMessage,
-  ToolCallRequest,
-  OrchestratorEvent,
-  ToolCallRequestTool,
-  ReasoningEffort,
-  ProviderId,
+  type ChatMessage,
+  type ToolCallRequest,
+  type OrchestratorEvent,
+  type ToolCallRequestTool,
+  type ReasoningEffort,
+  type ProviderId,
 } from "../types";
-import { ModelRouter } from "../providers/modelRouter";
-import { ToolRegistry } from "../tools/toolRegistry";
-import { ToolDefinition, validateInput } from "../tools/toolProtocol";
-import { ApprovalCallback } from "../tools/toolApprovalPolicy";
+import { type ModelRouter } from "../providers/modelRouter";
+import { type ToolRegistry } from "../tools/toolRegistry";
+import { type ToolDefinition, validateInput } from "../tools/toolProtocol";
+import { type ApprovalCallback } from "../tools/toolApprovalPolicy";
 import { EvidenceStore } from "../tools/evidenceStore";
 import { repairTruncatedJson } from "../utils/jsonRepair";
-import { createDefaultRetryBudget, RetryBudget } from "../utils/retryBudget";
+import { createDefaultRetryBudget } from "../utils/retryBudget";
 
 export interface AgentLoopConfig {
   maxTurns: number;
@@ -441,7 +441,7 @@ export async function* runAgentLoop(
         messages.push({
           role: "user",
           content:
-            "Use the actual tool commands to accomplish this. Do not describe what you would do — execute it using the available tools (e.g., use `read <path>` to read a file, `write <path> :: <content>` to write, `terminal <command>` to run a command).",
+            "If you need to make changes, use the available structured tools to do so directly.",
         });
         continue;
       } else {

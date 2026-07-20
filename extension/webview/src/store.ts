@@ -6,12 +6,9 @@ import { create } from "zustand";
 import type {
   StoreState,
   PersistedState,
-  BackendConfig,
   SidebarSettings,
   ProviderId,
-  AgentMode,
   UiMode,
-  PermissionLevel,
   ChatMessage,
   Session,
 } from "./types";
@@ -114,7 +111,7 @@ export const useStore = create<StoreState>((set, get) => {
     requireTerminalApproval: true,
     showDebugPanel: false,
     enableWebSearch: true,
-    permissionLevel: "default" as PermissionLevel,
+    permissionLevel: "default",
     openAIBaseUrl: "",
     ollamaBaseUrl: "http://localhost:11434",
     searchProvider: "tavily",

@@ -1,6 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
-import { ToolResult } from "../types";
+import { type ToolResult } from "../types";
 import { FileSystemTool, atomicWriteFile } from "./fileSystemTool";
 import { GitTool } from "./gitTool";
 import { McpRegistry } from "../mcp/mcpRegistry";
@@ -9,15 +9,14 @@ import { SearchTool } from "./searchTool";
 import { TerminalTool } from "./terminalTool";
 import { TestRunnerTool } from "./testRunnerTool";
 import { getWorkspaceStats } from "./workspaceStatsTool";
-import { DefaultToolApprovalPolicy, ToolApprovalPolicy } from "./toolApprovalPolicy";
+import { DefaultToolApprovalPolicy, type ToolApprovalPolicy } from "./toolApprovalPolicy";
 import {
-  StructuredToolResult,
-  ToolResultError,
+  type StructuredToolResult,
   createStructuredResult,
   validateInput,
 } from "./toolProtocol";
 import { getToolDefinition, TOOL_DEFINITIONS } from "./toolDefinitions";
-import { AuditLog } from "./auditLog";
+import { type AuditLog } from "./auditLog";
 
 export interface ToolApprovalRequiredResult extends ToolResult {
   requiresApproval: true;
@@ -146,18 +145,18 @@ export class ToolRegistry {
       // with structured schemas. This catches cases where structured args
       // are converted back to command strings without schema validation.
       const structuredTools: Record<string, (a: string) => string | null> = {
-        write: (a) => a.includes("::") ? null : "Use: write <path> :: <content>",
-        append: (a) => a.includes("::") ? null : "Use: append <path> :: <content>",
+        write: (a) => a.includes("|||") ? null : "Use: write <path> ||| <content>",
+        append: (a) => a.includes("|||") ? null : "Use: append <path> ||| <content>",
         patch: (a) => {
-          const parts = a.split("::");
-          return parts.length >= 2 ? null : "Use: patch <path> :: <oldText> :: <newText>";
+          const parts = a.split("|||");
+          return parts.length >= 2 ? null : "Use: patch <path> ||| <oldText> ||| <newText>";
         },
-        move: (a) => a.includes("::") ? null : "Use: move <source> :: <destination>",
+        move: (a) => a.includes("|||") ? null : "Use: move <source> ||| <destination>",
         batch_edit: (a) => {
           // batch_edit requires JSON args — reject command strings
           try { JSON.parse(a); return null; } catch { return "batch_edit requires JSON arguments"; }
         },
-        mcp: (a) => a.includes("::") ? null : "Use: mcp <server>:<tool> :: <input>",
+        mcp: (a) => a.includes("|||") ? null : "Use: mcp <server>:<tool> ||| <input>",
       };
       const formatCheck = structuredTools[toolName];
       if (formatCheck) {
@@ -265,11 +264,11 @@ export class ToolRegistry {
         result = await this.filesystem.readFile(arg);
         break;
       case "write": {
-        const writeMatch = arg.match(/^(.+?)\s*::\s*([\s\S]*)$/);
+        const writeMatch = arg.match(/^(.+?)\s*\|\|\|\s*([\s\S]*)$/);
         if (!writeMatch) {
           result = {
             ok: false,
-            output: "Use: write <path> :: <content>",
+            output: "Use: write <path> ||| <content>",
           };
         } else {
           result = await this.filesystem.writeFile(
@@ -280,11 +279,11 @@ export class ToolRegistry {
         break;
       }
       case "append": {
-        const appendMatch = arg.match(/^(.+?)\s*::\s*([\s\S]*)$/);
+        const appendMatch = arg.match(/^(.+?)\s*\|\|\|\s*([\s\S]*)$/);
         if (!appendMatch) {
           result = {
             ok: false,
-            output: "Use: append <path> :: <content>",
+            output: "Use: append <path> ||| <content>",
           };
         } else {
           result = await this.filesystem.appendFile(
@@ -295,11 +294,11 @@ export class ToolRegistry {
         break;
       }
       case "move": {
-        const moveMatch = arg.match(/^(.+?)\s*::\s*(.+)$/);
+        const moveMatch = arg.match(/^(.+?)\s*\|\|\|\s*(.+)$/);
         if (!moveMatch) {
           result = {
             ok: false,
-            output: "Use: move <source> :: <destination>",
+            output: "Use: move <source> ||| <destination>",
           };
         } else {
           result = await this.filesystem.movePath(
@@ -310,9 +309,9 @@ export class ToolRegistry {
         break;
       }
       case "patch": {
-        const patchMatch = arg.match(/^(.+?)\s*::\s*(.+?)\s*::\s*([\s\S]*)$/);
+        const patchMatch = arg.match(/^(.+?)\s*\|\|\|\s*(.+?)\s*\|\|\|\s*([\s\S]*)$/);
         if (!patchMatch) {
-          result = { ok: false, output: "Use: patch <path> :: <old text> :: <new text>" };
+          result = { ok: false, output: "Use: patch <path> ||| <old text> ||| <new text>" };
         } else {
           result = await this.filesystem.patchFile(
             patchMatch[1].trim(),
@@ -393,15 +392,15 @@ export class ToolRegistry {
                   break;
                 }
                 case "update": {
-                  // Save original content for rollback.
+                  // C-06: Update-missing must return NOT_FOUND.
                   let originalContent: string;
                   try {
                     originalContent = await fs.readFile(absolutePath, "utf8");
                   } catch {
-                    rollbackActions.push(async () => {
-                      try { await fs.rm(absolutePath, { force: true }); } catch { /* best effort */ }
-                    });
-                    originalContent = "";
+                    // C-06: File doesn't exist — report NOT_FOUND, not fake success.
+                    results.push({ ok: false, output: `Cannot update ${edit.filePath}: file does not exist.` });
+                    failed = true;
+                    break;
                   }
                   const capturedOriginal = originalContent!;
                   const capturedPath = absolutePath;
@@ -415,7 +414,8 @@ export class ToolRegistry {
                   break;
                 }
                 case "delete": {
-                  // Save original content for rollback (re-create the file/dir).
+                  // C-01: Check existence first — deleting a missing file must
+                  // return NOT_FOUND with ok=false, never false success.
                   let deletedContent: string | null = null;
                   let deletedWasDir = false;
                   try {
@@ -426,7 +426,10 @@ export class ToolRegistry {
                       deletedContent = await fs.readFile(absolutePath, "utf8");
                     }
                   } catch {
-                    // File doesn't exist — delete is a no-op, rollback is no-op.
+                    // C-01: File doesn't exist — report NOT_FOUND, not success.
+                    results.push({ ok: false, output: `Nothing to delete: ${edit.filePath} does not exist.` });
+                    failed = true;
+                    break;
                   }
                   if (deletedContent !== null) {
                     const capturedPath2 = absolutePath;
@@ -497,12 +500,12 @@ export class ToolRegistry {
           };
         } else {
           const parsed = arg.match(
-            /^([a-zA-Z0-9._-]+):([a-zA-Z0-9._-]+)\s*::\s*([\s\S]*)$/,
+            /^([a-zA-Z0-9._-]+):([a-zA-Z0-9._-]+)\s*\|\|\|\s*([\s\S]*)$/,
           );
           if (!parsed) {
             result = {
               ok: false,
-              output: "Use: mcp <server>:<tool> :: <input>",
+              output: "Use: mcp <server>:<tool> ||| <input>",
             };
           } else {
             const mcpResult = await this.mcpRegistry.call({
@@ -640,8 +643,8 @@ export class ToolRegistry {
     const pathTools = ["read", "write", "append", "move", "delete", "delete-contents", "patch"];
     if (!pathTools.includes(toolName)) return undefined;
 
-    const writeMatch = arg.match(/^(.+?)\s*::/);
-    const moveMatch = arg.match(/^(.+?)\s*::\s*(.+)$/);
+    const writeMatch = arg.match(/^(.+?)\s*\|\|\|/);
+    const moveMatch = arg.match(/^(.+?)\s*\|\|\|\s*(.+)$/);
 
     if (toolName === "move" && moveMatch) {
       return [moveMatch[1].trim(), moveMatch[2].trim()];

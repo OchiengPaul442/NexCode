@@ -1,6 +1,8 @@
 import path from "path";
 import { describe, expect, it, vi } from "vitest";
 import { createNexcodeOrchestrator, OrchestratorEvent } from "../src";
+import { resolveAutoPipeline } from "../src/orchestrator/autoRouter";
+import { extractTerminalCommandRequest } from "../src/orchestrator/intentParser";
 import { ModelRouter } from "../src/providers/modelRouter";
 import { OpenAICompatibleProvider } from "../src/providers/openAICompatibleProvider";
 import { ChatMessage, ModelProvider } from "../src/types";
@@ -60,16 +62,11 @@ describe("NexcodeOrchestrator", () => {
       return;
     }
 
-    expect(finalEvent.response.text).toContain("Tool Execution");
+    expect(finalEvent.response.text).toContain("Tool Activity");
   });
 
   it("infers bare terminal commands with follow-up instructions", () => {
-    const orchestrator = createNexcodeOrchestrator({ workspaceRoot });
-    const command = (
-      orchestrator as unknown as {
-        extractTerminalCommandRequest(prompt: string): string | null;
-      }
-    ).extractTerminalCommandRequest(
+    const command = extractTerminalCommandRequest(
       "pnpm create next-app@latest . --yes\n\nRUN THIS COMMAND AND SETUP FOR ME A WELL STRUCTURED NEXTJS PROJECT FOR A BLOG SITE PLEASE USE BEST PRACTICES",
     );
 
@@ -77,14 +74,7 @@ describe("NexcodeOrchestrator", () => {
   });
 
   it("uses a lighter auto pipeline for simple build prompts", () => {
-    const orchestrator = createNexcodeOrchestrator({ workspaceRoot });
-    const pipeline = (
-      orchestrator as unknown as {
-        resolveAutoPipeline(
-          prompt: string,
-        ): Array<"planner" | "coder" | "reviewer" | "qa" | "security">;
-      }
-    ).resolveAutoPipeline(
+    const pipeline = resolveAutoPipeline(
       "Create a blog website with Next.js and polished styling.",
     );
 

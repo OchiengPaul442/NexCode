@@ -48,7 +48,7 @@ export async function activate(
         ignoreFocusOut: true,
       });
 
-      if (!picked || !picked.trim()) {
+      if (!picked?.trim()) {
         return;
       }
 
@@ -123,17 +123,22 @@ export async function activate(
 
   context.subscriptions.push(
     vscode.commands.registerCommand("nexcodeKiboko.showVersionInfo", async () => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const pkg = require("../package.json");
       let buildInfo = "Build info not available (dev mode).";
       try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
         const fs = require("fs");
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
         const path = require("path");
         const infoPath = path.join(__dirname, "build-info.json");
         if (fs.existsSync(infoPath)) {
           const info = JSON.parse(fs.readFileSync(infoPath, "utf8"));
           buildInfo = `Version: ${info.version}\nBuilt: ${info.buildTime}\nNode: ${info.node}`;
         }
-      } catch {}
+      } catch {
+        // no-op
+      }
       vscode.window.showInformationMessage(
         `NexCode Kiboko ${pkg.version}\n${buildInfo}`,
         { modal: true },

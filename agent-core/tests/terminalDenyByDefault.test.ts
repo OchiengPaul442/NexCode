@@ -2,7 +2,16 @@ import { describe, it, expect } from "vitest";
 import { TerminalTool, SAFE_PATTERNS } from "../src/tools/terminalTool";
 
 /**
+ * NC-033 category: Mixed — pure policy + integration execution.
+ *
  * NC-004 regression tests: Terminal policy denies unknown commands by default.
+ *
+ * This file contains:
+ *   - Pure policy tests (SAFE_PATTERNS regex matching, validateCommand as pure function)
+ *   - Integration tests (TerminalTool.run and stream execute real commands)
+ *
+ * For the authoritative pure policy classification suite, see
+ * securityPolicyClassification.test.ts.
  *
  * Before the fix, validateCommand() returned null (allow) for any command
  * that didn't match the denylist or the safe list. This meant commands like

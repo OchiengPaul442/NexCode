@@ -1,3 +1,15 @@
+/**
+ * NC-033 category: Pure policy — validate classification without running commands.
+ *
+ * Comprehensive approval policy tests covering DefaultToolApprovalPolicy,
+ * ToolRegistry approval wiring, tool risk level consistency, and permission
+ * mode behavior. All tests use policy functions and ToolRegistry — no real
+ * command execution.
+ *
+ * For the authoritative pure policy classification suite, see
+ * securityPolicyClassification.test.ts.
+ */
+
 import { describe, it, expect } from "vitest";
 import {
   DefaultToolApprovalPolicy,

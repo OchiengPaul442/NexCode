@@ -396,14 +396,14 @@
 
 ### NC-033 — Security tests are environment-dependent and partly test execution instead of policy
 - **Severity:** Medium
-- **Status:** pending
+- **Status:** fixed
 - **Phase:** J
 - **Dependencies:** none
-- **Affected files:** `agent-core/tests/` (multiple test files)
-- **Verified:** unverified
+- **Affected files:** `agent-core/tests/securityPolicyClassification.test.ts` (new), `agent-core/tests/realModelSecurity.test.ts`, `agent-core/tests/securityRegression.test.ts`, `agent-core/tests/terminalDenyByDefault.test.ts`, `agent-core/tests/terminalArbitraryExecution.test.ts`, `agent-core/tests/toolApprovalPolicy.test.ts`, `agent-core/tests/searchInjection.test.ts`
+- **Verified:** yes — verified against current source; pure policy tests consolidated, category headers added, platform guards added
 - **Required tests:** pure policy tests validate classification without running commands; platform adapter tests only on relevant OS; network mocked in unit tests
-- **Verification commands:** `npm test`
-- **Resolution evidence:** (none yet)
+- **Verification commands:** `npx vitest run agent-core/tests/securityPolicyClassification.test.ts`
+- **Resolution evidence:** (1) New `agent-core/tests/securityPolicyClassification.test.ts` (288 pure policy tests): tool risk classification (safe/low-risk/destructive for all tools), approval requirements (safe tools don't require, write/destructive do), auto-executable classification (only safe tools), terminal command validation (SAFE_PATTERNS allows/denies/blocks/shell-expansion/destructive/coverage), path containment (cross-platform absolute detection, null bytes, traversal, valid paths, absolute rejection), webview message validation (reject non-objects, accept valid types, reject unknown types, setting key allowlist, openFile containment), secret redaction (pattern detection), approval mode constraints (bypass removed, writes not auto-approved, policy is sole truth). Zero network access, zero real command execution, works on any platform. (2) `realModelSecurity.test.ts`: added `IS_WINDOWS` constant, replaced inline `process.platform` checks, added NC-033 category header documenting integration test classification. (3) Added NC-033 category headers to `securityRegression.test.ts`, `terminalDenyByDefault.test.ts`, `terminalArbitraryExecution.test.ts`, `toolApprovalPolicy.test.ts`, `searchInjection.test.ts` documenting pure policy vs integration vs platform-dependent classification. 1866/1866 tests pass. Build clean. All type-checks clean.
 
 ### NC-034 — Three source modules are dead/disconnected
 - **Severity:** Medium

@@ -3,28 +3,28 @@
   "project": "NexCode",
   "status": "in_progress",
   "bootstrapRequired": false,
-  "iteration": 37,
+  "iteration": 38,
   "currentPhase": "J",
   "totalFindings": 45,
   "counts": {
-    "pending": 5,
+    "pending": 4,
     "inProgress": 0,
-    "fixed": 40,
+    "fixed": 41,
     "blocked": 0,
     "obsolete": 0,
     "falsePositive": 0
   },
   "activeFindingIds": [],
-  "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004", "NC-005", "NC-006", "NC-007", "NC-008", "NC-009", "NC-010", "NC-011", "NC-012", "NC-013", "NC-014", "NC-015", "NC-016", "NC-017", "NC-018", "NC-019", "NC-020", "NC-021", "NC-022", "NC-023", "NC-024", "NC-025", "NC-026", "NC-027", "NC-028", "NC-029", "NC-030", "NC-031", "NC-034", "NC-035", "NC-038", "NC-039", "NC-040", "NC-042", "NC-043", "NC-044", "NC-045"],
+  "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004", "NC-005", "NC-006", "NC-007", "NC-008", "NC-009", "NC-010", "NC-011", "NC-012", "NC-013", "NC-014", "NC-015", "NC-016", "NC-017", "NC-018", "NC-019", "NC-020", "NC-021", "NC-022", "NC-023", "NC-024", "NC-025", "NC-026", "NC-027", "NC-028", "NC-029", "NC-030", "NC-031", "NC-033", "NC-034", "NC-035", "NC-038", "NC-039", "NC-040", "NC-042", "NC-043", "NC-044", "NC-045"],
   "blockedFindingIds": [],
   "lastCommit": "pending",
-  "lastSummary": "NC-044 fixed: Package/release flow is not sufficiently hermetic. (1) extension-release.mjs: stageEntries now includes package-lock.json. installStageDependencies uses npm ci (lockfile-based) instead of npm install with fallback warning. (2) Lockfile integrity verification before staging — rejects malformed lockfiles and missing lockfile. (3) assertVsixDependencies expanded from 2 to 8 required entries (extension.js, main.js, main.css, icon.png, activitybar-icon.svg, agent-core, diff-match-patch, build-info.json). (4) Forbidden entries check rejects test files, source maps, type declarations, webview source, tailwind config, tsconfig from VSIX. (5) build-info.json enhanced with platform, arch, npm version, provenance metadata (generator, lockfileIntegrity, stagedInstall), and dependency manifest extracted from lockfile. (6) CI workflow: added VSIX verification step, lockfile integrity verification, dependency manifest generation (DEPENDENCIES.json), uploads DEPENDENCIES.json as artifact. (7) .vscodeignore excludes DEPENDENCIES.json. (8) 22 regression tests in hermeticPackaging.test.ts. 1578/1578 tests pass. Build clean. All type-checks clean.",
+  "lastSummary": "NC-033 fixed: Security tests are environment-dependent and partly test execution instead of policy. (1) New agent-core/tests/securityPolicyClassification.test.ts: 288 pure policy tests covering tool risk classification (all 3 categories), approval requirements (safe/write/destructive), auto-executable classification, terminal command validation (SAFE_PATTERNS allows/denies/blocks), path containment (cross-platform absolute detection, null bytes, traversal, valid paths), webview message validation (reject non-objects, accept valid types, reject unknown types, setting key allowlist, openFile containment), secret redaction (pattern detection), and approval mode constraints (bypass removed, writes not auto-approved). Zero network access, zero real command execution, works on any platform. (2) realModelSecurity.test.ts: added IS_WINDOWS constant, replaced inline process.platform checks, added NC-033 category header documenting integration test classification. (3) Added NC-033 category headers to securityRegression.test.ts, terminalDenyByDefault.test.ts, terminalArbitraryExecution.test.ts, toolApprovalPolicy.test.ts, searchInjection.test.ts documenting pure policy vs integration vs platform-dependent classification. 1866/1866 tests pass. Build clean. All type-checks clean.",
   "lastVerification": {
-    "focusedTests": "PASS — 22/22 hermeticPackaging tests pass",
+    "focusedTests": "PASS — 288/288 securityPolicyClassification tests pass",
     "typecheck": "PASS — agent-core, extension, webview tsc --noEmit clean",
     "lint": "PASS — eslint config validated",
     "build": "PASS — full npm run build clean",
-    "fullTests": "PASS — 1578/1578 tests pass",
+    "fullTests": "PASS — 1866/1866 tests pass",
     "packaging": "SKIPPED — not attempted this iteration"
   }
 }

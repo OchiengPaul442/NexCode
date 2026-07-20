@@ -2649,3 +2649,75 @@ Append one section per autonomous iteration. Never rewrite prior entries.
 | `extension/.vscodeignore` | Exclude DEPENDENCIES.json from VSIX | +1 |
 | `agent-core/tests/hermeticPackaging.test.ts` | New regression test file (22 tests) | +208 |
 
+---
+
+## Iteration 38 — NC-033: Security test isolation — pure policy vs integration
+
+**Date:** 20 July 2026  
+**Finding IDs:** NC-033 (Medium)  
+**Phase:** J — Quality gates  
+
+### What was done
+
+1. **Verified NC-033 against current source code:**
+   - Analyzed all 64 test files in `agent-core/tests/` to categorize: pure policy, integration (real execution), platform-dependent, and network-dependent.
+   - Identified that `securityRegression.test.ts`, `realModelSecurity.test.ts`, and `terminalDenyByDefault.test.ts` mix policy classification tests with real command execution tests.
+   - Identified that `realModelSecurity.test.ts` has platform-dependent tests (`process.platform === "win32"`) without consistent guards.
+   - Confirmed that `providerKeyIsolation.test.ts` properly mocks `globalThis.fetch` — no constructor tests access the internet.
+
+2. **Implemented test isolation (1 new file, 6 modified files):**
+   - `agent-core/tests/securityPolicyClassification.test.ts` (new, 288 pure policy tests):
+     - Tool risk classification: safe/low-risk/destructive for all tools in TOOL_DEFINITIONS.
+     - Approval requirements: safe tools don't require, write/destructive tools do.
+     - Auto-executable classification: only safe tools are auto-executable.
+     - Terminal command validation: SAFE_PATTERNS allows/denies/blocks shell-expansion/destructive/coverage.
+     - Path containment: cross-platform absolute detection, null bytes, traversal, valid paths, absolute rejection.
+     - Webview message validation: reject non-objects, accept valid types, reject unknown types, setting key allowlist, openFile containment.
+     - Secret redaction: pattern detection for Bearer/OpenAI/AWS/GitHub tokens.
+     - Approval mode constraints: bypass removed, writes not auto-approved, policy is sole truth.
+     - **Zero network access, zero real command execution, works on any platform.**
+   - `realModelSecurity.test.ts`: added `IS_WINDOWS` constant, replaced inline `process.platform` checks, added NC-033 category header documenting integration test classification.
+   - `securityRegression.test.ts`: added NC-033 category header documenting mixed policy/integration classification.
+   - `terminalDenyByDefault.test.ts`: added NC-033 category header documenting mixed pure policy/integration classification.
+   - `terminalArbitraryExecution.test.ts`: added NC-033 category header documenting pure policy classification.
+   - `toolApprovalPolicy.test.ts`: added NC-033 category header documenting pure policy classification.
+   - `searchInjection.test.ts`: added NC-033 category header documenting integration test classification.
+
+3. **Validated:**
+   - 288/288 new securityPolicyClassification tests pass.
+   - 1866/1866 full unit tests pass.
+   - `tsc --noEmit` clean in agent-core, extension, and webview.
+   - `npm run build` clean.
+   - `git diff --check` clean (only line-ending warnings).
+
+### Validation
+
+| Check | Result | Notes |
+|---|---|---|
+| Focused tests (NC-033) | PASS | 288/288 securityPolicyClassification tests pass |
+| Full test suite | PASS | 1866/1866 tests pass |
+| Type check (agent-core) | PASS | `tsc --noEmit` clean |
+| Type check (extension) | PASS | `tsc --noEmit` clean |
+| Type check (webview) | PASS | `tsc --noEmit` clean |
+| Build | PASS | Full `npm run build` clean |
+| No secrets in diff | PASS | No API keys, tokens, or secrets in the diff |
+| No test suppression | PASS | All existing tests retained and passing |
+
+### Remaining risks
+
+- NC-032 (VS Code Extension Host integration tests) and NC-036 (monolithic file splitting) remain pending. NC-032 requires real VS Code Extension Host infrastructure. NC-036 and NC-037 (bundle optimization) are large architectural refactors.
+- The new policy classification test file covers all tools in TOOL_DEFINITIONS, but future tools added to the codebase will need corresponding entries in the test file's tool lists.
+- Some integration tests (terminalDenyByDefault, realModelSecurity, searchInjection) still execute real commands. This is intentional — they validate that security boundaries hold at runtime. The pure policy tests in securityPolicyClassification.test.ts validate that the classification rules are correct without any environment dependency.
+
+### Files changed
+
+| File | Change | Lines |
+|---|---|---|
+| `agent-core/tests/securityPolicyClassification.test.ts` | New pure policy classification test file (288 tests) | +501 |
+| `agent-core/tests/realModelSecurity.test.ts` | Add IS_WINDOWS constant, replace inline platform checks, add category header | +15, -5 |
+| `agent-core/tests/securityRegression.test.ts` | Add NC-033 category header | +12 |
+| `agent-core/tests/terminalDenyByDefault.test.ts` | Add NC-033 category header | +8 |
+| `agent-core/tests/terminalArbitraryExecution.test.ts` | Add NC-033 category header | +7 |
+| `agent-core/tests/toolApprovalPolicy.test.ts` | Add NC-033 category header | +11 |
+| `agent-core/tests/searchInjection.test.ts` | Add NC-033 category header | +3 |
+

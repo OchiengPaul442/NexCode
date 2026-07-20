@@ -1,4 +1,6 @@
 /**
+ * NC-033 category: Integration tests — run in controlled fixtures with explicit binaries.
+ *
  * NC-007 — PowerShell search fallback is injection-prone
  *
  * Regression tests verifying:
@@ -7,6 +9,9 @@
  * 3. Various injection payloads do not cause code execution
  * 4. Query is truncated in diagnostic output to limit exposure
  * 5. The walker handles edge cases safely
+ *
+ * These tests create temporary directories and use real filesystem operations.
+ * For pure policy classification tests, see securityPolicyClassification.test.ts.
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { SearchTool } from "../src/tools/searchTool";

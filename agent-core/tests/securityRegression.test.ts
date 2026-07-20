@@ -1,3 +1,17 @@
+/**
+ * NC-033 category: Mixed — policy classification + integration execution.
+ *
+ * This file contains:
+ *   - Pure policy tests (tool approval classification, token counter scoping)
+ *   - Integration tests (terminal command validation via real TerminalTool.run)
+ *
+ * For the authoritative pure policy classification suite, see
+ * securityPolicyClassification.test.ts.
+ *
+ * For the comprehensive terminal deny-by-default tests, see
+ * terminalDenyByDefault.test.ts.
+ */
+
 import { describe, it, expect } from "vitest";
 import {
   DefaultToolApprovalPolicy,

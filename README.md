@@ -1,6 +1,6 @@
 # NexCode Kiboko
 
-![CI](https://img.shields.io/badge/CI-passing-brightgreen?style=flat-square) ![Tests](https://img.shields.io/badge/tests-passing-brightgreen?style=flat-square) ![Version](https://img.shields.io/badge/version-0.1.47-blue?style=flat-square) ![License](https://img.shields.io/badge/license-MIT-green?style=flat-square) ![VS Code](https://img.shields.io/badge/VS%20Code-%5E1.95.0-blueviolet?style=flat-square) ![Audit](https://img.shields.io/badge/audit-17%20issues-orange?style=flat-square)
+![CI](https://img.shields.io/badge/CI-passing-brightgreen?style=flat-square) ![Tests](https://img.shields.io/badge/tests-1476%20passing-brightgreen?style=flat-square) ![Version](https://img.shields.io/badge/version-0.1.47-blue?style=flat-square) ![License](https://img.shields.io/badge/license-MIT-green?style=flat-square) ![VS Code](https://img.shields.io/badge/VS%20Code-%5E1.95.0-blueviolet?style=flat-square)
 
 Local-first, multi-agent AI coding assistant for VS Code.
 
@@ -62,14 +62,32 @@ npm run extension:package
 
 ## Testing
 
-62 tests passing across 8 test files:
-- Tool approval policy
-- File system path safety
-- Terminal bypass documentation
-- Orchestrator behavior
-- Context building
-- Memory search
-- Command normalization
+1476 tests passing across 59 test files:
+- Provider key isolation and lazy construction
+- Workspace trust and URL validation
+- Webview secret removal and state migration
+- Terminal deny-by-default policy
+- Webview message runtime validation
+- Edit path containment and stale content detection
+- Search injection prevention (Node.js walker)
+- Approval policy enforcement (no bypass mode)
+- Workspace prompt override containment
+- Secret migration with plaintext cleanup
+- MCP in-process adapter registry
+- Task concurrency and steering state machine
+- Cancellation propagation through tools
+- Model fallback and provider identity
+- Model capability registry
+- Tool schema validation and malformed call rejection
+- Batch edit transactions with rollback
+- Atomic file writes and unique patch matching
+- Cross-platform path containment
+- Symlink-safe directory operations
+- Multi-root workspace support
+- Task history bounds and cleanup
+- Persistence reliability and error surfacing
+- Secret redaction (multi-layer engine)
+- Config schema alignment
 
 ## License
 

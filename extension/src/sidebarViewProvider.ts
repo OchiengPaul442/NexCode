@@ -10,6 +10,10 @@ import {
   ReasoningEffort,
   RequestAttachment,
   Task,
+  validateProviderUrl,
+  validateWebviewMessage,
+  validateOpenFilePath,
+  isAllowedSettingKey,
 } from "@nexcode/agent-core";
 import { SecretService } from "./secretService";
 import { WorkspaceTrustService } from "./workspaceTrustService";
@@ -227,7 +231,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     };
 
     view.webview.html = this.getHtml(view.webview);
-    view.webview.onDidReceiveMessage((message: InboundWebviewMessage) => {
+    view.webview.onDidReceiveMessage((message: unknown) => {
       void this.handleWebviewMessage(message);
     });
     this.webviews.add(view.webview);
@@ -239,14 +243,24 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       }
     });
 
-    this.pushInitialWebviewState();
+    void this.pushInitialWebviewState();
   }
 
   public async notifyConfigChanged(): Promise<void> {
     this.orchestrator = undefined;
     this.currentWorkspaceRoot = undefined;
     const settings = await this.getRuntimeSettings();
-    this.postMessage({ type: "config", value: settings });
+    // NC-023: Include workspace folder info on config refresh
+    const workspaceFolders = this.getWorkspaceFolderInfos();
+    const activeWorkspaceRoot = this.getWorkspaceRoot();
+    this.postMessage({
+      type: "config",
+      value: {
+        ...settings,
+        workspaceFolders,
+        activeWorkspaceRoot,
+      },
+    });
   }
 
   public clearConversation(): void {
@@ -291,24 +305,55 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  /**
+   * NC-002: Validate that a provider base URL is safe to receive credentials.
+   * Delegates to the pure utility function in agent-core for testability.
+   */
+  private validateProviderUrl(rawUrl: string): string {
+    return validateProviderUrl(rawUrl);
+  }
+
+  /**
+   * NC-002: Check whether the current workspace is trusted enough to allow
+   * authenticated provider probing to a custom (non-default) endpoint.
+   */
+  private canProbeProviderEndpoint(isCustomUrl: boolean): boolean {
+    if (!isCustomUrl) {
+      // Always allow probing the built-in default endpoint
+      return true;
+    }
+    // Custom endpoints require workspace trust
+    return this.workspaceTrustService.isWorkspaceTrusted();
+  }
+
   private async handleWebviewMessage(
-    message: InboundWebviewMessage,
+    message: unknown,
   ): Promise<void> {
-    switch (message.type) {
+    // NC-005: Runtime validation — reject messages that don't have a recognized
+    // type discriminator and valid shape. The TypeScript type system only
+    // provides compile-time guarantees; the webview can send arbitrary objects.
+    const validation = validateWebviewMessage(message);
+    if (!validation.valid) {
+      console.warn(`[NexCode] Rejected invalid webview message: ${validation.error}`);
+      return;
+    }
+
+    const msg = message as InboundWebviewMessage;
+    switch (msg.type) {
       case "sendPrompt":
-        await this.handlePrompt(message);
+        await this.handlePrompt(msg);
         return;
       case "cancelPrompt":
         this.cancelPrompt();
         return;
       case "applyEdit":
-        await this.applyProposedEdit(message.editId);
+        await this.applyProposedEdit(msg.editId);
         return;
       case "previewEdit":
-        await this.previewProposedEdit(message.editId);
+        await this.previewProposedEdit(msg.editId);
         return;
       case "rejectEdit":
-        this.rejectProposedEdit(message.editId);
+        this.rejectProposedEdit(msg.editId);
         return;
       case "clearConversation":
         this.clearConversation();
@@ -317,22 +362,22 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         this.showCompletionNotification();
         return;
       case "refreshProviderStatus":
-        await this.refreshProviderStatus(message.provider);
+        await this.refreshProviderStatus(msg.provider);
         return;
       case "requestModelSuggestions":
-        await this.provideModelSuggestions(message.provider);
+        await this.provideModelSuggestions(msg.provider);
         return;
       case "enhancePrompt":
-        await this.handleEnhancePrompt(message);
+        await this.handleEnhancePrompt(msg);
         return;
       case "listMcpServers":
         await this.postMcpRegistryState();
         return;
       case "listMcpTools":
-        await this.postMcpTools(message.server);
+        await this.postMcpTools(msg.server);
         return;
       case "invokeMcpToolQuick":
-        await this.invokeMcpToolQuick(message);
+        await this.invokeMcpToolQuick(msg);
         return;
       case "pickAttachments":
         await this.pickAttachments();
@@ -359,22 +404,45 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         );
         return;
       case "openFile":
-        await this.handleOpenFile(message);
+        await this.handleOpenFile(msg);
         return;
       case "updateSetting":
-        if (message.key && message.value !== undefined) {
+        if (msg.key && msg.value !== undefined) {
           const secretKeys = ["openAIApiKey", "searchApiKey", "tavilyApiKey"];
-          if (secretKeys.includes(message.key)) {
+          if (secretKeys.includes(msg.key)) {
             await this.secretService.setSecret(
-              message.key as "openAIApiKey" | "searchApiKey" | "tavilyApiKey",
-              String(message.value),
+              msg.key as "openAIApiKey" | "searchApiKey" | "tavilyApiKey",
+              String(msg.value),
             );
           } else {
+            // NC-005: Setting key must be in the allowlist.
+            // The webview must never be able to send an arbitrary configuration key.
+            if (!isAllowedSettingKey(msg.key)) {
+              console.warn(`[NexCode] Rejected disallowed setting key: ${msg.key}`);
+              return;
+            }
+            // NC-002: Validate provider endpoint URLs before persisting.
+            // Reject non-HTTPS, private-IP, and malformed URLs.
+            if (msg.key === "openAIBaseUrl") {
+              const validated = this.validateProviderUrl(
+                String(msg.value),
+              );
+              if (validated !== String(msg.value).replace(/\/+$/, "")) {
+                // URL failed validation — reject the update and notify
+                this.postMessage({
+                  type: "configError",
+                  message:
+                    "Provider URL rejected: must use HTTPS (or HTTP for localhost only). " +
+                    "Private/internal IP addresses are not allowed.",
+                });
+                return;
+              }
+            }
             const config =
               vscode.workspace.getConfiguration("nexcodeKiboko");
             await config.update(
-              message.key,
-              message.value,
+              msg.key,
+              msg.value,
               vscode.ConfigurationTarget.Workspace,
             );
           }
@@ -382,23 +450,23 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         }
         return;
       case "addAttachment":
-        await this.addAttachmentFromWebview(message);
+        await this.addAttachmentFromWebview(msg);
         return;
       case "removeAttachment":
-        this.taskController.removeAttachment(message.attachmentId);
+        this.taskController.removeAttachment(msg.attachmentId);
         this.taskController.postAttachments();
         return;
       case "steerTask":
-        this.handleSteerTask(message.taskId, message.message);
+        this.handleSteerTask(msg.taskId, msg.message);
         return;
       case "cancelTask":
-        this.handleCancelTask(message.taskId);
+        this.handleCancelTask(msg.taskId);
         return;
       case "listTasks":
         this.taskController.postTaskList();
         return;
       case "toolApprovalResponse":
-        this.handleToolApprovalResponse(message.requestId, message.approved);
+        this.handleToolApprovalResponse(msg.requestId, msg.approved);
         return;
     }
   }
@@ -457,7 +525,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     });
 
     this.taskController.postTaskList();
-    this.processNextTask();
+    void this.processNextTask();
   }
 
   private async processNextTask(): Promise<void> {
@@ -533,7 +601,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       this.taskController.postAttachments();
       this.postMessage({ type: "end", taskId: task.id });
       this.taskController.postTaskList();
-      this.processNextTask();
+      void this.processNextTask();
     }
   }
 
@@ -791,14 +859,18 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       (!textContent || textContent.trim().length === 0) &&
       this.isTextLike(normalizedMimeType, sanitizedFileName)
     ) {
-      try {
-        const workspaceRoot = this.getWorkspaceRoot();
-        const filePath = path.join(workspaceRoot, sanitizedFileName);
-        const fileUri = vscode.Uri.file(filePath);
-        const bytes = await vscode.workspace.fs.readFile(fileUri);
-        textContent = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
-      } catch {
-        // File might not exist on disk — fall through to validation
+      // NC-023: Try all workspace folders to find the attachment file
+      const folders = vscode.workspace.workspaceFolders ?? [];
+      for (const folder of folders) {
+        try {
+          const filePath = path.join(folder.uri.fsPath, sanitizedFileName);
+          const fileUri = vscode.Uri.file(filePath);
+          const bytes = await vscode.workspace.fs.readFile(fileUri);
+          textContent = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+          break; // Found in this workspace folder
+        } catch {
+          // File might not exist in this folder — try next
+        }
       }
     }
 
@@ -901,7 +973,12 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
-    const workspaceRoot = this.getWorkspaceRoot();
+    // NC-023: Resolve workspace root from the edit's file path to support
+    // multi-root workspaces. Each edit is associated with the workspace folder
+    // that contains its target file, not always workspaceFolders[0].
+    const editUri = vscode.Uri.file(path.join(this.getWorkspaceRoot(), edit.filePath));
+    const folder = this.resolveWorkspaceFolder(editUri);
+    const workspaceRoot = folder?.uri.fsPath ?? this.getWorkspaceRoot();
     const applied = await this.editReviewService.applyEdit(edit, workspaceRoot);
     if (applied) {
       this.taskController.removeEdit(editId);
@@ -918,7 +995,10 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
-    const workspaceRoot = this.getWorkspaceRoot();
+    // NC-023: Resolve workspace root from the edit's file path
+    const editUri = vscode.Uri.file(path.join(this.getWorkspaceRoot(), edit.filePath));
+    const folder = this.resolveWorkspaceFolder(editUri);
+    const workspaceRoot = folder?.uri.fsPath ?? this.getWorkspaceRoot();
     await this.editReviewService.previewEdit(edit, workspaceRoot);
   }
 
@@ -941,6 +1021,15 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     if (!this.orchestrator || this.currentWorkspaceRoot !== workspaceRoot) {
       const settings = await this.getRuntimeSettings();
       const rawKeys = await this.getRawApiKeys();
+
+      // NC-022: Workspace prompt overrides are only allowed when the user has
+      // explicitly opted in AND the workspace is trusted.  A malicious
+      // repository must not be able to inject arbitrary system instructions via
+      // prompt files in the workspace directory.
+      const config = vscode.workspace.getConfiguration("nexcodeKiboko");
+      const userAllowsWorkspacePrompts = config.get<boolean>("allowWorkspacePrompts", false);
+      const allowWorkspacePrompts = userAllowsWorkspacePrompts && this.workspaceTrustService.isWorkspaceTrusted();
+
       this.orchestrator = createNexcodeOrchestrator({
         workspaceRoot,
         promptsDir: path.join(workspaceRoot, "prompts"),
@@ -956,6 +1045,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         tavilyApiKey: rawKeys.tavilyApiKey,
         modeTemperatures: settings.modeTemperatures as any,
         agentModels: settings.agentModels,
+        allowWorkspacePrompts,
         approvalCallback: async (toolName: string, arg: string) => {
           // Check workspace trust first
           if (!this.workspaceTrustService.canRunTool(toolName)) {
@@ -971,22 +1061,16 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
 
           // Read current settings each time (not captured in closure)
           const currentConfig = vscode.workspace.getConfiguration("nexcodeKiboko");
-          const currentApproval = currentConfig.get<"auto" | "ask" | "bypass">("toolApproval", "ask");
-
-          if (currentApproval === "bypass") {
-            return true;
-          }
+          // NC-008: 'bypass' has been removed from the enum. If a legacy value
+          // persists (e.g. from an older workspace setting), fall back to 'ask'.
+          const rawApproval = currentConfig.get<string>("toolApproval", "ask");
+          const currentApproval: "auto" | "ask" = rawApproval === "auto" ? "auto" : "ask";
 
           if (currentApproval === "auto") {
-            // Use the policy's isAutoExecutable() to determine auto-approve eligibility
-            // This covers safe tools (read, search, web-search, git-*) and low-risk writes
+            // NC-008: Use ONLY the policy's isAutoExecutable() as the source of truth.
+            // The extension must NOT add its own fallback auto-approval overrides.
             const policy = this.orchestrator?.getToolApprovalPolicy?.();
             if (policy && policy.isAutoExecutable(toolName, arg)) {
-              return true;
-            }
-            // Fallback: auto-approve low-risk write tools
-            const autoApproveInAutoMode = ["write", "append", "patch"];
-            if (autoApproveInAutoMode.includes(toolName)) {
               return true;
             }
           }
@@ -995,6 +1079,9 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
           return await this.requestToolApproval(toolName, arg);
         },
       });
+      // NC-039: Perform async initialization after construction.
+      // Memory loading is now explicit rather than a constructor side effect.
+      await this.orchestrator.initialize();
       this.currentWorkspaceRoot = workspaceRoot;
     }
 
@@ -1100,13 +1187,57 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     );
   }
 
+  /**
+   * NC-023: Resolve the workspace folder that contains the given URI.
+   * Falls back to the active editor's document, then to workspaceFolders[0],
+   * then to globalStorageUri.
+   */
+  private resolveWorkspaceFolder(uri?: vscode.Uri): vscode.WorkspaceFolder | undefined {
+    // 1. If a specific URI is provided, find its workspace folder
+    if (uri) {
+      const folder = vscode.workspace.getWorkspaceFolder(uri);
+      if (folder) return folder;
+    }
+
+    // 2. Try the active editor's document
+    const activeEditor = vscode.window.activeTextEditor;
+    if (activeEditor) {
+      const folder = vscode.workspace.getWorkspaceFolder(activeEditor.document.uri);
+      if (folder) return folder;
+    }
+
+    // 3. Fall back to first workspace folder
+    return vscode.workspace.workspaceFolders?.[0];
+  }
+
+  /**
+   * NC-023: Get the workspace root path, resolving from the active editor
+   * context when possible. In multi-root workspaces, this returns the folder
+   * that contains the active editor's file rather than always workspaceFolders[0].
+   */
   private getWorkspaceRoot(): string {
-    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-    if (workspaceFolder) {
-      return workspaceFolder.uri.fsPath;
+    const folder = this.resolveWorkspaceFolder();
+    if (folder) {
+      return folder.uri.fsPath;
     }
 
     return this.context.globalStorageUri.fsPath;
+  }
+
+  /**
+   * NC-023: Get all workspace folders for the webview UI.
+   * Returns folder name and URI path for each root in a multi-root workspace.
+   */
+  private getWorkspaceFolderInfos(): Array<{ name: string; uri: string; index: number }> {
+    const folders = vscode.workspace.workspaceFolders;
+    if (!folders || folders.length === 0) {
+      return [];
+    }
+    return folders.map((f, i) => ({
+      name: f.name,
+      uri: f.uri.fsPath,
+      index: i,
+    }));
   }
 
   private async getRuntimeSettings(): Promise<{
@@ -1119,7 +1250,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     tavilyApiKeyConfigured: boolean;
     allowTools: boolean;
     requireTerminalApproval: boolean;
-    toolApproval: "auto" | "ask" | "bypass";
+    toolApproval: "auto" | "ask";
     temperature: number;
     modeTemperatures: Record<string, number>;
     agentModels: { manager?: string; primaryWorker?: string; lightweightWorker?: string; reasoningReviewer?: string };
@@ -1127,9 +1258,9 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     autoApplyChanges: boolean;
     allowWebSearch: boolean;
     searchProvider: string;
-    searchApiKey: string;
+    // NC-003: Boolean status only — never send raw secrets to the webview.
+    searchApiKeyConfigured: boolean;
     searchBaseUrl: string;
-    tavilyApiKey: string;
   }> {
     const config = vscode.workspace.getConfiguration("nexcodeKiboko");
     const secrets = await this.secretService.getAllSecrets();
@@ -1141,10 +1272,14 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       ollamaBaseUrl: this.normalizeOllamaBaseUrl(
         config.get<string>("ollamaBaseUrl", "http://localhost:11434"),
       ),
-      openAIBaseUrl: config.get<string>(
-        "openAIBaseUrl",
-        "https://opencode.ai/zen/go/v1",
-      ).replace(/\/+$/, ""),
+      // NC-002: Validate the provider URL at read time to prevent workspace
+      // injection from .vscode/settings.json redirecting authenticated requests.
+      openAIBaseUrl: this.validateProviderUrl(
+        config.get<string>(
+          "openAIBaseUrl",
+          "https://opencode.ai/zen/go/v1",
+        ),
+      ),
       openAIApiKeyConfigured: !!secrets.openAIApiKey.trim(),
       tavilyApiKeyConfigured: !!secrets.tavilyApiKey.trim(),
       allowTools: config.get<boolean>("allowToolCommands", true),
@@ -1152,10 +1287,11 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         "requireTerminalApproval",
         true,
       ),
-      toolApproval: config.get<"auto" | "ask" | "bypass">(
-        "toolApproval",
-        "ask",
-      ),
+      // NC-008: 'bypass' has been removed. Guard against legacy value.
+      toolApproval: ((): "auto" | "ask" => {
+        const raw = config.get<string>("toolApproval", "ask");
+        return raw === "auto" ? "auto" : "ask";
+      })(),
       temperature: config.get<number>("temperature", 0.2),
       modeTemperatures: config.get<Record<string, number>>(
         "modeTemperatures",
@@ -1167,13 +1303,13 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         lightweightWorker: config.get<string>("agentModels.lightweightWorker", ""),
         reasoningReviewer: config.get<string>("agentModels.reasoningReviewer", ""),
       },
-      showReasoning: config.get<boolean>("showReasoning", true),
+      showReasoning: config.get<boolean>("showReasoning", false),
       autoApplyChanges: config.get<boolean>("autoApplyChanges", false),
       allowWebSearch: config.get<boolean>("allowWebSearch", true),
       searchProvider: config.get<string>("searchProvider", "tavily"),
-      searchApiKey: secrets.searchApiKey,
+      // NC-003: Send boolean presence indicator, not the raw secret.
+      searchApiKeyConfigured: !!secrets.searchApiKey.trim(),
       searchBaseUrl: config.get<string>("searchBaseUrl", ""),
-      tavilyApiKey: secrets.tavilyApiKey,
     };
   }
 
@@ -1209,6 +1345,28 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
           throw new Error(`HTTP ${response.status}`);
         }
       } else {
+        // NC-002: Validate the provider URL before sending credentials.
+        // Reject non-HTTPS, private-IP, and malformed URLs.
+        const defaultBaseUrl = "https://opencode.ai/zen/go/v1";
+        const validatedBaseUrl = this.validateProviderUrl(
+          settings.openAIBaseUrl,
+        );
+
+        // NC-002: In untrusted workspaces, block probing to custom endpoints.
+        const isCustomUrl = validatedBaseUrl !== defaultBaseUrl;
+        if (!this.canProbeProviderEndpoint(isCustomUrl)) {
+          this.postMessage({
+            type: "providerStatus",
+            value: {
+              provider,
+              connected: false,
+              latencyMs: Date.now() - startedAt,
+              error: "Custom provider endpoints are blocked in untrusted workspaces.",
+            },
+          });
+          return;
+        }
+
         const headers: Record<string, string> = {
           Accept: "application/json",
         };
@@ -1219,7 +1377,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         }
 
         const response = await this.fetchWithTimeout(
-          `${settings.openAIBaseUrl.replace(/\/$/, "")}/models`,
+          `${validatedBaseUrl}/models`,
           {
             method: "GET",
             headers,
@@ -1286,6 +1444,23 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
           .map((model) => (typeof model.name === "string" ? model.name : ""))
           .filter((name) => name.length > 0);
       } else {
+        // NC-002: Validate the provider URL before sending credentials.
+        const defaultBaseUrl = "https://opencode.ai/zen/go/v1";
+        const validatedBaseUrl = this.validateProviderUrl(
+          settings.openAIBaseUrl,
+        );
+
+        // NC-002: In untrusted workspaces, block probing to custom endpoints.
+        const isCustomUrl = validatedBaseUrl !== defaultBaseUrl;
+        if (!this.canProbeProviderEndpoint(isCustomUrl)) {
+          this.postMessage({
+            type: "modelSuggestions",
+            provider,
+            models: [],
+          });
+          return;
+        }
+
         const headers: Record<string, string> = {
           Accept: "application/json",
         };
@@ -1296,7 +1471,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         }
 
         const response = await this.fetchWithTimeout(
-          `${settings.openAIBaseUrl.replace(/\/$/, "")}/models`,
+          `${validatedBaseUrl}/models`,
           {
             method: "GET",
             headers,
@@ -1383,7 +1558,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     panel.webview.html = this.getHtml(panel.webview);
 
     panel.webview.onDidReceiveMessage(
-      (message: InboundWebviewMessage) => {
+      (message: unknown) => {
         void this.handleWebviewMessage(message);
       },
       undefined,
@@ -1399,16 +1574,29 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
       context.subscriptions,
     );
 
-    this.pushInitialWebviewState();
+    void this.pushInitialWebviewState();
   }
 
   private async pushInitialWebviewState(): Promise<void> {
     const settings = await this.getRuntimeSettings();
-    this.postMessage({ type: "config", value: settings });
+    // NC-023: Include workspace folder information so the webview can display
+    // a multi-root workspace picker and associate operations with the correct root.
+    const workspaceFolders = this.getWorkspaceFolderInfos();
+    const activeWorkspaceRoot = this.getWorkspaceRoot();
+    this.postMessage({
+      type: "config",
+      value: {
+        ...settings,
+        workspaceFolders,
+        activeWorkspaceRoot,
+      },
+    });
     this.taskController.postAttachments();
     void this.postMcpRegistryState();
-    void this.refreshProviderStatus();
-    void this.provideModelSuggestions();
+    // NC-002: Do NOT auto-probe provider status or model suggestions on sidebar
+    // initialization. A workspace-controlled openAIBaseUrl could redirect an
+    // authenticated request. Probing is now triggered only by explicit user action
+    // (refreshProviderStatus / requestModelSuggestions messages from the webview).
   }
 
   private showCompletionNotification(): void {
@@ -1427,8 +1615,34 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     const filePath = msg.filePath;
     if (!filePath) return;
 
+    // NC-005 + NC-023: Validate that the file path is within any workspace folder.
+    // In multi-root workspaces, check all folders, not just workspaceFolders[0].
+    const folders = vscode.workspace.workspaceFolders;
+    if (!folders || folders.length === 0) {
+      vscode.window.showErrorMessage(
+        `NexCode: No workspace folder is open.`,
+      );
+      return;
+    }
+
+    let containedPath: string | null = null;
+    for (const folder of folders) {
+      const result = validateOpenFilePath(folder.uri.fsPath, filePath);
+      if (result) {
+        containedPath = result;
+        break;
+      }
+    }
+
+    if (!containedPath) {
+      vscode.window.showErrorMessage(
+        `NexCode: Cannot open file outside workspace: ${filePath}`,
+      );
+      return;
+    }
+
     try {
-      const uri = vscode.Uri.file(filePath);
+      const uri = vscode.Uri.file(containedPath);
       const document = await vscode.workspace.openTextDocument(uri);
       const editor = await vscode.window.showTextDocument(document, {
         preserveFocus: true,
@@ -1445,7 +1659,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         );
       }
     } catch {
-      vscode.window.showErrorMessage(`Could not open file: ${filePath}`);
+      vscode.window.showErrorMessage(`Could not open file: ${containedPath}`);
     }
   }
 

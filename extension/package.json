@@ -131,8 +131,8 @@
         },
         "nexcodeKiboko.showReasoning": {
           "type": "boolean",
-          "default": true,
-          "description": "Enable reasoning details panel in chat responses."
+          "default": false,
+          "description": "Show provider-specific reasoning/thinking details in chat responses. Disabled by default to avoid exposing unstable internal model artifacts."
         },
         "nexcodeKiboko.autoApplyChanges": {
           "type": "boolean",
@@ -148,16 +148,14 @@
           "type": "string",
           "enum": [
             "auto",
-            "ask",
-            "bypass"
+            "ask"
           ],
           "enumDescriptions": [
             "Auto-approve read-only and safe terminal commands. Ask for destructive operations.",
-            "Require explicit approval for all destructive tools (terminal, delete, write, batch_edit).",
-            "Autopilot mode: approve all tools automatically without prompting. Use only in trusted workspaces."
+            "Require explicit approval for all destructive tools (terminal, delete, write, batch_edit)."
           ],
           "default": "ask",
-          "description": "Tool approval mode. 'auto' approves safe tools, 'ask' requires approval for destructive tools, 'bypass' is autopilot (no prompts)."
+          "description": "Tool approval mode. 'auto' approves safe tools, 'ask' requires approval for destructive tools. Bypass/autopilot mode has been removed for security."
         },
         "nexcodeKiboko.agentModels.manager": {
           "type": "string",
@@ -178,11 +176,58 @@
           "type": "string",
           "default": "",
           "description": "Model for reviewer and security agents. Falls back to defaultModel if empty."
+        },
+        "nexcodeKiboko.allowWorkspacePrompts": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow workspace prompt files to override built-in system prompts. Disabled by default for security — a malicious repository could otherwise inject arbitrary system instructions. Only enable in trusted workspaces where you explicitly want custom prompts."
+        },
+        "nexcodeKiboko.openAIBaseUrl": {
+          "type": "string",
+          "default": "https://opencode.ai/zen/go/v1",
+          "description": "Base URL for OpenAI-compatible API requests. Must be HTTPS except localhost for development. Custom endpoints are blocked in untrusted workspaces (NC-002)."
+        },
+        "nexcodeKiboko.ollamaBaseUrl": {
+          "type": "string",
+          "default": "http://localhost:11434",
+          "description": "Base URL for Ollama local model server. Only used when defaultProvider is 'ollama'."
+        },
+        "nexcodeKiboko.searchProvider": {
+          "type": "string",
+          "enum": [
+            "tavily",
+            "serper",
+            "google",
+            "bing",
+            "duckduckgo"
+          ],
+          "default": "tavily",
+          "description": "Web search provider for /tool web-search commands."
+        },
+        "nexcodeKiboko.searchBaseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Custom base URL for the search provider. Leave empty to use the provider's default endpoint."
         }
       }
     },
     "workspaceTrust": {
       "trusted": true
+    },
+    "capabilities": {
+      "untrustedWorkspaces": {
+        "supported": "limited",
+        "restrictedConfigurations": [
+          "nexcodeKiboko.openAIBaseUrl",
+          "nexcodeKiboko.ollamaBaseUrl",
+          "nexcodeKiboko.toolApproval",
+          "nexcodeKiboko.allowToolCommands",
+          "nexcodeKiboko.allowWebSearch",
+          "nexcodeKiboko.searchProvider",
+          "nexcodeKiboko.searchBaseUrl",
+          "nexcodeKiboko.allowWorkspacePrompts"
+        ]
+      }
     }
   },
   "scripts": {
@@ -193,6 +238,9 @@
     "build": "npm run build:webview && npm run build:node",
     "watch": "npm run build:webview && esbuild src/extension.ts --bundle --platform=node --target=node18 --format=cjs --outfile=out/extension.js --external:vscode --watch",
     "lint": "tsc -p . --noEmit",
+    "build:test": "tsc -p tsconfig.test.json",
+    "test:integration": "npm run build:test && node out/test/runTest.js",
+    "test:integration:cli": "npx @vscode/test-cli",
     "package": "node ../tools/extension-release.mjs --no-bump --no-install"
   },
   "dependencies": {
@@ -205,13 +253,17 @@
     "remark-math": "^6.0.0"
   },
   "devDependencies": {
+    "@types/mocha": "^10.0.10",
     "@types/node": "^22.13.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@types/vscode": "^1.95.0",
+    "@vscode/test-cli": "^0.0.15",
+    "@vscode/test-electron": "^3.0.0",
     "@vscode/vsce": "^3.2.2",
     "esbuild": "^0.25.11",
     "framer-motion": "^12.23.24",
+    "mocha": "^11.7.6",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^9.0.1",

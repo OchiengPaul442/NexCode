@@ -1,3 +1,11 @@
+/**
+ * NC-033 category: Pure policy — validate classification without running commands.
+ *
+ * F-012 tests verifying that SAFE_PATTERNS no longer allows arbitrary code
+ * execution without approval. All tests use validateCommand() as a pure function
+ * and requiresApproval() from the policy engine — no real commands are executed.
+ */
+
 import { describe, it, expect } from "vitest";
 import { TerminalTool, SAFE_PATTERNS } from "../src/tools/terminalTool";
 import { DefaultToolApprovalPolicy } from "../src/tools/toolApprovalPolicy";

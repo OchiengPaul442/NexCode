@@ -11,7 +11,8 @@ describe("TokenCounter", () => {
         { role: "assistant", content: "world" },
       ];
       const tokens = counter.estimateRequestTokens(messages);
-      const expected = Math.ceil(5 / 4) + OVERHEAD_PER_MESSAGE + Math.ceil(5 / 4) + OVERHEAD_PER_MESSAGE;
+      // Use counter.estimateTokens to derive expected values (ratio may change)
+      const expected = counter.estimateTokens("hello") + OVERHEAD_PER_MESSAGE + counter.estimateTokens("world") + OVERHEAD_PER_MESSAGE;
       expect(tokens).toBe(expected);
     });
 
@@ -31,8 +32,10 @@ describe("TokenCounter", () => {
         },
       ];
       const tokens = counter.estimateRequestTokens(messages);
-      const argTokens = Math.ceil('{"path":"src/index.ts"}'.length / 4);
-      expect(tokens).toBe(argTokens + OVERHEAD_PER_MESSAGE);
+      const argTokens = counter.estimateTokens('{"path":"src/index.ts"}');
+      // Empty content still counts as 1 token (Math.max(1, ceil(0/ratio)))
+      const contentTokens = counter.estimateTokens("");
+      expect(tokens).toBe(contentTokens + argTokens + OVERHEAD_PER_MESSAGE);
     });
 
     it("includes tool schemas when provided", () => {

@@ -3,6 +3,7 @@ import {
   ModelProvider,
   ModelRequest,
   ModelResponse,
+  ProviderUsage,
   ToolCallRequest,
 } from "../types";
 import { detectModelCapabilities } from "./modelRouter";
@@ -44,6 +45,8 @@ interface OllamaChatResponse {
     tool_calls?: OllamaToolCall[];
   };
   response?: string;
+  prompt_eval_count?: number;
+  eval_count?: number;
 }
 
 export class OllamaProvider implements ModelProvider {
@@ -271,6 +274,9 @@ export class OllamaProvider implements ModelProvider {
           text: json.message.content || "",
           toolCalls,
           raw: json,
+          usage: json.prompt_eval_count != null && json.eval_count != null
+            ? { promptTokens: json.prompt_eval_count, completionTokens: json.eval_count, totalTokens: json.prompt_eval_count + json.eval_count }
+            : undefined,
         };
       }
 
@@ -284,6 +290,9 @@ export class OllamaProvider implements ModelProvider {
             text,
             toolCalls: extractedCalls,
             raw: json,
+            usage: json.prompt_eval_count != null && json.eval_count != null
+              ? { promptTokens: json.prompt_eval_count, completionTokens: json.eval_count, totalTokens: json.prompt_eval_count + json.eval_count }
+              : undefined,
           };
         }
       }
@@ -291,6 +300,9 @@ export class OllamaProvider implements ModelProvider {
       return {
         text,
         raw: json,
+        usage: json.prompt_eval_count != null && json.eval_count != null
+          ? { promptTokens: json.prompt_eval_count, completionTokens: json.eval_count, totalTokens: json.prompt_eval_count + json.eval_count }
+          : undefined,
       };
     } finally {
       abort.clear();
@@ -520,11 +532,14 @@ export class OllamaProvider implements ModelProvider {
 
     // Try to extract tool calls from the text response
     const extractedCalls = this.extractToolCallsFromText(text);
+    const usage = json.prompt_eval_count != null && json.eval_count != null
+      ? { promptTokens: json.prompt_eval_count, completionTokens: json.eval_count, totalTokens: json.prompt_eval_count + json.eval_count }
+      : undefined;
     if (extractedCalls.length > 0) {
-      return { text, toolCalls: extractedCalls, raw: json };
+      return { text, toolCalls: extractedCalls, raw: json, usage };
     }
 
-    return { text, raw: json };
+    return { text, raw: json, usage };
   }
 
   public async *stream(request: ModelRequest): AsyncGenerator<string> {

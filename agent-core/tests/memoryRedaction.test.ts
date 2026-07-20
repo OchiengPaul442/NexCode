@@ -19,9 +19,9 @@ describe("Memory secret redaction (N3)", () => {
   });
 
   it("redacts GitHub tokens (ghp_...)", () => {
-    const input = "Token: ghp_abcdefghijklmnopqrstuvwxyz1234567890";
+    const input = "Token: ghp_" + "a".repeat(36);
     const result = redact(input);
-    expect(result).not.toContain("ghp_abcdefghijklmnopqrstuvwxyz1234567890");
+    expect(result).not.toContain("ghp_" + "a".repeat(36));
     expect(result).toContain("[REDACTED_GITHUB_TOKEN]");
   });
 

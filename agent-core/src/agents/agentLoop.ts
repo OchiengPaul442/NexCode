@@ -12,12 +12,25 @@ import { ToolDefinition, validateInput } from "../tools/toolProtocol";
 import { ApprovalCallback } from "../tools/toolApprovalPolicy";
 import { EvidenceStore } from "../tools/evidenceStore";
 import { repairTruncatedJson } from "../utils/jsonRepair";
+import { createDefaultRetryBudget, RetryBudget } from "../utils/retryBudget";
 
 export interface AgentLoopConfig {
   maxTurns: number;
   maxTokensPerTurn: number;
   timeoutMs: number;
 }
+
+/**
+ * NC-017: Privileged tools that must NOT have heuristic regex extraction.
+ * When JSON parsing fails for these tools, we fail closed and return a
+ * validation error to the model instead of trying to extract fields from
+ * malformed input. Heuristic repair of privileged tool calls can change
+ * semantics or extract dangerous substrings from otherwise invalid text.
+ */
+const PRIVILEGED_TOOLS = new Set([
+  "write", "append", "patch", "terminal", "delete", "delete-contents",
+  "move", "batch_edit", "mcp",
+]);
 
 function formatToolArgs(
   toolName: string,
@@ -282,6 +295,14 @@ export async function* runAgentLoop(
   const MAX_TOOL_OUTPUT_TOKENS = 2000;
   const evidenceStore = new EvidenceStore();
   let timedOut = false;
+
+  // NC-040: Create a shared retry budget for the entire agent loop run.
+  // This prevents unbounded retry multiplication across provider HTTP retries,
+  // cross-provider fallback candidates, and agent-loop retries.
+  // Default: 8 total fetch attempts — covers the common case (1 explicit +
+  // 2 HTTP retries per attempt) with headroom for one fallback candidate.
+  const retryBudget = createDefaultRetryBudget();
+
   for (let turn = 0; turn < config.maxTurns; turn++) {
     if (Date.now() - startedAt > config.timeoutMs) {
       timedOut = true;
@@ -335,6 +356,7 @@ export async function* runAgentLoop(
           maxTokens: config.maxTokensPerTurn,
           signal,
           reasoningEffort,
+          retryBudget,
         });
         break; // Success, exit retry loop
       } catch (error) {
@@ -446,26 +468,35 @@ export async function* runAgentLoop(
         const repaired = repairTruncatedJson(toolCall.function.arguments);
         args = JSON.parse(repaired);
       } catch {
-        // Malformed tool call args from model - try to recover with regex extraction
+        // NC-017: For privileged tools, fail closed — do not heuristically
+        // repair write, terminal, delete, git-write, credential, or MCP calls.
+        // Heuristic recovery can change semantics or extract a dangerous
+        // substring from otherwise invalid text.
+        const isPrivileged = PRIVILEGED_TOOLS.has(toolCall.function.name);
         args = {};
         parseError = `Invalid JSON in tool arguments: ${toolCall.function.arguments.slice(0, 200)}`;
-        // Try to extract path from raw arguments string
-        const pathMatch = toolCall.function.arguments.match(/["']?(?:path|filePath|file)["']?\s*[:=]\s*["']([^"']+)["']/i);
-        if (pathMatch) {
-          args.path = pathMatch[1];
-        }
-        const contentMatch = toolCall.function.arguments.match(/["'](?:content|text|command)["']?\s*[:=]\s*["']([\s\S]*?)["']/i);
-        if (contentMatch) {
-          args.content = contentMatch[1];
-          args.command = contentMatch[1];
-        }
-        const commandMatch = toolCall.function.arguments.match(/["'](?:cmd)["']?\s*[:=]\s*["']([\s\S]*?)["']/i);
-        if (commandMatch) {
-          args.command = commandMatch[1];
-        }
-        const queryMatch = toolCall.function.arguments.match(/["'](?:query|search)["']?\s*[:=]\s*["']([\s\S]*?)["']/i);
-        if (queryMatch) {
-          args.query = queryMatch[1];
+        if (isPrivileged) {
+          // Fail closed for privileged tools — no regex extraction
+        } else {
+          // For read-only tools only, allow heuristic recovery and log it
+          // Try to extract path from raw arguments string
+          const pathMatch = toolCall.function.arguments.match(/["']?(?:path|filePath|file)["']?\s*[:=]\s*["']([^"']+)["']/i);
+          if (pathMatch) {
+            args.path = pathMatch[1];
+          }
+          const contentMatch = toolCall.function.arguments.match(/["'](?:content|text|command)["']?\s*[:=]\s*["']([\s\S]*?)["']/i);
+          if (contentMatch) {
+            args.content = contentMatch[1];
+            args.command = contentMatch[1];
+          }
+          const commandMatch = toolCall.function.arguments.match(/["'](?:cmd)["']?\s*[:=]\s*["']([\s\S]*?)["']/i);
+          if (commandMatch) {
+            args.command = commandMatch[1];
+          }
+          const queryMatch = toolCall.function.arguments.match(/["'](?:query|search)["']?\s*[:=]\s*["']([\s\S]*?)["']/i);
+          if (queryMatch) {
+            args.query = queryMatch[1];
+          }
         }
       }
 
@@ -514,6 +545,7 @@ export async function* runAgentLoop(
       const toolStartTime = Date.now();
       let result = await tools.runToolCall(
         `${toolCall.function.name} ${argString}`,
+        signal,
       );
 
       if (result.requiresApproval) {
@@ -526,6 +558,7 @@ export async function* runAgentLoop(
             tools.markApproved(toolName, pendingArg);
             result = await tools.runToolCall(
               `${toolCall.function.name} ${argString}`,
+              signal,
             );
           } else {
             result = {
@@ -636,6 +669,7 @@ export async function* runAgentLoop(
       maxTokens: config.maxTokensPerTurn,
       signal,
       reasoningEffort,
+      retryBudget,
     });
 
     messages.push({ role: "assistant", content: finalResponse.text });

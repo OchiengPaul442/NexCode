@@ -1,7 +1,15 @@
+> **⚠️ HISTORICAL SNAPSHOT — NOT CURRENT**
+>
+> This document was generated on **2026-07-16** and reflects the repository state at that
+> time (21 unit tests across 8 files). The current repository has **1459+ tests across 58+
+> test files**. Do not use this document for release decisions. Run `npm test` for current
+> counts and see CI artifacts for authoritative test evidence.
+
 # TEST MATRIX
 
 **Project:** NEXCODE-KIBOKO
 **Date:** 2026-07-16
+**Status:** Historical snapshot — superseded by NC-029 remediation (2026-07-20)
 
 ---
 

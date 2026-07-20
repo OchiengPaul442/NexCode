@@ -25,6 +25,7 @@ import {
 } from "./types";
 import { McpAdapter, McpToolCall, McpToolResult } from "./mcp";
 import { McpRegistry } from "./mcp/mcpRegistry";
+import { FilesystemAdapter } from "./mcp/adapters/filesystemAdapter";
 import { MemoryManager } from "./memory/memoryManager";
 import { PromptStore } from "./prompts/promptStore";
 import { FeedbackLogger } from "./self-improve/feedbackLogger";
@@ -36,6 +37,7 @@ import { OpenAICompatibleProvider } from "./providers/openAICompatibleProvider";
 import { ToolRegistry } from "./tools/toolRegistry";
 import { ApprovalCallback, DefaultToolApprovalPolicy } from "./tools/toolApprovalPolicy";
 import { TokenCounter } from "./utils/tokenCounter";
+import { getModelCapabilityRegistry } from "./utils/modelCapabilityRegistry";
 import { chunkText, extractFirstCodeBlock } from "./utils/text";
 import { EfficiencyTracker } from "./utils/efficiencyMetrics";
 import {
@@ -53,6 +55,8 @@ import { ContextCompressor } from "./utils/contextCompressor";
 import { SessionCompressor } from "./utils/sessionCompressor";
 import { runAgentLoop, AgentLoopConfig } from "./agents/agentLoop";
 import { getToolDefinitionsForMode } from "./tools/toolDefinitions";
+import { validateEditPreconditions } from "./utils/editValidation";
+import { atomicWriteFile } from "./tools/fileSystemTool";
 
 export interface NexcodeOrchestratorOptions {
   workspaceRoot?: string;
@@ -73,6 +77,8 @@ export interface NexcodeOrchestratorOptions {
   modeTemperatures?: Partial<Record<AgentMode, number>>;
   agentModels?: import("./config").AgentModels;
   steeringProvider?: () => string | undefined;
+  /** Whether workspace prompt files are allowed to override built-in defaults. */
+  allowWorkspacePrompts?: boolean;
 }
 
 type AutoRoutingStrategy =
@@ -129,7 +135,7 @@ export class NexcodeOrchestrator {
   private readonly feedbackLogger: FeedbackLogger;
   private readonly reflection: ReflectionEngine;
   private readonly promptVersions: PromptVersionManager;
-  private providerCheckPromise: Promise<Record<string, { ok: boolean; error?: string; models?: string[] }>>;
+  private providerCheckPromise: Promise<Record<string, { ok: boolean; error?: string; models?: string[] }>> | null = null;
   private readonly mcpRegistry: McpRegistry;
   private readonly compressor = new ContextCompressor(8000);
   private readonly sessionCompressor = new SessionCompressor();
@@ -170,34 +176,42 @@ export class NexcodeOrchestrator {
         "openai-compatible": new OpenAICompatibleProvider(
           this.config.providerDefaults.openAIBaseUrl,
           this.config.providerDefaults.openAIApiKey,
+          "openai-compatible",
         ),
         huggingface: new OpenAICompatibleProvider(
           "https://router.huggingface.co/v1",
           this.config.providerDefaults.openAIApiKey,
+          "huggingface",
         ),
         openrouter: new OpenAICompatibleProvider(
           "https://openrouter.ai/api/v1",
           this.config.providerDefaults.openAIApiKey,
+          "openrouter",
         ),
         together: new OpenAICompatibleProvider(
           "https://api.together.ai/v1",
           this.config.providerDefaults.openAIApiKey,
+          "together",
         ),
         fireworks: new OpenAICompatibleProvider(
           "https://api.fireworks.ai/inference/v1",
           this.config.providerDefaults.openAIApiKey,
+          "fireworks",
         ),
         groq: new OpenAICompatibleProvider(
           "https://api.groq.com/openai/v1",
           this.config.providerDefaults.openAIApiKey,
+          "groq",
         ),
         nvidia: new OpenAICompatibleProvider(
           "https://integrate.api.nvidia.com/v1",
           this.config.providerDefaults.openAIApiKey,
+          "nvidia",
         ),
         baseten: new OpenAICompatibleProvider(
           "https://inference.baseten.co/v1",
           this.config.providerDefaults.openAIApiKey,
+          "baseten",
         ),
       },
       {
@@ -207,16 +221,16 @@ export class NexcodeOrchestrator {
       },
     );
 
-    this.providerCheckPromise = this.router.checkProviders().catch((err) => {
-      console.error("[nexcode] Provider check failed:", err);
-      return {};
+    this.prompts = new PromptStore({
+      promptsDir: this.config.promptsDir,
+      allowWorkspacePrompts: this.config.allowWorkspacePrompts,
     });
-    this.prompts = new PromptStore(this.config.promptsDir);
     this.memory = new MemoryManager(this.config.memoryDir);
-    this.memory.initialize().catch((err) => {
-      console.error("[nexcode] Memory initialization failed:", err);
-    });
     this.mcpRegistry = new McpRegistry();
+    // Register the built-in filesystem adapter so MCP is not silently empty.
+    // NOTE: This is an in-process adapter registry, not a real MCP protocol client.
+    // Full MCP support requires the official @modelcontextprotocol/sdk.
+    this.mcpRegistry.register(new FilesystemAdapter(this.config.workspaceRoot));
     this.tools = new ToolRegistry(this.config.workspaceRoot, {
       searchProvider: this.config.toolDefaults.searchProvider,
       searchApiKey: this.config.toolDefaults.searchApiKey,
@@ -236,6 +250,35 @@ export class NexcodeOrchestrator {
     this.feedbackLogger = new FeedbackLogger(this.config.memoryDir);
     this.reflection = new ReflectionEngine();
     this.promptVersions = new PromptVersionManager(this.config.memoryDir);
+  }
+
+  /**
+   * Performs async initialization that must complete before the orchestrator
+   * can be used. This includes loading persisted memory sessions from disk.
+   *
+   * Call this after construction and before using the orchestrator.
+   * The orchestrator is safe to construct without calling initialize(),
+   * but memory context will not be available until initialization completes.
+   */
+  public async initialize(): Promise<void> {
+    try {
+      await this.memory.initialize();
+    } catch (err) {
+      console.error("[nexcode] Memory initialization failed:", err);
+    }
+  }
+
+  /**
+   * Flushes pending persistence operations and releases resources.
+   * Call this when the orchestrator is no longer needed (e.g., on
+   * workspace close or deactivation).
+   */
+  public async dispose(): Promise<boolean> {
+    const results = await Promise.all([
+      this.memory.dispose(),
+      this.feedbackLogger.dispose(),
+    ]);
+    return results.every(Boolean);
   }
 
   public registerMcpAdapter(adapter: McpAdapter): void {
@@ -375,6 +418,12 @@ export class NexcodeOrchestrator {
   }
 
   public async getProviderStatus(): Promise<Record<string, { ok: boolean; error?: string; models?: string[] }>> {
+    if (!this.providerCheckPromise) {
+      this.providerCheckPromise = this.router.checkProviders().catch((err) => {
+        console.error("[nexcode] Provider check failed:", err);
+        return {};
+      });
+    }
     return this.providerCheckPromise;
   }
 
@@ -385,6 +434,13 @@ export class NexcodeOrchestrator {
     const mode = request.mode ?? "auto";
     const provider = request.provider ?? this.config.providerDefaults.provider;
     const model = request.model ?? getModelForMode(mode, this.config.agentModels, this.config.providerDefaults.model);
+
+    // NC-041: Set model-specific chars-per-token ratio from the capability registry
+    const registry = getModelCapabilityRegistry();
+    const modelCharsPerToken = registry.getCharsPerToken(provider, model);
+    if (modelCharsPerToken != null) {
+      this.tokenCounter.setCharsPerToken(modelCharsPerToken);
+    }
     const temperature =
       typeof request.temperature === "number"
         ? Math.min(2, Math.max(0, request.temperature))
@@ -658,7 +714,7 @@ export class NexcodeOrchestrator {
           message: "Collecting workspace statistics...",
         };
 
-        const result = await this.tools.runToolCall(workspaceStatsCommand);
+        const result = await this.tools.runToolCall(workspaceStatsCommand, request.abortSignal);
         const boundedOutput = clampText(
           result.output,
           MAX_TOOL_OUTPUT_CHARS,
@@ -1059,8 +1115,23 @@ export class NexcodeOrchestrator {
     const absolutePath = await this.tools.filesystem.resolveWorkspacePathSafe(
       edit.filePath,
     );
-    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
-    await fs.writeFile(absolutePath, edit.newText, "utf8");
+
+    // Check for stale content: read current file and verify it matches edit.oldText.
+    let currentContent: string | null = null;
+    try {
+      currentContent = await fs.readFile(absolutePath, "utf8");
+    } catch {
+      // File doesn't exist — currentContent stays null
+    }
+
+    const precondition = validateEditPreconditions(edit, this.config.workspaceRoot ?? "", currentContent);
+    if (!precondition.ok) {
+      throw new Error(
+        precondition.error ?? "Edit precondition check failed"
+      );
+    }
+
+    await atomicWriteFile(absolutePath, edit.newText);
   }
 
   private async *runSingleModeStreaming(
@@ -1701,6 +1772,7 @@ export class NexcodeOrchestrator {
     model: string,
     diagnostics: string[],
     allowWebSearch: boolean,
+    abortSignal?: AbortSignal,
   ): AsyncGenerator<OrchestratorEvent, OrchestratorResponse> {
     const toolCommand = prompt.replace(/^\s*\/tool\s+/, "").trim();
 
@@ -1723,7 +1795,7 @@ export class NexcodeOrchestrator {
       };
     }
 
-    const result = await this.tools.runToolCall(toolCommand);
+    const result = await this.tools.runToolCall(toolCommand, abortSignal);
 
     if (result.requiresApproval) {
       const toolName = result.toolName ?? "";
@@ -1750,7 +1822,7 @@ export class NexcodeOrchestrator {
         }
         // Re-run the tool after approval
         this.tools.markApproved(toolName, pendingArg);
-        const approvedResult = await this.tools.runToolCall(toolCommand);
+        const approvedResult = await this.tools.runToolCall(toolCommand, abortSignal);
         const boundedOutput = clampText(
           approvedResult.output,
           MAX_TOOL_OUTPUT_CHARS,
@@ -1874,7 +1946,7 @@ export class NexcodeOrchestrator {
         provider,
         model,
         diagnostics,
-        this.tools.terminal.stream(terminalMatch[1].trim()),
+        this.tools.terminal.stream(terminalMatch[1].trim(), 30_000, abortSignal),
         abortSignal,
       );
     }
@@ -1958,7 +2030,7 @@ export class NexcodeOrchestrator {
         }
       }
 
-      const result = await this.tools.runToolCall(toolCommand);
+      const result = await this.tools.runToolCall(toolCommand, abortSignal);
       const boundedOutput = clampText(
         result.output,
         MAX_TOOL_OUTPUT_CHARS,
@@ -2003,6 +2075,7 @@ export class NexcodeOrchestrator {
       model,
       diagnostics,
       allowWebSearch,
+      abortSignal,
     );
   }
 
@@ -2158,16 +2231,6 @@ export class NexcodeOrchestrator {
       newText = `${oldText.trimEnd()}\n${requestedAppendText.trim()}`;
     }
 
-    if (
-      this.shouldUseBlogLandingFallback(
-        parsed.filePath,
-        parsed.instruction,
-        newText,
-      )
-    ) {
-      newText = this.createBlogLandingPageFallback();
-    }
-
     const proposedEdit = await this.tools.filesystem.makeProposedEdit(
       parsed.filePath,
       newText,
@@ -2228,72 +2291,6 @@ export class NexcodeOrchestrator {
     }
 
     return null;
-  }
-
-  private shouldUseBlogLandingFallback(
-    filePath: string,
-    instruction: string,
-    generatedText: string,
-  ): boolean {
-    if (!/\b(blog|homepage|landing page|home page)\b/i.test(instruction)) {
-      return false;
-    }
-
-    if (!/\.(tsx|jsx)$/i.test(filePath)) {
-      return false;
-    }
-
-    return !/\b(blog|post|featured|recent)\b/i.test(generatedText);
-  }
-
-  private createBlogLandingPageFallback(): string {
-    return [
-      "export default function Home() {",
-      "  const featuredPosts = [",
-      "    { title: 'Featured post one', summary: 'A polished article preview for the blog homepage.' },",
-      "    { title: 'Featured post two', summary: 'Another highlighted story from the latest posts.' },",
-      "  ];",
-      "",
-      "  const recentPosts = [",
-      "    { title: 'Recent post one', summary: 'Fresh updates from the blog.' },",
-      "    { title: 'Recent post two', summary: 'Practical notes and release highlights.' },",
-      "  ];",
-      "",
-      "  return (",
-      '    <main className="min-h-screen bg-slate-950 text-slate-100">',
-      '      <section className="mx-auto max-w-5xl px-6 py-16">',
-      '        <p className="text-sm uppercase tracking-[0.3em] text-cyan-300">Blog</p>',
-      '        <h1 className="mt-4 text-4xl font-semibold">A polished blog homepage</h1>',
-      '        <p className="mt-4 max-w-2xl text-slate-300">Latest posts, featured stories, and practical notes for builders.</p>',
-      "      </section>",
-      "",
-      '      <section className="mx-auto max-w-5xl px-6 py-6">',
-      '        <h2 className="text-xl font-semibold">Featured posts</h2>',
-      '        <div className="mt-4 grid gap-4 md:grid-cols-2">',
-      "          {featuredPosts.map((post) => (",
-      '            <article key={post.title} className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">',
-      '              <h3 className="text-lg font-medium">{post.title}</h3>',
-      '              <p className="mt-2 text-sm text-slate-300">{post.summary}</p>',
-      "            </article>",
-      "          ))}",
-      "        </div>",
-      "      </section>",
-      "",
-      '      <section className="mx-auto max-w-5xl px-6 py-10">',
-      '        <h2 className="text-xl font-semibold">Recent posts</h2>',
-      '        <ul className="mt-4 space-y-3">',
-      "          {recentPosts.map((post) => (",
-      '            <li key={post.title} className="rounded-2xl border border-slate-800 bg-slate-900/50 p-4">',
-      '              <p className="font-medium">{post.title}</p>',
-      '              <p className="mt-1 text-sm text-slate-300">{post.summary}</p>',
-      "            </li>",
-      "          ))}",
-      "        </ul>",
-      "      </section>",
-      "    </main>",
-      "  );",
-      "}",
-    ].join("\n");
   }
 
   private inferNaturalLanguageEditRequest(

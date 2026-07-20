@@ -7,7 +7,7 @@ import React, {
 } from "react";
 import { createRoot } from "react-dom/client";
 import { AnimatePresence, motion } from "framer-motion";
-import { create } from "zustand";
+// create import removed — Zustand store is now in ./store (NC-036)
 import {
   PanelLeft,
   Settings,
@@ -47,6 +47,74 @@ import {
   Activity,
 } from "lucide-react";
 import { StreamingMessage } from "./components/StreamingMessage";
+
+// ── NC-036: Imported from extracted modules ─────────────────────────────────
+import type {
+  ProviderId,
+  AgentMode,
+  UiMode,
+  PermissionLevel,
+  EditStatus,
+  ActivityStatus,
+  ProviderStatus,
+  ProposedEdit,
+  ActivityTodo,
+  ActivityFile,
+  ChatMessage,
+  ToolExecution,
+  QueuedPrompt,
+  ReasoningEffort,
+  Session,
+  AttachmentChip,
+  SubAgentTask,
+  QueuedTask,
+  McpQuickResult,
+  ToolbarSelectOption,
+  SearchProviderId,
+  SidebarSettings,
+  PersistedState,
+  BackendConfig,
+  StoreState,
+  BackendEvent,
+  ModelEffortInfo,
+} from "./types";
+import {
+  providerPresets,
+  LEGACY_SECRET_KEYS,
+  stripSecretsFromSettings,
+  makeId,
+  titleFromPrompt,
+  mapAgentModeToUi,
+  mapUiModeToAgent,
+  createSession,
+  sanitizeReasoningStatus,
+  formatAgentMode,
+  formatUiMode,
+  formatRelativeTime,
+  getTimeAgo,
+  isRunningActivityStatus,
+  activityStatusLabel,
+  activityStatusClass,
+  modelCapabilities,
+  modelEffortConfig,
+  getModelEffortInfo,
+  effortLabels,
+  hasThinkingCapability,
+  estimateAttachmentKind,
+  arrayBufferToBase64,
+  parseSlashCommand,
+  findRetryPromptForMessage,
+  inferContextWindow,
+  formatTokenCount,
+  getSearchProviderPlaceholder,
+  getSearchProviderHint,
+  getSearchProviderUrlPlaceholder,
+} from "./utils";
+import {
+  useStore,
+  vscode,
+  getActiveSession,
+} from "./store";
 
 // ── Completion sound (two-tone ascending chime, no CSP changes needed) ──────
 function playCompletionSound(): void {
@@ -194,689 +262,27 @@ declare const acquireVsCodeApi: <T = unknown>() => {
   getState: () => T | undefined;
 };
 
-type ProviderId = "ollama" | "openai-compatible" | "huggingface" | "openrouter" | "together" | "fireworks" | "groq" | "nvidia" | "baseten";
+// NC-036: Types, providerPresets, and utility functions imported from extracted modules (types.ts, utils.ts, store.ts)
+// Types and utilities now imported from ./types, ./utils, ./store (NC-036)
+// Removed: AgentMode, UiMode, PermissionLevel, EditStatus, ActivityStatus,
+// ProviderStatus, ProposedEdit, ActivityTodo, ActivityFile, ChatMessage,
+// ToolExecution, QueuedPrompt, ReasoningEffort, Session, AttachmentChip,
+// SubAgentTask, QueuedTask, McpQuickResult, ToolbarSelectOption, SearchProviderId,
+// SidebarSettings, PersistedState, BackendConfig, StoreState, BackendEvent,
+// ModelEffortInfo, modelCapabilities, modelEffortConfig, effortLabels,
+// hasThinkingCapability
 
-// Provider presets for cloud AI services
-const providerPresets: Record<string, { name: string; baseUrl: string; apiKeyPlaceholder: string; hint: string }> = {
-  "ollama": { name: "Ollama (Local)", baseUrl: "http://localhost:11434/v1", apiKeyPlaceholder: "Not needed", hint: "No API key required for local Ollama" },
-  "openai-compatible": { name: "OpenAI Compatible", baseUrl: "", apiKeyPlaceholder: "Your API key", hint: "Enter your API key" },
-  "huggingface": { name: "Hugging Face", baseUrl: "https://router.huggingface.co/v1", apiKeyPlaceholder: "hf_xxx", hint: "Get a free key at huggingface.co/settings/tokens" },
-  "openrouter": { name: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", apiKeyPlaceholder: "sk-or-xxx", hint: "Get a key at openrouter.ai/keys" },
-  "together": { name: "Together AI", baseUrl: "https://api.together.ai/v1", apiKeyPlaceholder: "Your Together API key", hint: "Get a key at api.together.xyz/settings/api-keys" },
-  "fireworks": { name: "Fireworks AI", baseUrl: "https://api.fireworks.ai/inference/v1", apiKeyPlaceholder: "Your Fireworks API key", hint: "Get a key at fireworks.ai" },
-  "groq": { name: "GroqCloud", baseUrl: "https://api.groq.com/openai/v1", apiKeyPlaceholder: "gsk_xxx", hint: "Get a free key at console.groq.com" },
-  "nvidia": { name: "NVIDIA NIM", baseUrl: "https://integrate.api.nvidia.com/v1", apiKeyPlaceholder: "nvapi-xxx", hint: "Get a key at build.nvidia.com" },
-  "baseten": { name: "Baseten", baseUrl: "https://inference.baseten.co/v1", apiKeyPlaceholder: "Your Baseten API key", hint: "Get a key at baseten.co" },
-};
-type AgentMode = "auto" | "planner" | "coder" | "reviewer" | "qa" | "security";
-type UiMode = "agent" | "plan" | "ask";
-type PermissionLevel = "default" | "bypass" | "autopilot";
-type EditStatus = "pending" | "applied" | "rejected";
-type ActivityStatus =
-  | "pending"
-  | "not-started"
-  | "in-progress"
-  | "completed"
-  | "failed"
-  | "viewed"
-  | "modified";
+// NC-036: LEGACY_SECRET_KEYS, stripSecretsFromSettings, normalizePersistedState,
+// persisted, makeId, titleFromPrompt, mapAgentModeToUi, mapUiModeToAgent,
+// createSession, sanitizeReasoningStatus, formatAgentMode, formatUiMode,
+// formatRelativeTime, getTimeAgo, isRunningActivityStatus, activityStatusLabel,
+// activityStatusClass, modelCapabilities, modelEffortConfig, getModelEffortInfo,
+// effortLabels, hasThinkingCapability, estimateAttachmentKind, arrayBufferToBase64,
+// parseSlashCommand, findRetryPromptForMessage, useStore, getActiveSession
+// are now imported from ./utils and ./store
 
-interface ProviderStatus {
-  provider: ProviderId;
-  connected: boolean;
-  latencyMs?: number;
-  error?: string;
-}
-
-interface ProposedEdit {
-  id: string;
-  filePath: string;
-  summary: string;
-  patch: string;
-  oldText: string;
-  newText: string;
-  status: EditStatus;
-  statusLabel?: string;
-}
-
-interface ActivityTodo {
-  id: string;
-  title: string;
-  status: ActivityStatus;
-  detail?: string;
-}
-
-interface ActivityFile {
-  path: string;
-  status: ActivityStatus;
-  summary?: string;
-}
-
-interface ChatMessage {
-  id: string;
-  role: "user" | "assistant";
-  text: string;
-  createdAt: number;
-  attachments?: Array<{
-    id: string;
-    fileName: string;
-    kind: string;
-    textContent?: string;
-  }>;
-  provider?: ProviderId;
-  model?: string;
-  mode?: AgentMode;
-  streaming?: boolean;
-  thinking?: boolean;
-  error?: boolean;
-  stopped?: boolean;
-  startTime?: number;
-  endTime?: number;
-  tokenUsage?: { input: number; output: number; total: number };
-  reasoning: string[];
-  debug: string[];
-  proposedEdits: ProposedEdit[];
-  activityTodos: ActivityTodo[];
-  activityFiles: ActivityFile[];
-  activityNote?: string;
-  toolExecutions?: ToolExecution[];
-  efficiency?: {
-    tokensPerRequest: number;
-    tokensPerFileEdit: number;
-    cacheHitRate: number;
-    compressionRatio: number;
-    parallelSpeedup: number;
-    contextUtilization: number;
-  };
-}
-
-interface ToolExecution {
-  toolName: string;
-  command: string;
-  status: "success" | "error" | "awaiting-approval";
-  message?: string;
-  timestamp: number;
-  durationMs?: number;
-  filesChanged?: string[];
-  sources?: Array<{ title: string; url: string; snippet?: string }>;
-}
-
-interface QueuedPrompt {
-  id: string;
-  sessionId: string;
-  rawPrompt: string;
-  prompt: string;
-  provider: ProviderId;
-  model: string;
-  mode: AgentMode;
-  temperature: number;
-  reasoningEffort?: ReasoningEffort;
-  allowWebSearch: boolean;
-  attachmentIds: string[];
-}
-
-type ReasoningEffort = "none" | "low" | "medium" | "high" | "max";
-
-interface Session {
-  id: string;
-  title: string;
-  createdAt: number;
-  updatedAt: number;
-  provider: ProviderId;
-  model: string;
-  mode: UiMode;
-  reasoningEffort?: ReasoningEffort;
-  messages: ChatMessage[];
-}
-
-interface AttachmentChip {
-  id: string;
-  fileName: string;
-  kind: "text" | "image" | "binary";
-  mimeType: string;
-  byteSize?: number;
-}
-
-interface SubAgentTask {
-  id: string;
-  description: string;
-  status: "running" | "completed" | "failed";
-  result?: string;
-}
-
-interface QueuedTask {
-  id: string;
-  sessionId: string;
-  prompt: string;
-  status: "queued" | "planning" | "running" | "waiting-for-user" | "verifying" | "completed" | "failed" | "cancelled";
-  mode?: string;
-  provider?: string;
-  model?: string;
-  createdAt: number;
-  startedAt?: number;
-  completedAt?: number;
-  result?: string;
-  error?: string;
-  activityNote?: string;
-}
-
-interface McpQuickResult {
-  ok: boolean;
-  server: string;
-  tool: string;
-  output: string;
-  latencyMs: number;
-}
-
-interface ToolbarSelectOption {
-  value: string;
-  label: string;
-  description?: string;
-  meta?: { inputs: string[]; reasoning: boolean; context: string };
-}
-
-type SearchProviderId = "tavily" | "serpapi" | "serper" | "bing" | "duckduckgo" | "custom";
-
-interface SidebarSettings {
-  provider?: ProviderId;
-  model?: string;
-  autoApprove: boolean;
-  temperature: number;
-  autoApplyChanges: boolean;
-  requireTerminalApproval: boolean;
-  showDebugPanel: boolean;
-  enableWebSearch: boolean;
-  permissionLevel: PermissionLevel;
-  openAIBaseUrl?: string;
-  openAIApiKey?: string;
-  ollamaBaseUrl?: string;
-  searchProvider?: SearchProviderId;
-  searchApiKey?: string;
-  searchBaseUrl?: string;
-}
-
-interface PersistedState {
-  sessions: Session[];
-  activeSessionId: string | null;
-  drafts: Record<string, string>;
-  settings: SidebarSettings;
-}
-
-interface BackendConfig {
-  provider: ProviderId;
-  model: string;
-  mode: AgentMode;
-  requireTerminalApproval: boolean;
-  temperature: number;
-  autoApplyChanges: boolean;
-  allowWebSearch: boolean;
-}
-
-interface StoreState {
-  sessions: Session[];
-  activeSessionId: string | null;
-  drafts: Record<string, string>;
-  attachments: AttachmentChip[];
-  isBusy: boolean;
-  settingsPanelOpen: boolean;
-  backgroundAgents: SubAgentTask[];
-  waveInfo: { current: number; total: number } | null;
-  taskQueue: QueuedTask[];
-  taskQueuePendingCount: number;
-  taskQueueActiveCount: number;
-  defaults: {
-    provider: ProviderId;
-    model: string;
-    mode: UiMode;
-  };
-  settings: SidebarSettings;
-  providerStatus: Record<ProviderId, ProviderStatus | undefined>;
-  modelSuggestions: Record<ProviderId, string[]>;
-  hydrateConfig: (config: BackendConfig) => void;
-  setBusy: (value: boolean) => void;
-  setTaskQueue: (tasks: QueuedTask[], pending: number, active: number) => void;
-  clearTaskQueue: () => void;
-  updateTaskStatus: (taskId: string, status: QueuedTask["status"], note?: string) => void;
-  setAttachments: (attachments: AttachmentChip[]) => void;
-  setSettingsPanelOpen: (open: boolean) => void;
-  setSettings: (update: Partial<SidebarSettings>) => void;
-  updateSetting: (key: keyof SidebarSettings, value: unknown) => void;
-  newSession: () => void;
-  deleteSession: (sessionId: string) => void;
-  setActiveSession: (sessionId: string) => void;
-  updateActiveSession: (
-    update: Partial<Pick<Session, "provider" | "model" | "mode" | "reasoningEffort">>,
-  ) => void;
-  clearActiveSession: () => void;
-  addUserMessageToSession: (
-    sessionId: string,
-    text: string,
-    attachments?: Array<{
-      id: string;
-      fileName: string;
-      kind: string;
-      textContent?: string;
-    }>,
-  ) => void;
-  beginAssistantMessage: (
-    sessionId: string,
-    meta?: {
-      provider?: ProviderId;
-      model?: string;
-      mode?: AgentMode;
-    },
-  ) => { sessionId: string; messageId: string } | null;
-  appendAssistantToken: (
-    sessionId: string,
-    messageId: string,
-    token: string,
-  ) => void;
-  updateAssistantTrace: (
-    sessionId: string,
-    messageId: string,
-    reasoning: string[],
-    debug: string[],
-  ) => void;
-  updateAssistantActivity: (
-    sessionId: string,
-    messageId: string,
-    todos: ActivityTodo[],
-    files: ActivityFile[],
-    note?: string,
-  ) => void;
-  addToolExecution: (
-    sessionId: string,
-    messageId: string,
-    execution: ToolExecution,
-  ) => void;
-  updateToolExecutionStatus: (
-    sessionId: string,
-    messageId: string,
-    toolName: string,
-    pendingArg: string,
-    status: "success" | "error",
-    message?: string,
-  ) => void;
-  finalizeAssistantMessage: (
-    sessionId: string,
-    messageId: string,
-    text: string,
-    reasoning: string[],
-    debug: string[],
-    edits: ProposedEdit[],
-    tokenUsage?: { input: number; output: number; total: number },
-    efficiency?: {
-      tokensPerRequest: number;
-      tokensPerFileEdit: number;
-      cacheHitRate: number;
-      compressionRatio: number;
-      parallelSpeedup: number;
-      contextUtilization: number;
-    },
-  ) => void;
-  stopAssistantMessage: (
-    sessionId: string,
-    messageId: string,
-    messageText: string,
-  ) => void;
-  failAssistantMessage: (
-    sessionId: string,
-    messageId: string,
-    errorText: string,
-  ) => void;
-  updateEditStatus: (
-    editId: string,
-    status: EditStatus,
-    label?: string,
-  ) => void;
-  setProviderStatus: (status: ProviderStatus) => void;
-  setModelSuggestions: (provider: ProviderId, models: string[]) => void;
-  setDraft: (sessionId: string, value: string) => void;
-  addBackgroundAgent: (agent: SubAgentTask) => void;
-  updateBackgroundAgent: (id: string, updates: Partial<SubAgentTask>) => void;
-  removeBackgroundAgent: (id: string) => void;
-  setWaveInfo: (waveInfo: { current: number; total: number } | null) => void;
-  parallelCount: number;
-  incrementParallel: () => void;
-  decrementParallel: () => void;
-  resetParallel: () => void;
-}
-
-interface BackendEvent {
-  type: string;
-  [key: string]: unknown;
-}
-
-const vscode = acquireVsCodeApi<PersistedState>();
-
-function normalizePersistedState(
-  state: PersistedState | undefined,
-): PersistedState | undefined {
-  if (!state) {
-    return undefined;
-  }
-
-  const sessions = (state.sessions ?? [])
-    .map((session) => ({
-      ...session,
-      messages: (session.messages ?? [])
-        .filter(
-          (message) =>
-            !(
-              message.role === "assistant" &&
-              !String(message.text ?? "").trim() &&
-              (message.proposedEdits ?? []).length === 0
-            ),
-        )
-        .map((message) => ({
-          ...message,
-          streaming: false,
-          thinking: false,
-          activityTodos: message.activityTodos ?? [],
-          activityFiles: message.activityFiles ?? [],
-          activityNote: message.activityNote,
-        })),
-    }))
-    .filter((session) => session.messages.length > 0 || session.title.trim());
-
-  if (sessions.length === 0) {
-    return {
-      ...state,
-      sessions: [],
-      activeSessionId: null,
-      drafts: {},
-    };
-  }
-
-  const activeSessionExists = sessions.some(
-    (session) => session.id === state.activeSessionId,
-  );
-
-  return {
-    ...state,
-    sessions,
-    activeSessionId: activeSessionExists
-      ? state.activeSessionId
-      : sessions[0].id,
-    drafts: Object.fromEntries(
-      Object.entries(state.drafts ?? {}).filter(([sessionId]) =>
-        sessions.some((session) => session.id === sessionId),
-      ),
-    ),
-  };
-}
-
-const persisted = normalizePersistedState(vscode.getState());
-
-function makeId(prefix: string): string {
-  if (
-    typeof crypto !== "undefined" &&
-    typeof crypto.randomUUID === "function"
-  ) {
-    return `${prefix}-${crypto.randomUUID()}`;
-  }
-
-  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
-}
-
-function titleFromPrompt(prompt: string): string {
-  const clean = prompt.replace(/\s+/g, " ").trim();
-  if (!clean) {
-    return "New Chat";
-  }
-
-  return clean.length > 52 ? `${clean.slice(0, 52)}...` : clean;
-}
-
-function mapAgentModeToUi(mode: AgentMode): UiMode {
-  switch (mode) {
-    case "planner":
-      return "plan";
-    case "coder":
-    case "reviewer":
-    case "qa":
-    case "security":
-      return "agent";
-    default:
-      return "agent";
-  }
-}
-
-function mapUiModeToAgent(mode: UiMode): AgentMode {
-  switch (mode) {
-    case "agent":
-      return "coder";
-    case "plan":
-      return "planner";
-    case "ask":
-      return "auto";
-    default:
-      return "auto";
-  }
-}
-
-function createSession(defaults: {
-  provider: ProviderId;
-  model: string;
-  mode: UiMode;
-}): Session {
-  const now = Date.now();
-  return {
-    id: makeId("session"),
-    title: "New Chat",
-    createdAt: now,
-    updatedAt: now,
-    provider: defaults.provider,
-    model: defaults.model,
-    mode: defaults.mode,
-    messages: [],
-  };
-}
-
-function sanitizeReasoningStatus(raw: string): string {
-  const clean = raw.replace(/\s+/g, " ").trim();
-  if (!clean) {
-    return "";
-  }
-
-  const modeMeta = clean.match(
-    /^mode:\s*([^|]+)\|\s*provider:\s*([^|]+)\|\s*model:\s*(.+)$/i,
-  );
-  if (modeMeta) {
-    const [, mode, provider, model] = modeMeta;
-    return `Using ${model.trim()} on ${provider.trim()} (${mode.trim()} mode)`;
-  }
-
-  return clean;
-}
-
-function formatAgentMode(mode?: AgentMode): string {
-  switch (mode) {
-    case "planner":
-      return "Planner";
-    case "coder":
-      return "Coder";
-    case "reviewer":
-      return "Reviewer";
-    case "qa":
-      return "QA";
-    case "security":
-      return "Security";
-    case "auto":
-      return "Auto";
-    default:
-      return "Agent";
-  }
-}
-
-function formatUiMode(mode: UiMode): string {
-  switch (mode) {
-    case "agent":
-      return "Auto";
-    case "plan":
-      return "Plan";
-    case "ask":
-      return "Ask";
-    default:
-      return "Agent";
-  }
-}
-
-function formatRelativeTime(timestamp: number): string {
-  const seconds = Math.floor((Date.now() - timestamp) / 1000);
-  if (seconds < 60) {
-    return "just now";
-  }
-
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) {
-    return `${minutes}m ago`;
-  }
-
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) {
-    return `${hours}h ago`;
-  }
-
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
-
-function getTimeAgo(timestamp: number): string {
-  const diff = Date.now() - timestamp;
-  const minutes = Math.floor(diff / 60000);
-  const hours = Math.floor(diff / 3600000);
-  const days = Math.floor(diff / 86400000);
-  const weeks = Math.floor(diff / 604800000);
-
-  if (minutes < 1) return "now";
-  if (minutes < 60) return `${minutes}m`;
-  if (hours < 24) return `${hours}h`;
-  if (days < 7) return `${days}d`;
-  return `${weeks}w`;
-}
-
-function isRunningActivityStatus(status: ActivityStatus): boolean {
-  return status === "in-progress" || status === "pending";
-}
-
-function activityStatusLabel(status: ActivityStatus): string {
-  switch (status) {
-    case "pending":
-      return "Pending";
-    case "not-started":
-      return "Queued";
-    case "in-progress":
-      return "Running";
-    case "completed":
-      return "Done";
-    case "failed":
-      return "Failed";
-    case "viewed":
-      return "Viewed";
-    case "modified":
-      return "Changed";
-    default:
-      return "Status";
-  }
-}
-
-function activityStatusClass(status: ActivityStatus): string {
-  switch (status) {
-    case "pending":
-      return "nk-activity-status--not-started";
-    case "in-progress":
-      return "nk-activity-status--in-progress";
-    case "completed":
-      return "nk-activity-status--completed";
-    case "failed":
-      return "nk-activity-status--failed";
-    case "viewed":
-      return "nk-activity-status--viewed";
-    case "modified":
-      return "nk-activity-status--modified";
-    default:
-      return "nk-activity-status--not-started";
-  }
-}
-
-
-
-const modelCapabilities: Record<string, { inputs: string[]; reasoning: boolean; context: string; provider?: string }> = {
-  // Ollama local models
-  'qwen2.5-coder:14b': { inputs: ['text'], reasoning: false, context: '32K', provider: 'ollama' },
-  'qwen2.5-coder:7b': { inputs: ['text'], reasoning: false, context: '32K', provider: 'ollama' },
-  'qwen2.5-coder:3b': { inputs: ['text'], reasoning: false, context: '32K', provider: 'ollama' },
-  'qwen3:8b': { inputs: ['text'], reasoning: true, context: '32K', provider: 'ollama' },
-  'deepseek-r1:8b': { inputs: ['text'], reasoning: true, context: '64K', provider: 'ollama' },
-  // Cloud models (OpenAI-compatible)
-  'deepseek-v4-flash': { inputs: ['text'], reasoning: true, context: '128K', provider: 'openai-compatible' },
-  'deepseek-v4-pro': { inputs: ['text'], reasoning: true, context: '128K', provider: 'openai-compatible' },
-  'mimo-v2.5': { inputs: ['text'], reasoning: true, context: '128K', provider: 'openai-compatible' },
-  'mimo-v2.5-pro': { inputs: ['text'], reasoning: true, context: '128K', provider: 'openai-compatible' },
-  'glm-5.2': { inputs: ['text'], reasoning: true, context: '200K', provider: 'openai-compatible' },
-  'glm-5.1': { inputs: ['text'], reasoning: true, context: '200K', provider: 'openai-compatible' },
-  'kimi-k2.7-code': { inputs: ['text'], reasoning: false, context: '128K', provider: 'openai-compatible' },
-  'kimi-k2.6': { inputs: ['text'], reasoning: false, context: '128K', provider: 'openai-compatible' },
-  'minimax-m3': { inputs: ['text'], reasoning: false, context: '128K', provider: 'openai-compatible' },
-  'gpt-4o': { inputs: ['text', 'image'], reasoning: false, context: '128K', provider: 'openai-compatible' },
-  'gpt-4o-mini': { inputs: ['text', 'image'], reasoning: false, context: '128K', provider: 'openai-compatible' },
-  'claude-3.5-sonnet': { inputs: ['text', 'image'], reasoning: false, context: '200K', provider: 'openai-compatible' },
-  'claude-3-opus': { inputs: ['text', 'image'], reasoning: true, context: '200K', provider: 'openai-compatible' },
-};
-
-interface ModelEffortInfo {
-  supportsEffort: boolean;
-  levels: ReasoningEffort[];
-  default: ReasoningEffort;
-}
-
-const modelEffortConfig: Record<string, ModelEffortInfo> = {
-  'deepseek-r1:8b': { supportsEffort: true, levels: ["none", "low", "medium", "high", "max"], default: "medium" },
-  'deepseek-r1:14b': { supportsEffort: true, levels: ["none", "low", "medium", "high", "max"], default: "medium" },
-  'deepseek-r1:32b': { supportsEffort: true, levels: ["none", "low", "medium", "high", "max"], default: "medium" },
-  'deepseek-r1:70b': { supportsEffort: true, levels: ["none", "low", "medium", "high", "max"], default: "medium" },
-  'qwen3:8b': { supportsEffort: true, levels: ["none", "low", "medium", "high", "max"], default: "medium" },
-  'qwen3:14b': { supportsEffort: true, levels: ["none", "low", "medium", "high", "max"], default: "medium" },
-  'qwen3:32b': { supportsEffort: true, levels: ["none", "low", "medium", "high", "max"], default: "medium" },
-  'o1': { supportsEffort: true, levels: ["low", "medium", "high"], default: "medium" },
-  'o1-mini': { supportsEffort: true, levels: ["low", "medium", "high"], default: "medium" },
-  'o3': { supportsEffort: true, levels: ["low", "medium", "high"], default: "medium" },
-  'o3-mini': { supportsEffort: true, levels: ["low", "medium", "high"], default: "medium" },
-  'o4-mini': { supportsEffort: true, levels: ["low", "medium", "high"], default: "medium" },
-};
-
-function getModelEffortInfo(model?: string): ModelEffortInfo | null {
-  if (!model) return null;
-  const normalized = model.toLowerCase().trim();
-  if (modelEffortConfig[normalized]) return modelEffortConfig[normalized];
-  if (/^o[134]|^gpt-5/.test(normalized)) {
-    return { supportsEffort: true, levels: ["low", "medium", "high"], default: "medium" };
-  }
-  if (/claude/.test(normalized)) {
-    return { supportsEffort: true, levels: ["low", "medium", "high", "max"], default: "medium" };
-  }
-  if (/deepseek/.test(normalized)) {
-    return { supportsEffort: true, levels: ["none", "low", "medium", "high", "max"], default: "high" };
-  }
-  if (/gemini/.test(normalized)) {
-    return { supportsEffort: true, levels: ["none", "low", "medium", "high"], default: "medium" };
-  }
-  return null;
-}
-
-const effortLabels: Record<ReasoningEffort, string> = {
-  none: "Off",
-  low: "Low",
-  medium: "Balanced",
-  high: "High",
-  max: "Max",
-};
-
-function hasThinkingCapability(model?: string): boolean {
-  if (!model) return false;
-  return /claude|deepseek-r1|deepseek-v4|qwen3|o1|o3|glm-5|kimi-k2|mimo/i.test(model);
-}
+// NC-036: All utility functions (makeId, titleFromPrompt, mapAgentModeToUi, etc.)
+// are now imported from ./utils
 
 function ReasoningIndicator({ reasoning, streaming, startTime }: {
   reasoning: string[];
@@ -1076,790 +482,13 @@ function ToolbarSelect({
   );
 }
 
-function estimateAttachmentKind(file: File): "text" | "image" | "binary" {
-  const name = file.name.toLowerCase();
-  if (file.type.startsWith("image/")) {
-    return "image";
-  }
+// NC-036: estimateAttachmentKind, arrayBufferToBase64, parseSlashCommand,
+// findRetryPromptForMessage are now imported from ./utils
 
-  if (
-    file.type.startsWith("text/") ||
-    name.endsWith(".md") ||
-    name.endsWith(".json") ||
-    name.endsWith(".yaml") ||
-    name.endsWith(".yml") ||
-    name.endsWith(".ts") ||
-    name.endsWith(".tsx") ||
-    name.endsWith(".js") ||
-    name.endsWith(".jsx") ||
-    name.endsWith(".py") ||
-    name.endsWith(".java") ||
-    name.endsWith(".go") ||
-    name.endsWith(".rs") ||
-    name.endsWith(".txt")
-  ) {
-    return "text";
-  }
-
-  return "binary";
-}
-
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  let binary = "";
-  const chunk = 0x8000;
-
-  for (let index = 0; index < bytes.length; index += chunk) {
-    const slice = bytes.subarray(index, index + chunk);
-    binary += String.fromCharCode(...slice);
-  }
-
-  return btoa(binary);
-}
-
-function parseSlashCommand(
-  rawPrompt: string,
-  mode: UiMode,
-): { prompt: string; mode: AgentMode } {
-  const trimmed = rawPrompt.trim();
-  const defaultMode = mapUiModeToAgent(mode);
-
-  if (/^\/(tool|edit)\b/i.test(trimmed)) {
-    return {
-      prompt: trimmed,
-      mode: defaultMode,
-    };
-  }
-
-  const slashMatch = trimmed.match(
-    /^\/(plan|code|fix|test|explain)\b\s*(.*)$/is,
-  );
-  if (!slashMatch) {
-    return {
-      prompt: trimmed,
-      mode: defaultMode,
-    };
-  }
-
-  const command = slashMatch[1].toLowerCase();
-  const body = slashMatch[2].trim();
-
-  switch (command) {
-    case "plan":
-      return {
-        prompt: body || "Create an implementation plan for this task.",
-        mode: "planner",
-      };
-    case "code":
-      return {
-        prompt:
-          body || "Implement the requested change with clean code and tests.",
-        mode: "coder",
-      };
-    case "fix":
-      return {
-        prompt: body || "Identify root cause and provide a robust fix.",
-        mode: "reviewer",
-      };
-    case "test":
-      return {
-        prompt: body || "Create a focused test strategy and test cases.",
-        mode: "qa",
-      };
-    case "explain":
-      return {
-        prompt: body || "Explain the current code path and trade-offs clearly.",
-        mode: "coder",
-      };
-    default:
-      return {
-        prompt: trimmed,
-        mode: defaultMode,
-      };
-  }
-}
-
-function findRetryPromptForMessage(
-  session: Session,
-  messageId: string,
-): string | null {
-  const idx = session.messages.findIndex((message) => message.id === messageId);
-  if (idx < 0) {
-    return null;
-  }
-
-  for (let pointer = idx; pointer >= 0; pointer -= 1) {
-    const candidate = session.messages[pointer];
-    if (candidate.role === "user" && candidate.text.trim()) {
-      return candidate.text;
-    }
-  }
-
-  return null;
-}
-
-const useStore = create<StoreState>((set, get) => {
-  const initialDefaults = {
-    provider: "ollama" as ProviderId,
-    model: "qwen2.5-coder:14b",
-    mode: "agent" as UiMode,
-  };
-
-  const defaultSidebarSettings: SidebarSettings = {
-    temperature: 0.2,
-    autoApprove: false,
-    autoApplyChanges: false,
-    requireTerminalApproval: true,
-    showDebugPanel: false,
-    enableWebSearch: true,
-    permissionLevel: "default" as PermissionLevel,
-    openAIBaseUrl: "",
-    openAIApiKey: "",
-    ollamaBaseUrl: "http://localhost:11434",
-    searchProvider: "tavily",
-    searchApiKey: "",
-    searchBaseUrl: "",
-  };
-
-  const initialSessions = persisted?.sessions?.length
-    ? persisted.sessions
-    : [createSession(initialDefaults)];
-
-  return {
-    sessions: initialSessions,
-    activeSessionId:
-      persisted?.activeSessionId ?? initialSessions[0]?.id ?? null,
-    drafts: persisted?.drafts ?? {},
-    attachments: [],
-    isBusy: false,
-    settingsPanelOpen: false,
-    backgroundAgents: [],
-    waveInfo: null,
-    taskQueue: [],
-    taskQueuePendingCount: 0,
-    taskQueueActiveCount: 0,
-    defaults: initialDefaults,
-    settings: {
-      ...defaultSidebarSettings,
-      ...(persisted?.settings ?? {}),
-    },
-    providerStatus: {
-      ollama: undefined,
-      "openai-compatible": undefined,
-      huggingface: undefined,
-      openrouter: undefined,
-      together: undefined,
-      fireworks: undefined,
-      groq: undefined,
-      nvidia: undefined,
-      baseten: undefined,
-    },
-    modelSuggestions: {
-      ollama: [],
-      "openai-compatible": [],
-      huggingface: [],
-      openrouter: [],
-      together: [],
-      fireworks: [],
-      groq: [],
-      nvidia: [],
-      baseten: [],
-    },
-    hydrateConfig: (config) => {
-      set((state) => {
-        const defaults = {
-          provider: config.provider,
-          model: config.model,
-          mode: mapAgentModeToUi(config.mode),
-        };
-
-        const sessions =
-          state.sessions.length === 0
-            ? [createSession(defaults)]
-            : state.sessions;
-
-        const activeSessionId =
-          state.activeSessionId ?? sessions[0]?.id ?? null;
-
-        const updatedSessions = sessions.map((session) => {
-          if (session.id !== activeSessionId) {
-            return session;
-          }
-
-          const needsUpdate =
-            session.provider !== config.provider ||
-            session.model !== config.model ||
-            session.mode !== mapAgentModeToUi(config.mode);
-
-          if (!needsUpdate) {
-            return session;
-          }
-
-          return {
-            ...session,
-            provider: config.provider,
-            model: config.model,
-            mode: mapAgentModeToUi(config.mode),
-            updatedAt: Date.now(),
-          };
-        });
-
-        const settings: SidebarSettings = {
-          ...state.settings,
-          temperature: config.temperature ?? state.settings.temperature,
-          autoApplyChanges:
-            typeof config.autoApplyChanges === "boolean"
-              ? config.autoApplyChanges
-              : state.settings.autoApplyChanges,
-          requireTerminalApproval:
-            typeof config.requireTerminalApproval === "boolean"
-              ? config.requireTerminalApproval
-              : state.settings.requireTerminalApproval,
-          enableWebSearch:
-            typeof config.allowWebSearch === "boolean"
-              ? config.allowWebSearch
-              : state.settings.enableWebSearch,
-        };
-
-        return {
-          defaults,
-          sessions: updatedSessions,
-          activeSessionId,
-          settings,
-        };
-      });
-    },
-    setBusy: (value) => {
-      set({ isBusy: value });
-    },
-    setAttachments: (attachments) => {
-      set({ attachments });
-    },
-    setSettingsPanelOpen: (open) => {
-      set({ settingsPanelOpen: open });
-    },
-    setSettings: (update) => {
-      set((state) => ({
-        settings: {
-          ...state.settings,
-          ...update,
-        },
-      }));
-    },
-    newSession: () => {
-      set((state) => {
-        const session = createSession(state.defaults);
-        return {
-          sessions: [session, ...state.sessions],
-          activeSessionId: session.id,
-          drafts: {
-            ...state.drafts,
-            [session.id]: "",
-          },
-        };
-      });
-    },
-    deleteSession: (sessionId) => {
-      set((state) => {
-        const sessions = state.sessions.filter(
-          (session) => session.id !== sessionId,
-        );
-        const nextSessions =
-          sessions.length > 0 ? sessions : [createSession(state.defaults)];
-        const nextActive =
-          state.activeSessionId === sessionId
-            ? nextSessions[0].id
-            : (state.activeSessionId ?? nextSessions[0].id);
-
-        const drafts = { ...state.drafts };
-        delete drafts[sessionId];
-
-        return {
-          sessions: nextSessions,
-          activeSessionId: nextActive,
-          drafts,
-        };
-      });
-    },
-    setActiveSession: (sessionId) => {
-      set({ activeSessionId: sessionId });
-    },
-    updateActiveSession: (update) => {
-      set((state) => {
-        const activeSessionId = state.activeSessionId;
-        if (!activeSessionId) {
-          return state;
-        }
-
-        return {
-          sessions: state.sessions.map((session) =>
-            session.id === activeSessionId
-              ? {
-                  ...session,
-                  ...update,
-                  updatedAt: Date.now(),
-                }
-              : session,
-          ),
-        };
-      });
-    },
-    clearActiveSession: () => {
-      set((state) => {
-        const activeSessionId = state.activeSessionId;
-        if (!activeSessionId) {
-          return state;
-        }
-
-        return {
-          sessions: state.sessions.map((session) =>
-            session.id === activeSessionId
-              ? {
-                  ...session,
-                  title: "New Chat",
-                  messages: [],
-                  updatedAt: Date.now(),
-                }
-              : session,
-          ),
-        };
-      });
-    },
-    addUserMessageToSession: (sessionId, text, attachments) => {
-      set((state) => {
-        return {
-          sessions: state.sessions.map((session) => {
-            if (session.id !== sessionId) {
-              return session;
-            }
-
-            const userCount = session.messages.filter(
-              (message) => message.role === "user",
-            ).length;
-
-            const nextMessage: ChatMessage = {
-              id: makeId("msg"),
-              role: "user",
-              text,
-              createdAt: Date.now(),
-              attachments,
-              reasoning: [],
-              debug: [],
-              proposedEdits: [],
-              activityTodos: [],
-              activityFiles: [],
-            };
-
-            return {
-              ...session,
-              title: userCount === 0 ? titleFromPrompt(text) : session.title,
-              updatedAt: Date.now(),
-              messages: [...session.messages, nextMessage],
-            };
-          }),
-        };
-      });
-    },
-    beginAssistantMessage: (sessionId, meta) => {
-      const exists = get().sessions.some((session) => session.id === sessionId);
-      if (!exists) {
-        return null;
-      }
-
-      const messageId = makeId("msg");
-
-      set((state) => ({
-        sessions: state.sessions.map((session) =>
-          session.id === sessionId
-            ? {
-                ...session,
-                updatedAt: Date.now(),
-                messages: [
-                  ...session.messages,
-                  {
-                    id: messageId,
-                    role: "assistant",
-                    text: "",
-                    createdAt: Date.now(),
-                    provider: meta?.provider,
-                    model: meta?.model,
-                    mode: meta?.mode,
-                    streaming: true,
-                    thinking: true,
-                    startTime: Date.now(),
-                    reasoning: [],
-                    debug: [],
-                    proposedEdits: [],
-                    activityTodos: [],
-                    activityFiles: [],
-                    toolExecutions: [],
-                  },
-                ],
-              }
-            : session,
-        ),
-      }));
-
-      return {
-        sessionId,
-        messageId,
-      };
-    },
-    addToolExecution: (sessionId, messageId, execution) => {
-      set((state) => ({
-        sessions: state.sessions.map((session) =>
-          session.id === sessionId
-            ? {
-                ...session,
-                updatedAt: Date.now(),
-                messages: session.messages.map((message) =>
-                  message.id === messageId
-                    ? {
-                        ...message,
-                        toolExecutions: [
-                          ...(message.toolExecutions ?? []),
-                          execution,
-                        ],
-                      }
-                    : message,
-                ),
-              }
-            : session,
-        ),
-      }));
-    },
-    updateToolExecutionStatus: (sessionId, messageId, toolName, pendingArg, status, message) => {
-      set((state) => ({
-        sessions: state.sessions.map((session) =>
-          session.id === sessionId
-            ? {
-                ...session,
-                updatedAt: Date.now(),
-                messages: session.messages.map((msg) =>
-                  msg.id === messageId
-                    ? {
-                        ...msg,
-                        toolExecutions: (msg.toolExecutions ?? []).map((exec) =>
-                          exec.toolName === toolName &&
-                          exec.command === pendingArg &&
-                          exec.status === "awaiting-approval"
-                            ? { ...exec, status, message: message ?? exec.message }
-                            : exec
-                        ),
-                      }
-                    : msg,
-                ),
-              }
-            : session,
-        ),
-      }));
-    },
-    updateAssistantTrace: (sessionId, messageId, reasoning, debug) => {
-      set((state) => ({
-        sessions: state.sessions.map((session) =>
-          session.id === sessionId
-            ? {
-                ...session,
-                updatedAt: Date.now(),
-                messages: session.messages.map((message) =>
-                  message.id === messageId
-                    ? {
-                        ...message,
-                        reasoning,
-                        debug,
-                      }
-                    : message,
-                ),
-              }
-            : session,
-        ),
-      }));
-    },
-    updateAssistantActivity: (sessionId, messageId, todos, files, note) => {
-      set((state) => ({
-        sessions: state.sessions.map((session) =>
-          session.id === sessionId
-            ? {
-                ...session,
-                updatedAt: Date.now(),
-                messages: session.messages.map((message) =>
-                  message.id === messageId
-                    ? {
-                        ...message,
-                        activityTodos: todos,
-                        activityFiles: files,
-                        activityNote: note,
-                      }
-                    : message,
-                ),
-              }
-            : session,
-        ),
-      }));
-    },
-    appendAssistantToken: (sessionId, messageId, token) => {
-      set((state) => ({
-        sessions: state.sessions.map((session) =>
-          session.id === sessionId
-            ? {
-                ...session,
-                updatedAt: Date.now(),
-                messages: session.messages.map((message) =>
-                  message.id === messageId
-                    ? {
-                        ...message,
-                        text: `${message.text}${token}`,
-                        thinking: false,
-                        streaming: true,
-                      }
-                    : message,
-                ),
-              }
-            : session,
-        ),
-      }));
-    },
-    finalizeAssistantMessage: (
-      sessionId,
-      messageId,
-      text,
-      reasoning,
-      debug,
-      edits,
-      tokenUsage,
-      efficiency,
-    ) => {
-      set((state) => ({
-        sessions: state.sessions.map((session) =>
-          session.id === sessionId
-            ? {
-                ...session,
-                updatedAt: Date.now(),
-                messages: session.messages.map((message) =>
-                  message.id === messageId
-                    ? {
-                        ...message,
-                        text,
-                        streaming: false,
-                        thinking: false,
-                        reasoning,
-                        debug,
-                        proposedEdits: edits,
-                        endTime: Date.now(),
-                        tokenUsage,
-                        efficiency,
-                      }
-                    : message,
-                ),
-              }
-            : session,
-        ),
-      }));
-    },
-    stopAssistantMessage: (sessionId, messageId, messageText) => {
-      set((state) => ({
-        sessions: state.sessions.map((session) =>
-          session.id === sessionId
-            ? {
-                ...session,
-                updatedAt: Date.now(),
-                messages: session.messages.map((message) =>
-                  message.id === messageId
-                    ? {
-                        ...message,
-                        text:
-                          message.text.trim().length > 0
-                            ? `${message.text}\n\n_${messageText}_`
-                            : messageText,
-                        streaming: false,
-                        thinking: false,
-                        stopped: true,
-                      }
-                    : message,
-                ),
-              }
-            : session,
-        ),
-      }));
-    },
-    failAssistantMessage: (sessionId, messageId, errorText) => {
-      set((state) => ({
-        sessions: state.sessions.map((session) =>
-          session.id === sessionId
-            ? {
-                ...session,
-                updatedAt: Date.now(),
-                messages: session.messages.map((message) =>
-                  message.id === messageId
-                    ? {
-                        ...message,
-                        text: errorText,
-                        streaming: false,
-                        thinking: false,
-                        stopped: false,
-                        error: true,
-                      }
-                    : message,
-                ),
-              }
-            : session,
-        ),
-      }));
-    },
-    updateEditStatus: (editId, status, label) => {
-      set((state) => ({
-        sessions: state.sessions.map((session) => ({
-          ...session,
-          messages: session.messages.map((message) => ({
-            ...message,
-            proposedEdits: message.proposedEdits.map((edit) =>
-              edit.id === editId
-                ? {
-                    ...edit,
-                    status,
-                    statusLabel: label,
-                  }
-                : edit,
-            ),
-          })),
-        })),
-      }));
-    },
-    setProviderStatus: (status) => {
-      set((state) => ({
-        providerStatus: {
-          ...state.providerStatus,
-          [status.provider]: status,
-        },
-      }));
-    },
-    setModelSuggestions: (provider, models) => {
-      set((state) => ({
-        modelSuggestions: {
-          ...state.modelSuggestions,
-          [provider]: [...new Set(models)].slice(0, 60),
-        },
-      }));
-    },
-    updateSetting: (key: string, value: unknown) => {
-      vscode.postMessage({ type: "updateSetting", key, value });
-      set((state) => ({
-        settings: { ...state.settings, [key]: value },
-      }));
-    },
-    setDraft: (sessionId, value) => {
-      set((state) => ({
-        drafts: {
-          ...state.drafts,
-          [sessionId]: value,
-        },
-      }));
-    },
-    addBackgroundAgent: (agent) => {
-      set((state) => ({
-        backgroundAgents: [...state.backgroundAgents, agent],
-      }));
-    },
-    updateBackgroundAgent: (id, updates) => {
-      set((state) => ({
-        backgroundAgents: state.backgroundAgents.map((a) =>
-          a.id === id ? { ...a, ...updates } : a,
-        ),
-      }));
-    },
-    removeBackgroundAgent: (id) => {
-      set((state) => ({
-        backgroundAgents: state.backgroundAgents.filter((a) => a.id !== id),
-      }));
-    },
-    setWaveInfo: (waveInfo) => {
-      set({ waveInfo });
-    },
-    setTaskQueue: (tasks, pending, active) => {
-      // Only show tasks that are actually queued (pending), not running/completed
-      const pendingTasks = tasks.filter((t) => t.status === "queued" || t.status === "planning");
-      set({
-        taskQueue: pendingTasks,
-        taskQueuePendingCount: pending,
-        taskQueueActiveCount: active,
-      });
-    },
-    clearTaskQueue: () => {
-      set({
-        taskQueue: [],
-        taskQueuePendingCount: 0,
-      });
-    },
-    updateTaskStatus: (taskId, status, note) => {
-      set((state) => ({
-        taskQueue: state.taskQueue.map((t) =>
-          t.id === taskId ? { ...t, status, activityNote: note ?? t.activityNote } : t,
-        ),
-      }));
-      // Auto-remove completed/failed tasks after 3 seconds
-      if (status === "completed" || status === "failed" || status === "cancelled") {
-        setTimeout(() => {
-          useStore.getState().setTaskQueue(
-            useStore.getState().taskQueue.filter((t) => t.id !== taskId),
-            useStore.getState().taskQueuePendingCount,
-            Math.max(0, useStore.getState().taskQueueActiveCount - 1),
-          );
-        }, 3000);
-      }
-    },
-    parallelCount: 0,
-    incrementParallel: () => {
-      set((state) => ({ parallelCount: state.parallelCount + 1 }));
-    },
-    decrementParallel: () => {
-      set((state) => ({
-        parallelCount: Math.max(0, state.parallelCount - 1),
-      }));
-    },
-    resetParallel: () => {
-      set({ parallelCount: 0 });
-    },
-  };
-});
-
-function getActiveSession(state: StoreState): Session | undefined {
-  return state.sessions.find((session) => session.id === state.activeSessionId);
-}
+// NC-036: useStore, vscode, getActiveSession are now imported from ./store
 
 // ─── Token Ring ──────────────────────────────────────────────────────────────
-function inferContextWindow(model: string): number {
-  const normalized = model.toLowerCase().trim();
-
-  if (/qwen2\.5-coder:14b/.test(normalized)) {
-    return 32_768;
-  }
-
-  if (/qwen2\.5-coder:7b|nemotron-mini/.test(normalized)) {
-    return 32_768;
-  }
-
-  if (
-    /deepseek-v4|deepseek-r1|mimo-v2\.5|glm-5|kimi-k2|qwen3|gpt-4|gpt-4o|claude|llama-3\.3/.test(
-      normalized,
-    )
-  ) {
-    return 128_000;
-  }
-
-  return 64_000;
-}
-
-function formatTokenCount(value: number): string {
-  if (value >= 1_000_000) {
-    return `${(value / 1_000_000).toFixed(1)}M`;
-  }
-
-  if (value >= 1_000) {
-    return `${(value / 1_000).toFixed(1)}K`;
-  }
-
-  return String(value);
-}
+// NC-036: inferContextWindow and formatTokenCount are now imported from ./utils
 
 function TokenRing({
   sessionMessages,
@@ -3432,39 +2061,8 @@ function ToolApprovalDialog({
 }
 
 // ─── Search Provider Helpers ─────────────────────────────────────────────────
-function getSearchProviderPlaceholder(provider: SearchProviderId): string {
-  switch (provider) {
-    case "tavily": return "tvly-...";
-    case "serpapi": return "Your SerpAPI key";
-    case "serper": return "Your Serper key";
-    case "bing": return "Your Bing API key";
-    case "duckduckgo": return "No API key needed";
-    case "custom": return "Your API key";
-    default: return "Your API key";
-  }
-}
-
-function getSearchProviderHint(provider: SearchProviderId): string {
-  switch (provider) {
-    case "tavily": return "Get a free key at tavily.com";
-    case "serpapi": return "Get a key at serpapi.com";
-    case "serper": return "Get a key at serper.dev";
-    case "bing": return "Get a key at azure.microsoft.com/services/bing-search";
-    case "duckduckgo": return "Free, no API key required";
-    case "custom": return "Enter your custom search API key";
-    default: return "Enter your API key";
-  }
-}
-
-function getSearchProviderUrlPlaceholder(provider: SearchProviderId): string {
-  switch (provider) {
-    case "serpapi": return "https://serpapi.com/search";
-    case "serper": return "https://google.serper.dev/search";
-    case "bing": return "https://api.bing.microsoft.com/v7.0/search";
-    case "custom": return "https://your-api-endpoint.com/search";
-    default: return "https://api.example.com/search";
-  }
-}
+// NC-036: getSearchProviderPlaceholder, getSearchProviderHint, getSearchProviderUrlPlaceholder
+// are now imported from ./utils
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 function App() {
@@ -3497,6 +2095,11 @@ function App() {
     Record<string, string[]>
   >({});
   const [mcpSelectedServer, setMcpSelectedServer] = useState("");
+  // NC-003: Local (uncontrolled) state for API key inputs.
+  // These are never persisted — the value is sent to the extension via
+  // sendSecret() and then the local state is cleared.
+  const [localApiKey, setLocalApiKey] = useState("");
+  const [localSearchApiKey, setLocalSearchApiKey] = useState("");
   const [mcpSelectedTool, setMcpSelectedTool] = useState("");
   const [mcpQuickInput, setMcpQuickInput] = useState("");
   const [mcpInvokeBusy, setMcpInvokeBusy] = useState(false);
@@ -3973,7 +2576,8 @@ function App() {
     input.click();
   }, []);
 
-  // Persist state to VS Code webview state
+  // NC-003: Persist state to VS Code webview state.
+  // Settings are sanitized to ensure no secret values are ever written to disk.
   useEffect(() => {
     let handle: number | null = null;
     const unsub = useStore.subscribe((state) => {
@@ -3983,7 +2587,7 @@ function App() {
           sessions: state.sessions,
           activeSessionId: state.activeSessionId,
           drafts: state.drafts,
-          settings: state.settings,
+          settings: stripSecretsFromSettings(state.settings),
         });
         handle = null;
       }, 260);
@@ -5025,14 +3629,27 @@ function App() {
                         />
                       </div>
                       <div className="nk-settings-section">
-                        <div className="nk-settings-label">API Key</div>
+                        <div className="nk-settings-label">
+                          API Key
+                          {settings.openAIApiKeyConfigured && (
+                            <span style={{ marginLeft: 8, fontSize: '0.85em', opacity: 0.7 }}>(configured)</span>
+                          )}
+                        </div>
                         <input
                           className="nk-settings-input"
                           type="password"
-                          placeholder={preset.apiKeyPlaceholder}
-                          value={settings.openAIApiKey ?? ''}
+                          placeholder={settings.openAIApiKeyConfigured ? "Key stored securely — type to replace" : preset.apiKeyPlaceholder}
+                          value={localApiKey}
                           onChange={(e) => {
-                            useStore.getState().updateSetting('openAIApiKey', e.target.value);
+                            setLocalApiKey(e.target.value);
+                          }}
+                          onBlur={() => {
+                            // NC-003: Send the secret to the extension host on blur.
+                            // Never store it in the Zustand store or webview state.
+                            if (localApiKey.trim()) {
+                              useStore.getState().sendSecret('openAIApiKey', localApiKey);
+                              setLocalApiKey('');
+                            }
                           }}
                         />
                         <div className="nk-settings-hint">
@@ -5066,14 +3683,27 @@ function App() {
                     </div>
                     {settings.searchProvider !== 'duckduckgo' && (
                       <div className="nk-settings-section">
-                        <div className="nk-settings-label">Search API Key</div>
+                        <div className="nk-settings-label">
+                          Search API Key
+                          {settings.searchApiKeyConfigured && (
+                            <span style={{ marginLeft: 8, fontSize: '0.85em', opacity: 0.7 }}>(configured)</span>
+                          )}
+                        </div>
                         <input
                           className="nk-settings-input"
                           type="password"
-                          placeholder={getSearchProviderPlaceholder(settings.searchProvider ?? 'tavily')}
-                          value={settings.searchApiKey ?? ''}
+                          placeholder={settings.searchApiKeyConfigured ? "Key stored securely — type to replace" : getSearchProviderPlaceholder(settings.searchProvider ?? 'tavily')}
+                          value={localSearchApiKey}
                           onChange={(e) => {
-                            useStore.getState().updateSetting('searchApiKey', e.target.value);
+                            setLocalSearchApiKey(e.target.value);
+                          }}
+                          onBlur={() => {
+                            // NC-003: Send the secret to the extension host on blur.
+                            // Never store it in the Zustand store or webview state.
+                            if (localSearchApiKey.trim()) {
+                              useStore.getState().sendSecret('searchApiKey', localSearchApiKey);
+                              setLocalSearchApiKey('');
+                            }
                           }}
                         />
                         <div className="nk-settings-hint">
@@ -5110,14 +3740,10 @@ function App() {
                   <div className="nk-settings-label">Permission Mode</div>
                   <select
                     className="nk-settings-select"
-                    value={settings.autoApprove ? "bypass" : settings.requireTerminalApproval ? "auto" : "ask"}
+                    value={settings.requireTerminalApproval ? "ask" : "auto"}
                     onChange={(e) => {
                       const mode = e.target.value;
-                      if (mode === "bypass") {
-                        useStore.getState().updateSetting("autoApprove", true);
-                        useStore.getState().updateSetting("requireTerminalApproval", false);
-                        vscode.postMessage({ type: "updateSetting", key: "toolApproval", value: "bypass" });
-                      } else if (mode === "auto") {
+                      if (mode === "auto") {
                         useStore.getState().updateSetting("autoApprove", false);
                         useStore.getState().updateSetting("requireTerminalApproval", false);
                         vscode.postMessage({ type: "updateSetting", key: "toolApproval", value: "auto" });
@@ -5130,7 +3756,6 @@ function App() {
                   >
                     <option value="ask">Ask — require approval for destructive tools</option>
                     <option value="auto">Auto — approve safe tools automatically</option>
-                    <option value="bypass">Autopilot — no prompts (trusted only)</option>
                   </select>
                 </div>
 
@@ -5524,7 +4149,7 @@ function App() {
                     >
                       <span className="nk-effort-label">Effort</span>
                       <span className="nk-effort-value" data-effort={activeSession.reasoningEffort ?? effortInfo.default}>
-                        {effortLabels[activeSession.reasoningEffort ?? effortInfo.default]}
+                        {effortLabels[(activeSession.reasoningEffort ?? effortInfo.default) as ReasoningEffort]}
                       </span>
                     </button>
                   </div>

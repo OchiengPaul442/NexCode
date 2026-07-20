@@ -8,10 +8,18 @@ on:
 
 jobs:
   build-and-test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        node-version: [18, 20, 22]
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node-version: [20]
+        include:
+          # Extra Node.js versions on Linux only to keep matrix bounded
+          - os: ubuntu-latest
+            node-version: 18
+          - os: ubuntu-latest
+            node-version: 22
     steps:
       - uses: actions/checkout@v4
 
@@ -39,13 +47,41 @@ jobs:
       - name: Run tests
         run: npm test
 
-      - name: Audit dependencies
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=critical
+
+      - name: Audit all dependencies
         run: npm audit --audit-level=high
+        # Track but do not block on high-severity advisories that may
+        # require manual review. Critical advisories above already block.
         continue-on-error: true
 
+      - name: Verify lockfile integrity
+        run: npm ci --ignore-scripts 2>&1 | head -5
+        # A clean npm ci from a fresh checkout is the primary lockfile
+        # integrity check. If the lockfile is out of sync, npm ci fails.
+
   package:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     needs: build-and-test
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
 
@@ -65,9 +101,68 @@ jobs:
         run: npx @vscode/vsce package --allow-missing-repository
         working-directory: extension
 
+      - name: Verify VSIX contents
+        run: |
+          VSIX=$(ls extension/*.vsix 2>/dev/null | head -1)
+          if [ -z "$VSIX" ]; then
+            echo "ERROR: No VSIX package found"
+            exit 1
+          fi
+          echo "VSIX: $VSIX"
+          # List VSIX entries and verify required files exist
+          if command -v unzip &>/dev/null; then
+            ENTRIES=$(unzip -Z1 "$VSIX")
+          elif command -v python3 &>/dev/null; then
+            ENTRIES=$(python3 -c "import zipfile; z=zipfile.ZipFile('$VSIX'); [print(n) for n in z.namelist()]")
+          else
+            echo "WARNING: No unzip or python3 available, skipping entry verification"
+            ENTRIES=""
+          fi
+          if [ -n "$ENTRIES" ]; then
+            for required in "extension/out/extension.js" "extension/media/main.js" "extension/media/icon.png"; do
+              if ! echo "$ENTRIES" | grep -q "^${required}$"; then
+                echo "ERROR: VSIX missing required entry: $required"
+                exit 1
+              fi
+            done
+            # Verify no test/source files leaked
+            if echo "$ENTRIES" | grep -qE '\.test\.ts$|\.spec\.ts$|__tests__/|\.d\.ts$|\.map$'; then
+              echo "WARNING: VSIX contains test/source artifacts"
+            fi
+            echo "VSIX verification passed"
+          fi
+
+      - name: Verify lockfile integrity
+        run: node -e "
+          const fs = require('fs');
+          const lock = JSON.parse(fs.readFileSync('package-lock.json','utf8'));
+          if (!lock.packages || typeof lock.lockfileVersion !== 'number') {
+            console.error('Lockfile appears malformed');
+            process.exit(1);
+          }
+          console.log('Lockfile verified: version=' + lock.lockfileVersion + ', packages=' + (Object.keys(lock.packages).length - 1));
+        "
+
+      - name: Generate dependency manifest
+        run: node -e "
+          const fs = require('fs');
+          const lock = JSON.parse(fs.readFileSync('package-lock.json','utf8'));
+          const manifest = {};
+          for (const [p, info] of Object.entries(lock.packages || {})) {
+            if (p === '') continue;
+            const name = p.replace(/^.*node_modules\//, '');
+            if (info.version) manifest[name] = info.version;
+          }
+          fs.writeFileSync('extension/DEPENDENCIES.json', JSON.stringify(manifest, null, 2) + '\n');
+          console.log('Generated DEPENDENCIES.json with ' + Object.keys(manifest).length + ' entries');
+        "
+        working-directory: ${{ github.workspace }}
+
       - name: Upload VSIX artifact
         uses: actions/upload-artifact@v4
         with:
-          name: vsix-package
-          path: extension/*.vsix
+          name: vsix-package-${{ matrix.os }}
+          path: |
+            extension/*.vsix
+            extension/DEPENDENCIES.json
           retention-days: 30

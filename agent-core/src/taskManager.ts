@@ -14,6 +14,8 @@ import { TaskQueue, classifyPromptIntent } from "./taskQueue";
 
 export interface TaskManagerOptions {
   maxConcurrent?: number;
+  maxHistorySize?: number;
+  maxHistoryAgeMs?: number;
 }
 
 export interface TaskExecutionResult {
@@ -29,7 +31,11 @@ export class TaskQueueManager {
   private taskPrompts = new Map<string, string>();
 
   constructor(options: TaskManagerOptions = {}) {
-    this.queue = new TaskQueue(options.maxConcurrent);
+    this.queue = new TaskQueue({
+      maxConcurrent: options.maxConcurrent,
+      maxHistorySize: options.maxHistorySize,
+      maxHistoryAgeMs: options.maxHistoryAgeMs,
+    });
   }
 
   onEvent(listener: (event: TaskEvent) => void): () => void {
@@ -73,13 +79,32 @@ export class TaskQueueManager {
       attachmentIds?: string[];
     } = {},
   ): { action: "steer" | "queue"; task: Task } {
-    if (activeTaskId) {
+    // First, try to steer an existing active task in the same session.
+    // Steering is allowed in planning, running, and verifying states.
+    const sessionTask = this.queue.getActiveTaskBySession(sessionId);
+    if (sessionTask) {
+      const intent = classifyPromptIntent(sessionTask.prompt, newPrompt);
+      if (intent === "steering") {
+        this.queue.steer(sessionTask.id, newPrompt);
+        return { action: "steer", task: sessionTask };
+      }
+    }
+
+    // Fallback: if an explicit activeTaskId was provided, try that too
+    // (for backward compatibility with callers that pass activeTask.id directly)
+    if (activeTaskId && (!sessionTask || sessionTask.id !== activeTaskId)) {
       const activeTask = this.queue.getTask(activeTaskId);
-      if (activeTask && activeTask.status === "running") {
-        const intent = classifyPromptIntent(activeTask.prompt, newPrompt);
-        if (intent === "steering") {
-          this.queue.steer(activeTaskId, newPrompt);
-          return { action: "steer", task: activeTask };
+      if (activeTask) {
+        const isSteerable =
+          activeTask.status === "running" ||
+          activeTask.status === "planning" ||
+          activeTask.status === "verifying";
+        if (isSteerable) {
+          const intent = classifyPromptIntent(activeTask.prompt, newPrompt);
+          if (intent === "steering") {
+            this.queue.steer(activeTaskId, newPrompt);
+            return { action: "steer", task: activeTask };
+          }
         }
       }
     }
@@ -138,6 +163,14 @@ export class TaskQueueManager {
     return this.queue.getActiveTasks();
   }
 
+  /**
+   * Find the active task belonging to a specific session.
+   * Returns the first active task in the given session, or undefined if none.
+   */
+  getActiveTaskBySession(sessionId: string): Task | undefined {
+    return this.queue.getActiveTaskBySession(sessionId);
+  }
+
   getQueuedTasks(): Task[] {
     return this.queue.getQueuedTasks();
   }
@@ -156,6 +189,28 @@ export class TaskQueueManager {
 
   canAcceptNewTask(): boolean {
     return this.queue.canAcceptNewTask();
+  }
+
+  /**
+   * Get completed/failed/cancelled tasks from history, sorted by completion time descending.
+   */
+  getCompletedTasks(): Task[] {
+    return this.queue.getCompletedTasks();
+  }
+
+  /**
+   * Get count of terminal tasks in history.
+   */
+  getCompletedCount(): number {
+    return this.queue.getCompletedCount();
+  }
+
+  /**
+   * Manually trigger pruning of old completed tasks.
+   * Normally called automatically after state transitions.
+   */
+  pruneCompletedTasks(): number {
+    return this.queue.pruneCompletedTasks();
   }
 
   getNextQueuedTask(): { task: Task; request: OrchestratorRequest } | undefined {
@@ -205,5 +260,12 @@ export class TaskQueueManager {
 
   removeCompleted(maxAge?: number): number {
     return this.queue.removeCompleted(maxAge);
+  }
+
+  /**
+   * Get the total count of all tasks (active + queued + terminal).
+   */
+  getTotalTaskCount(): number {
+    return this.queue.getAllTasks().length;
   }
 }

@@ -2,6 +2,67 @@ import fs from "fs/promises";
 import path from "path";
 
 /**
+ * Check if a path is absolute using both Windows and POSIX rules.
+ * On POSIX, `C:\\Windows\\...` is NOT detected as absolute by `path.isAbsolute`,
+ * which allows cross-platform path traversal bypass. This function catches
+ * both POSIX and Windows absolute paths, plus UNC, device, and drive-relative forms.
+ */
+export function isPathAbsoluteCrossPlatform(p: string): boolean {
+  // Host-platform check
+  if (path.isAbsolute(p)) {
+    return true;
+  }
+
+  // Windows drive letter: C:\, D:\, etc.
+  if (/^[A-Za-z]:[\\/]/.test(p)) {
+    return true;
+  }
+
+  // Drive-relative (no backslash after colon): C:foo
+  if (/^[A-Za-z]:[^\\/]/.test(p)) {
+    return true;
+  }
+
+  // UNC paths: \\server\share
+  if (/^\\\\[^\\]/.test(p)) {
+    return true;
+  }
+
+  // Device/extended-length paths: \\.\, \\?\
+  if (/^\\\\[.?]\\/.test(p)) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Validate that a path does not contain null bytes, which are invalid
+ * on all platforms and can be used to truncate paths in C-level fs calls.
+ */
+export function containsNullBytes(p: string): boolean {
+  return p.includes("\x00");
+}
+
+/**
+ * Reject cross-platform dangerous path forms:
+ * - Null bytes
+ * - Windows absolute paths on any platform
+ * - UNC, device, extended-length paths
+ *
+ * Returns true if the path is safe to proceed with, false if it should be rejected.
+ */
+export function isPathSafeCrossPlatform(p: string): { safe: boolean; reason?: string } {
+  if (containsNullBytes(p)) {
+    return { safe: false, reason: "Path contains null bytes" };
+  }
+  if (isPathAbsoluteCrossPlatform(p)) {
+    return { safe: false, reason: "Path is absolute (cross-platform check detected Windows or POSIX absolute path)" };
+  }
+  return { safe: true };
+}
+
+/**
  * Resolve a target path to an absolute path within the workspace root,
  * resolving symlinks to prevent path traversal via symlink attacks.
  *
@@ -14,6 +75,21 @@ export async function resolveWorkspacePath(
   workspaceRoot: string,
   targetPath: string,
 ): Promise<string> {
+  // Cross-platform safety check: reject paths that look absolute on the OTHER
+  // platform but not on the host. Host-platform absolute paths are handled by
+  // the containment check below (path.relative + ".." prefix).
+  if (!path.isAbsolute(targetPath)) {
+    const crossCheck = isPathSafeCrossPlatform(targetPath);
+    if (!crossCheck.safe) {
+      throw new Error(`Path rejected: ${crossCheck.reason} — ${targetPath}`);
+    }
+  } else {
+    // Host says it's absolute — still reject null bytes
+    if (containsNullBytes(targetPath)) {
+      throw new Error(`Path rejected: Path contains null bytes — ${targetPath}`);
+    }
+  }
+
   const absolutePath = path.isAbsolute(targetPath)
     ? path.normalize(targetPath)
     : path.normalize(path.join(workspaceRoot, targetPath));
@@ -96,6 +172,21 @@ export function checkPathWithinWorkspace(
   const trimmed = targetPath.trim().replace(/^['"`]|['"`]$/g, "");
   if (!trimmed) {
     return null;
+  }
+
+  // Cross-platform safety check: reject paths that look absolute on the OTHER
+  // platform but not on the host. Host-platform absolute paths are handled by
+  // the containment check below (path.relative + ".." prefix).
+  if (!path.isAbsolute(trimmed)) {
+    const crossCheck = isPathSafeCrossPlatform(trimmed);
+    if (!crossCheck.safe) {
+      return null;
+    }
+  } else {
+    // Host says it's absolute — still reject null bytes
+    if (containsNullBytes(trimmed)) {
+      return null;
+    }
   }
 
   const absolutePath = path.isAbsolute(trimmed)

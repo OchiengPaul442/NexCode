@@ -6,6 +6,52 @@ import { createPatch } from "../utils/diff";
 import { ContextCompressor } from "../utils/contextCompressor";
 import { resolveWorkspacePath } from "../utils/pathContainment";
 
+/**
+ * Atomically write content to a file by writing to a temp file first, then
+ * renaming over the target. This prevents truncation on crash: the rename is
+ * atomic on POSIX (and near-atomic on NTFS), so the target is never left in a
+ * half-written state.
+ *
+ * Preserves the existing file's permissions if it exists; otherwise uses
+ * default mode.
+ */
+export async function atomicWriteFile(
+  absolutePath: string,
+  content: string,
+): Promise<void> {
+  const dir = path.dirname(absolutePath);
+  const tmpName = `.nexcode-tmp-${randomUUID()}`;
+  const tmpPath = path.join(dir, tmpName);
+
+  // Ensure the parent directory exists.
+  await fs.mkdir(dir, { recursive: true });
+
+  // Try to preserve existing file permissions.
+  let mode: number | undefined;
+  try {
+    const stat = await fs.stat(absolutePath);
+    mode = stat.mode;
+  } catch {
+    // File doesn't exist yet; use default permissions.
+  }
+
+  try {
+    await fs.writeFile(tmpPath, content, { encoding: "utf8", mode });
+    // fs.rename is atomic on POSIX and near-atomic on NTFS (within the same
+    // volume). On Windows across volumes it falls back to copy+delete which is
+    // still safer than direct writeFile truncation.
+    await fs.rename(tmpPath, absolutePath);
+  } catch (err) {
+    // Clean up the temp file on failure.
+    try {
+      await fs.unlink(tmpPath);
+    } catch {
+      // Ignore cleanup errors — the original file is still intact.
+    }
+    throw err;
+  }
+}
+
 function enhanceFileSystemError(error: unknown, operation: string, targetPath: string): string {
   const msg = String(error);
   if (msg.includes("ENOENT") || msg.includes("no such file") || msg.includes("cannot find")) {
@@ -54,8 +100,7 @@ export class FileSystemTool {
   ): Promise<ToolResult> {
     try {
       const absolutePath = await this.resolveWorkspacePathSafe(targetPath);
-      await fs.mkdir(path.dirname(absolutePath), { recursive: true });
-      await fs.writeFile(absolutePath, content, "utf8");
+      await atomicWriteFile(absolutePath, content);
       return {
         ok: true,
         output: `Wrote ${targetPath}`,
@@ -104,8 +149,17 @@ export class FileSystemTool {
         };
       }
 
+      // Count occurrences of oldText to require an unambiguous (unique) match.
+      const matchCount = content.split(oldText).length - 1;
+      if (matchCount > 1) {
+        return {
+          ok: false,
+          output: `The old text appears ${matchCount} times in ${targetPath}. Provide a unique snippet to avoid ambiguity. Include surrounding context to disambiguate.`,
+        };
+      }
+
       const newContent = content.replace(oldText, () => newText);
-      await fs.writeFile(absolutePath, newContent, "utf8");
+      await atomicWriteFile(absolutePath, newContent);
 
       return {
         ok: true,
@@ -144,7 +198,24 @@ export class FileSystemTool {
     try {
       const absolutePath = await this.resolveWorkspacePathSafe(targetPath);
       this.ensureNotWorkspaceRoot(absolutePath, targetPath);
-      await fs.rm(absolutePath, { recursive: true, force: true });
+
+      // Use lstat to detect symlinks without following them.
+      // Unlink the symlink itself rather than deleting its target.
+      let stat: import("fs").Stats;
+      try {
+        stat = await fs.lstat(absolutePath);
+      } catch {
+        // Path doesn't exist — let rm handle the error.
+        await fs.rm(absolutePath, { recursive: true, force: true });
+        return { ok: true, output: `Deleted ${targetPath}` };
+      }
+
+      if (stat.isSymbolicLink()) {
+        await fs.unlink(absolutePath);
+      } else {
+        await fs.rm(absolutePath, { recursive: true, force: true });
+      }
+
       return {
         ok: true,
         output: `Deleted ${targetPath}`,
@@ -165,21 +236,38 @@ export class FileSystemTool {
 
       for (const entry of entries) {
         const entryPath = path.join(absolutePath, entry.name);
-        // Resolve symlinks to prevent escape via symlinked entries
-        let resolvedEntry: string;
-        try {
-          resolvedEntry = await fs.realpath(entryPath);
-        } catch {
-          resolvedEntry = entryPath;
+
+        if (entry.isSymbolicLink()) {
+          // Symlink: resolve target for containment check, but unlink the
+          // symlink itself rather than deleting the resolved target.
+          let resolvedTarget: string;
+          try {
+            resolvedTarget = await fs.realpath(entryPath);
+          } catch {
+            // Broken symlink — resolve target failed; still safe to unlink.
+            await fs.unlink(entryPath);
+            continue;
+          }
+          const relative = path.relative(this.workspaceRoot, resolvedTarget);
+          if (relative.startsWith("..") || path.isAbsolute(relative)) {
+            continue; // skip symlinks whose target escapes workspace
+          }
+          await fs.unlink(entryPath);
+        } else if (entry.isDirectory()) {
+          // Real directory (not a symlink): check containment then remove.
+          const relative = path.relative(this.workspaceRoot, entryPath);
+          if (relative.startsWith("..") || path.isAbsolute(relative)) {
+            continue;
+          }
+          await fs.rm(entryPath, { recursive: true, force: true });
+        } else {
+          // Regular file: check containment then remove.
+          const relative = path.relative(this.workspaceRoot, entryPath);
+          if (relative.startsWith("..") || path.isAbsolute(relative)) {
+            continue;
+          }
+          await fs.rm(entryPath, { force: true });
         }
-        const relative = path.relative(this.workspaceRoot, resolvedEntry);
-        if (relative.startsWith("..") || path.isAbsolute(relative)) {
-          continue; // skip entries that escape workspace
-        }
-        await fs.rm(resolvedEntry, {
-          recursive: true,
-          force: true,
-        });
       }
 
       return {

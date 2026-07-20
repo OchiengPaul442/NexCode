@@ -2,6 +2,8 @@ import {
   ModelProvider,
   ModelRequest,
   ModelResponse,
+  ProviderId,
+  ProviderUsage,
   ToolCallRequest,
 } from "../types";
 import { getModelEffortConfig } from "../utils/modelEffortConfig";
@@ -48,18 +50,28 @@ interface OpenAIStreamChunk {
   choices?: OpenAIStreamChoice[];
 }
 
+interface OpenAIChatUsage {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+}
+
 interface OpenAIChatResponse {
   choices?: OpenAIChoice[];
+  usage?: OpenAIChatUsage;
 }
 
 export class OpenAICompatibleProvider implements ModelProvider {
-  public readonly id = "openai-compatible" as const;
+  public readonly id: ProviderId;
   private readonly maxRetryAttempts = 3;
 
   public constructor(
     private readonly baseUrl: string,
     private readonly apiKey?: string,
-  ) {}
+    providerId?: ProviderId,
+  ) {
+    this.id = providerId ?? "openai-compatible";
+  }
 
   public async checkConnection(): Promise<{ ok: boolean; error?: string }> {
     try {
@@ -189,6 +201,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
     url: string,
     initFactory: () => RequestInit,
     signal: AbortSignal,
+    retryBudget?: { canAttempt(): boolean; recordAttempt(): void },
   ): Promise<Response> {
     let lastResponse: Response | undefined;
 
@@ -196,6 +209,13 @@ export class OpenAICompatibleProvider implements ModelProvider {
       if (signal.aborted) {
         throw new Error("Request aborted.");
       }
+
+      // Respect shared retry budget — stop HTTP retries if budget exhausted
+      if (retryBudget && !retryBudget.canAttempt()) {
+        break;
+      }
+
+      retryBudget?.recordAttempt();
 
       const response = await fetch(url, {
         ...initFactory(),
@@ -316,6 +336,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
           body: JSON.stringify(body),
         }),
         abort.controller.signal,
+        request.retryBudget,
       );
 
       if (!response.ok) {
@@ -368,6 +389,13 @@ export class OpenAICompatibleProvider implements ModelProvider {
           text: json.choices[0].message.content || "",
           toolCalls,
           raw: json,
+          usage: json.usage
+            ? {
+                promptTokens: json.usage.prompt_tokens ?? 0,
+                completionTokens: json.usage.completion_tokens ?? 0,
+                totalTokens: json.usage.total_tokens ?? 0,
+              }
+            : undefined,
         };
       }
 
@@ -376,6 +404,13 @@ export class OpenAICompatibleProvider implements ModelProvider {
       return {
         text,
         raw: json,
+        usage: json.usage
+          ? {
+              promptTokens: json.usage.prompt_tokens ?? 0,
+              completionTokens: json.usage.completion_tokens ?? 0,
+              totalTokens: json.usage.total_tokens ?? 0,
+            }
+          : undefined,
       };
     } finally {
       abort.clear();
@@ -413,6 +448,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
           body: JSON.stringify(streamBody),
         }),
         abort.controller.signal,
+        request.retryBudget,
       );
 
       if (!response.ok || !response.body) {

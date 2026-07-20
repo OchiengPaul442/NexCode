@@ -204,12 +204,31 @@ export interface ModelRequest {
   signal?: AbortSignal;
   tools?: ToolCallRequestTool[];
   reasoningEffort?: ReasoningEffort;
+  retryBudget?: RetryBudgetLike;
+}
+
+export interface ProviderUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
 }
 
 export interface ModelResponse {
   text: string;
   toolCalls?: ToolCallRequest[];
   raw?: unknown;
+  /** Provider-reported token usage, when available from the API response. */
+  usage?: ProviderUsage;
+}
+
+/**
+ * Structural type for a shared retry budget. The concrete implementation is
+ * RetryBudget from utils/retryBudget.ts. Defined here as a structural type
+ * to keep types.ts free of concrete imports.
+ */
+export interface RetryBudgetLike {
+  canAttempt(): boolean;
+  recordAttempt(): void;
 }
 
 export interface ProviderGenerateOptions {
@@ -221,6 +240,13 @@ export interface ProviderGenerateOptions {
   signal?: AbortSignal;
   tools?: ToolCallRequestTool[];
   reasoningEffort?: ReasoningEffort;
+  /**
+   * Shared retry budget across provider, router, and agent-loop layers.
+   * When set, each layer checks canAttempt() before retrying and calls
+   * recordAttempt() after each attempt. This prevents unbounded retry
+   * multiplication across layers.
+   */
+  retryBudget?: RetryBudgetLike;
 }
 
 export interface ModelProvider {

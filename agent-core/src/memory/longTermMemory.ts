@@ -27,30 +27,60 @@ interface ParsedMemoryQuery {
   sinceTimestamp?: number;
 }
 
+export interface LongTermMemoryStoreOptions {
+  memoryDir: string;
+  /** Optional callback invoked when a persistence error occurs. */
+  onError?: (error: Error) => void;
+}
+
 export class LongTermMemoryStore {
   private readonly filePath: string;
   private readonly legacyFilePath: string;
+  private readonly onError?: (error: Error) => void;
   private cache: LongTermMemoryEntry[] | null = null;
   private cacheMtimeMs = -1;
   private writeQueue = Promise.resolve();
+  private disposed = false;
+  private lastError: Error | null = null;
 
-  public constructor(memoryDir: string) {
+  public constructor(memoryDirOrOptions: string | LongTermMemoryStoreOptions) {
+    let memoryDir: string;
+    if (typeof memoryDirOrOptions === "string") {
+      memoryDir = memoryDirOrOptions;
+      this.onError = undefined;
+    } else {
+      memoryDir = memoryDirOrOptions.memoryDir;
+      this.onError = memoryDirOrOptions.onError;
+    }
     this.filePath = path.join(memoryDir, "long-term-memory.jsonl");
     this.legacyFilePath = path.join(memoryDir, "long-term-memory.json");
   }
 
   public async add(entry: LongTermMemoryEntry): Promise<void> {
+    if (this.disposed) {
+      return;
+    }
+
     this.writeQueue = this.writeQueue.then(async () => {
-      await this.ensureFile();
-      await fs.appendFile(this.filePath, `${JSON.stringify(entry)}\n`, "utf8");
+      try {
+        await this.ensureFile();
+        await fs.appendFile(
+          this.filePath,
+          `${JSON.stringify(entry)}\n`,
+          "utf8",
+        );
 
-      if (this.cache) {
-        this.cache.push(entry);
-        this.cacheMtimeMs = Date.now();
+        if (this.cache) {
+          this.cache.push(entry);
+          this.cacheMtimeMs = Date.now();
 
-        if (this.cache.length > MAX_ENTRIES) {
-          await this.evictOldest();
+          if (this.cache.length > MAX_ENTRIES) {
+            await this.evictOldest();
+          }
         }
+        this.lastError = null;
+      } catch (error) {
+        this.captureError(error, "add entry");
       }
     });
 
@@ -128,6 +158,39 @@ export class LongTermMemoryStore {
     return ranked.slice(0, limit).map((item) => item.entry);
   }
 
+  /**
+   * Waits for all queued writes to complete.
+   * Returns true if all writes succeeded.
+   */
+  public async flush(): Promise<boolean> {
+    await this.writeQueue;
+    return this.lastError === null;
+  }
+
+  /**
+   * Waits for all queued writes and prevents further writes.
+   * Returns true if all writes succeeded.
+   */
+  public async dispose(): Promise<boolean> {
+    this.disposed = true;
+    await this.writeQueue;
+    return this.lastError === null;
+  }
+
+  /**
+   * Returns the last persistence error, or null if none occurred.
+   */
+  public getLastError(): Error | null {
+    return this.lastError;
+  }
+
+  /**
+   * Returns true if any persistence operation has failed.
+   */
+  public hasPersistenceError(): boolean {
+    return this.lastError !== null;
+  }
+
   private async evictOldest(): Promise<void> {
     if (!this.cache || this.cache.length <= MAX_ENTRIES) {
       return;
@@ -149,8 +212,10 @@ export class LongTermMemoryStore {
         "utf8",
       );
       this.cacheMtimeMs = Date.now();
-    } catch {
+      this.lastError = null;
+    } catch (error) {
       // On write failure, reload cache from disk to stay consistent
+      this.captureError(error, "evict oldest");
       try {
         const raw = await fs.readFile(this.filePath, "utf8");
         const lines = raw.split(/\r?\n/).filter((l) => l.trim());
@@ -167,42 +232,47 @@ export class LongTermMemoryStore {
   private async readAll(): Promise<LongTermMemoryEntry[]> {
     await this.ensureFile();
 
-    const stats = await fs.stat(this.filePath);
-    if (this.cache && stats.mtimeMs <= this.cacheMtimeMs) {
-      return this.cache;
-    }
-
-    const raw = await fs.readFile(this.filePath, "utf8");
-    const lines = raw
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0);
-
-    const parsedEntries: LongTermMemoryEntry[] = [];
-    const recoveredLines: string[] = [];
-    let hadCorruption = false;
-
-    for (const line of lines) {
-      try {
-        const entry = JSON.parse(line) as LongTermMemoryEntry;
-        if (!entry?.id || !entry?.timestamp || !entry?.type) {
-          hadCorruption = true;
-          continue;
-        }
-        parsedEntries.push(entry);
-        recoveredLines.push(JSON.stringify(entry));
-      } catch {
-        hadCorruption = true;
+    try {
+      const stats = await fs.stat(this.filePath);
+      if (this.cache && stats.mtimeMs <= this.cacheMtimeMs) {
+        return this.cache;
       }
-    }
 
-    if (hadCorruption) {
-      await this.recoverFromCorruption(raw, recoveredLines);
-    }
+      const raw = await fs.readFile(this.filePath, "utf8");
+      const lines = raw
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
 
-    this.cache = parsedEntries;
-    this.cacheMtimeMs = stats.mtimeMs;
-    return parsedEntries;
+      const parsedEntries: LongTermMemoryEntry[] = [];
+      const recoveredLines: string[] = [];
+      let hadCorruption = false;
+
+      for (const line of lines) {
+        try {
+          const entry = JSON.parse(line) as LongTermMemoryEntry;
+          if (!entry?.id || !entry?.timestamp || !entry?.type) {
+            hadCorruption = true;
+            continue;
+          }
+          parsedEntries.push(entry);
+          recoveredLines.push(JSON.stringify(entry));
+        } catch {
+          hadCorruption = true;
+        }
+      }
+
+      if (hadCorruption) {
+        await this.recoverFromCorruption(raw, recoveredLines);
+      }
+
+      this.cache = parsedEntries;
+      this.cacheMtimeMs = stats.mtimeMs;
+      return parsedEntries;
+    } catch (error) {
+      this.captureError(error, "read all");
+      return this.cache ?? [];
+    }
   }
 
   private parseQuery(query: string): ParsedMemoryQuery {
@@ -312,6 +382,10 @@ export class LongTermMemoryStore {
     }
   }
 
+  /**
+   * Recover from corruption by writing the recovered lines back.
+   * This runs through the write queue to avoid racing with concurrent adds.
+   */
   private async recoverFromCorruption(
     rawContent: string,
     recoveredLines: string[],
@@ -330,6 +404,15 @@ export class LongTermMemoryStore {
       `${recovered}${recovered ? "\n" : ""}`,
       "utf8",
     );
+  }
+
+  private captureError(error: unknown, context: string): void {
+    const err =
+      error instanceof Error
+        ? new Error(`LongTermMemoryStore ${context}: ${error.message}`)
+        : new Error(`LongTermMemoryStore ${context}: ${String(error)}`);
+    this.lastError = err;
+    this.onError?.(err);
   }
 }
 

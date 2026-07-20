@@ -1,3 +1,16 @@
+/**
+ * NC-033 category: Integration tests — run in controlled fixtures with explicit binaries.
+ *
+ * These tests exercise real tool execution paths (TerminalTool.run, FileSystemTool,
+ * ToolRegistry.runToolCall) to verify that security boundaries hold at runtime.
+ * They create temporary filesystem structures and execute real commands.
+ *
+ * Some tests are platform-dependent (normalizeTerminalCommand translations) and
+ * use process.platform guards.
+ *
+ * For pure policy classification tests, see securityPolicyClassification.test.ts.
+ */
+
 import { describe, it, expect } from "vitest";
 import { TerminalTool, normalizeTerminalCommand } from "../src/tools/terminalTool";
 import { FileSystemTool } from "../src/tools/fileSystemTool";
@@ -8,6 +21,7 @@ import path from "path";
 import os from "os";
 
 const workspaceRoot = process.cwd();
+const IS_WINDOWS = process.platform === "win32";
 
 describe("Real Model Security Tests", () => {
   describe("Prompt injection resistance via terminal tool", () => {
@@ -214,9 +228,18 @@ describe("Real Model Security Tests", () => {
 
     it("deduplicates context entries", () => {
       const compressor = new ContextCompressor(8000);
+      // NC-041: content-hash dedup keeps contexts with same prefix but different content
       const base = "x".repeat(100);
       const contexts = [base + "AAAAA", base + "BBBBB", base + "CCCCC"];
       const deduped = compressor.deduplicateContext(contexts);
+      // All 3 are distinct (different endings), so no dedup occurs
+      expect(deduped.length).toBe(3);
+    });
+
+    it("deduplicates truly identical contexts", () => {
+      const compressor = new ContextCompressor(8000);
+      const content = "identical content for dedup test";
+      const deduped = compressor.deduplicateContext([content, content, content]);
       expect(deduped.length).toBe(1);
     });
   });
@@ -387,7 +410,7 @@ describe("Real Model Security Tests", () => {
   describe("normalizeTerminalCommand translations", () => {
     it("translates ls to Get-ChildItem on Windows", () => {
       const result = normalizeTerminalCommand("ls");
-      if (process.platform === "win32") {
+      if (IS_WINDOWS) {
         expect(result).toBe("Get-ChildItem");
       } else {
         expect(result).toBe("ls");
@@ -396,7 +419,7 @@ describe("Real Model Security Tests", () => {
 
     it("translates cat to Get-Content on Windows", () => {
       const result = normalizeTerminalCommand("cat file.txt");
-      if (process.platform === "win32") {
+      if (IS_WINDOWS) {
         expect(result).toBe("Get-Content file.txt");
       } else {
         expect(result).toBe("cat file.txt");
@@ -405,7 +428,7 @@ describe("Real Model Security Tests", () => {
 
     it("translates whoami to $env:USERNAME on Windows", () => {
       const result = normalizeTerminalCommand("whoami");
-      if (process.platform === "win32") {
+      if (IS_WINDOWS) {
         expect(result).toBe("$env:USERNAME");
       } else {
         expect(result).toBe("whoami");
@@ -414,7 +437,7 @@ describe("Real Model Security Tests", () => {
 
     it("translates pwd to Get-Location on Windows", () => {
       const result = normalizeTerminalCommand("pwd");
-      if (process.platform === "win32") {
+      if (IS_WINDOWS) {
         expect(result).toBe("Get-Location");
       } else {
         expect(result).toBe("pwd");

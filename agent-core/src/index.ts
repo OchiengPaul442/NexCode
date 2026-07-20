@@ -4,8 +4,46 @@ export * from "./orchestrator";
 export * from "./mcp";
 export { TokenCounter } from "./utils/tokenCounter";
 export {
+  validateProviderUrl,
+  isDefaultProviderUrl,
+  canProbeProviderEndpoint,
+} from "./utils/providerUrlValidation";
+export {
   detectModelCapabilities,
   type ModelCapabilities,
+  type FallbackCandidate,
+  type CandidateFailure,
 } from "./providers/modelRouter";
+export {
+  ModelCapabilityRegistry,
+  getModelCapabilityRegistry,
+  resetModelCapabilityRegistry,
+  type ModelCapabilityEntry,
+} from "./utils/modelCapabilityRegistry";
 export { TaskQueue, classifyPromptIntent } from "./taskQueue";
 export { TaskQueueManager } from "./taskManager";
+export {
+  validateWebviewMessage,
+  validateOpenFilePath,
+  isAllowedSettingKey,
+  getAllowedSettingKeys,
+  type ValidationResult,
+  type ValidMessageType,
+} from "./utils/webviewMessageValidation";
+export {
+  computeContentHash,
+  validateEditPreconditions,
+  type EditValidationResult,
+} from "./utils/editValidation";
+export {
+  checkPathWithinWorkspace,
+  isPathAbsoluteCrossPlatform,
+  containsNullBytes,
+  isPathSafeCrossPlatform,
+} from "./utils/pathContainment";
+export { atomicWriteFile } from "./tools/fileSystemTool";
+export {
+  RetryBudget,
+  createDefaultRetryBudget,
+  type RetryBudgetConfig,
+} from "./utils/retryBudget";

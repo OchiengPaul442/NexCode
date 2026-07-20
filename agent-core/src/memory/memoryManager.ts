@@ -6,13 +6,37 @@ import { redactSecrets } from "../utils/redact";
 
 export { redactSecrets } from "../utils/redact";
 
+export interface MemoryManagerOptions {
+  memoryDir: string;
+  /** Optional callback invoked when any persistence operation fails. */
+  onError?: (error: Error) => void;
+}
+
 export class MemoryManager {
   public readonly shortTerm: ShortTermMemory;
   public readonly longTerm: LongTermMemoryStore;
 
-  public constructor(memoryDir: string) {
-    this.shortTerm = new ShortTermMemory(40, memoryDir);
-    this.longTerm = new LongTermMemoryStore(memoryDir);
+  public constructor(memoryDirOrOptions: string | MemoryManagerOptions) {
+    let memoryDir: string;
+    let onError: ((error: Error) => void) | undefined;
+
+    if (typeof memoryDirOrOptions === "string") {
+      memoryDir = memoryDirOrOptions;
+      onError = undefined;
+    } else {
+      memoryDir = memoryDirOrOptions.memoryDir;
+      onError = memoryDirOrOptions.onError;
+    }
+
+    this.shortTerm = new ShortTermMemory({
+      maxMessagesPerSession: 40,
+      persistDir: memoryDir,
+      onError,
+    });
+    this.longTerm = new LongTermMemoryStore({
+      memoryDir,
+      onError,
+    });
   }
 
   public async initialize(): Promise<void> {
@@ -130,5 +154,40 @@ export class MemoryManager {
         return `${index + 1}. ${text}${timestamp}`;
       })
       .join("\n\n");
+  }
+
+  /**
+   * Flushes all pending persistence operations for both short-term and
+   * long-term memory stores.
+   * Returns true if all operations succeeded.
+   */
+  public async flush(): Promise<boolean> {
+    const [shortTermOk, longTermOk] = await Promise.all([
+      this.shortTerm.flush(),
+      this.longTerm.flush(),
+    ]);
+    return shortTermOk && longTermOk;
+  }
+
+  /**
+   * Flushes pending writes and prevents further persistence operations.
+   * Returns true if all operations succeeded.
+   */
+  public async dispose(): Promise<boolean> {
+    const [shortTermOk, longTermOk] = await Promise.all([
+      this.shortTerm.dispose(),
+      this.longTerm.dispose(),
+    ]);
+    return shortTermOk && longTermOk;
+  }
+
+  /**
+   * Returns true if any persistence operation has failed in either store.
+   */
+  public hasPersistenceError(): boolean {
+    return (
+      this.shortTerm.hasPersistenceError() ||
+      this.longTerm.hasPersistenceError()
+    );
   }
 }

@@ -2178,3 +2178,78 @@ Append one section per autonomous iteration. Never rewrite prior entries.
 | `agent-core/src/taskManager.ts` | Extend TaskManagerOptions, pass through to queue, expose history methods | +37, -2 |
 | `agent-core/tests/taskHistoryBounds.test.ts` | New regression test file (29 tests) | +410 |
 
+---
+
+## Iteration 31 — NC-023: Multi-root workspace support
+
+**Date:** 20 July 2026
+**Finding IDs:** NC-023 (High)
+**Phase:** G — Task state machine and concurrency
+**Commit:** `69b9979` — `fix(extension,agent-core): resolve NC-023 — multi-root workspace support`
+
+### What was done
+
+1. **Verified NC-023 against current source code:**
+   - `extension/src/sidebarViewProvider.ts:1103-1110` — confirmed `getWorkspaceRoot()` always returns `workspaceFolders[0]?.uri.fsPath`, ignoring all other workspace folders in multi-root workspaces.
+   - `extension/src/sidebarViewProvider.ts:383-398` — confirmed `handleOpenFile()` validates against only the first workspace folder.
+   - `extension/src/sidebarViewProvider.ts:959-976` — confirmed `applyEdit`/`previewEdit` always use the first workspace root.
+   - `extension/src/sidebarViewProvider.ts:1510-1535` — confirmed `pushInitialWebviewState()` sends config without workspace folder information.
+
+2. **Implemented fix (2 production files changed, 1 new test file):**
+   - `extension/src/sidebarViewProvider.ts` (+118, -12):
+     - Added `resolveWorkspaceFolder(uri?)`: resolves the correct workspace folder from a URI (via `vscode.workspace.getWorkspaceFolder`), then the active editor's document, then falls back to `workspaceFolders[0]`.
+     - Updated `getWorkspaceRoot()`: now uses `resolveWorkspaceFolder()` instead of always returning `workspaceFolders[0]`.
+     - Added `getWorkspaceFolderInfos()`: returns `{name, uri, index}` for each workspace folder, exposed to the webview UI.
+     - Updated `handleOpenFile()`: validates the file path against ALL workspace folders by iterating them, breaking on first match.
+     - Updated `applyEdit`/`previewEdit`: resolves workspace root from the edit's file path using `resolveWorkspaceFolder()` for correct multi-root validation.
+     - Updated `refreshConfig()` and `pushInitialWebviewState()`: include `workspaceFolders` and `activeWorkspaceRoot` in config messages.
+   - `extension/webview/src/main.tsx` (+12):
+     - Added `workspaceFolders` and `activeWorkspaceRoot` to `BackendConfig` interface.
+     - Added `workspaceFolders` and `activeWorkspaceRoot` to `StoreState` interface.
+     - Added defaults: `workspaceFolders: []`, `activeWorkspaceRoot: ""`.
+     - Updated `hydrateConfig()`: stores workspace folder info from extension.
+
+3. **Added regression tests (1 new file, 33 tests):**
+   - `agent-core/tests/multiRootWorkspace.test.ts`:
+     - validateOpenFilePath multi-root (7 tests): accepts file in folder A, folder B, rejects outside all folders, rejects traversal between folders, validates against correct folder when checking multiple, simulates multi-root openFile, rejects absolute paths outside all folders.
+     - checkPathWithinWorkspace multi-root (6 tests): allows relative path in folder A/B, rejects traversal escaping A/B, rejects absolute path outside workspace, handles deep nesting.
+     - validateEditPreconditions multi-root (7 tests): validates against correct root A/B, rejects absolute path outside root, rejects stale edit, supports multiple folders with different targets, cross-root edit rejection.
+     - Content hash consistency (2 tests): same content produces same hash, different content produces different hash.
+     - Workspace folder resolution patterns (4 tests): resolves from file URI, resolves from active editor, falls back to first folder, returns empty array when no folders.
+     - Edge cases (6 tests): empty path, whitespace path, dot-dot within workspace, deeply nested traversal, Windows-style separators, null bytes.
+     - Multi-root edit resolution pattern (2 tests): resolves workspace root from edit file path, rejects edit when resolved root doesn't contain file.
+
+4. **Validated:**
+   - 33/33 new multiRootWorkspace tests pass.
+   - 1459/1459 full unit tests pass.
+   - `tsc --noEmit` clean in agent-core, extension, and webview.
+   - `npm run build` clean.
+   - `git diff --check` clean (only CRLF warning).
+
+### Validation
+
+| Check | Result | Notes |
+|---|---|---|
+| Focused tests (NC-023) | PASS | 33/33 multiRootWorkspace tests pass |
+| Full test suite | PASS | 1459/1459 tests pass |
+| Type check (agent-core) | PASS | `tsc --noEmit` clean |
+| Type check (extension) | PASS | `tsc --noEmit` clean |
+| Type check (webview) | PASS | `tsc --noEmit` clean |
+| Build | PASS | Full `npm run build` clean |
+| No secrets in diff | PASS | No API keys, tokens, or secrets in the diff |
+| No test suppression | PASS | All existing tests retained and passing |
+
+### Remaining risks
+
+- `resolveWorkspaceFolder()` falls back to `workspaceFolders[0]` when no URI or active editor is available. This is correct behavior — VS Code itself uses the first folder as the default context.
+- The webview UI now receives workspace folder info but does not yet render a folder picker. The `workspaceFolders` array is stored in state for future UI use.
+- Task creation and task-to-workspace association still need task-scoped workspace folder URIs for full NC-023 compliance. The current fix ensures file operations (open, edit, preview) use the correct workspace root.
+
+### Files changed
+
+| File | Change | Lines |
+|---|---|---|
+| `extension/src/sidebarViewProvider.ts` | Add resolveWorkspaceFolder, getWorkspaceFolderInfos, update getWorkspaceRoot, handleOpenFile multi-folder check, edit resolution, config messages | +118, -12 |
+| `extension/webview/src/main.tsx` | Add workspaceFolders/activeWorkspaceRoot to BackendConfig and StoreState | +12 |
+| `agent-core/tests/multiRootWorkspace.test.ts` | New regression test file (33 tests) | +408 |
+

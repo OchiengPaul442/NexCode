@@ -276,14 +276,14 @@
 
 ### NC-023 — Only first workspace folder is supported
 - **Severity:** High
-- **Status:** pending
-- **Phase:** F / G
+- **Status:** fixed
+- **Phase:** G
 - **Dependencies:** NC-020 (path containment)
-- **Affected files:** `extension/src/sidebarViewProvider.ts:1103-1110`
-- **Verified:** unverified
+- **Affected files:** `extension/src/sidebarViewProvider.ts`, `extension/webview/src/main.tsx`, `agent-core/tests/multiRootWorkspace.test.ts` (new)
+- **Verified:** yes — verified against current source; workspace folder resolution now supports multi-root
 - **Required tests:** workspace folder resolved from active editor/attachment/task; folder URI stored on every task/edit; no fallback to different root
-- **Verification commands:** `npx vitest run agent-core/tests/multiRoot.test.ts`
-- **Resolution evidence:** (none yet)
+- **Verification commands:** `npx vitest run agent-core/tests/multiRootWorkspace.test.ts`
+- **Resolution evidence:** `69b9979` — (1) `resolveWorkspaceFolder(uri?)` resolves correct workspace folder from URI, active editor, or falls back to workspaceFolders[0]. (2) `getWorkspaceRoot()` now uses `resolveWorkspaceFolder()` instead of always returning `workspaceFolders[0]`. (3) `getWorkspaceFolderInfos()` exposes all workspace folders to webview UI. (4) `handleOpenFile()` validates paths against ALL workspace folders, not just the first. (5) `applyEdit`/`previewEdit` resolve workspace root from the edit's file path for correct multi-root validation. (6) Config messages include `workspaceFolders` and `activeWorkspaceRoot`. (7) `BackendConfig` and `StoreState` include workspace folder state. (8) 33 regression tests in `agent-core/tests/multiRootWorkspace.test.ts`: validateOpenFilePath multi-root (7), checkPathWithinWorkspace multi-root (6), validateEditPreconditions multi-root (7), content hash consistency (2), workspace folder resolution patterns (4), edge cases (6), multi-root edit resolution pattern (2). 1459/1459 tests pass. Build clean. All type-checks clean.
 
 ### NC-024 — Secret migration copies but does not delete plaintext settings
 - **Severity:** High

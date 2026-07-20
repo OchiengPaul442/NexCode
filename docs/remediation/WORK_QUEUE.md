@@ -247,14 +247,15 @@
 
 ### NC-021 — Directory clearing follows symlinks and deletes targets
 - **Severity:** High
-- **Status:** pending
+- **Status:** fixed
 - **Phase:** F
 - **Dependencies:** NC-020 (path containment)
-- **Affected files:** `agent-core/src/tools/fileSystemTool.ts:160-183`
-- **Verified:** unverified
+- **Affected files:** `agent-core/src/tools/fileSystemTool.ts:143-175,177-229`
+- **Verified:** yes — verified against current source; clearDirectory and deletePath now unlink symlinks instead of following targets
 - **Required tests:** symlink deletes unlink the symlink; never follow symlinks for delete/clear; containment rechecked before mutation
 - **Verification commands:** `npx vitest run agent-core/tests/symlinkDelete.test.ts`
-- **Resolution evidence:** (none yet)
+- **Resolution evidence:** `agent-core/src/tools/fileSystemTool.ts` changed: (1) `clearDirectory()` now uses `Dirent.isSymbolicLink()` to detect symlinks without following them. For symlinks: resolves target with `realpath()` for containment check, then calls `fs.unlink(entryPath)` — removes only the symlink, never the resolved target. For broken symlinks: unlinks safely. For directories/files: containment check then `fs.rm()` as before. (2) `deletePath()` now uses `fs.lstat()` to detect symlinks without following them. For symlinks: `fs.unlink()` removes only the symlink. For regular entries: `fs.rm()` as before. (3) 12 regression tests in `agent-core/tests/symlinkDelete.test.ts`: deletePath unlinks symlink to file (target survives), deletePath unlinks symlink to directory (target survives), deletePath unlinks symlink pointing outside workspace, deletePath unlinks broken symlink, clearDirectory unlinks in-workspace symlinks (targets survive), clearDirectory skips outside-workspace symlinks, clearDirectory handles broken symlinks, clearDirectory handles mixed files/dirs/symlinks, clearDirectory symlink to directory only removes symlink, regular file delete still works, empty directory clear works, traversal rejection for symlinks. 1021/1021 unit tests pass. Build clean. All type-checks clean.
+- **Remaining risk:** None — the symlink handling is correct: symlinks are unlinked (not followed), targets survive, containment is checked for out-of-workspace targets.
 
 ### NC-022 — Workspace prompt files can silently replace trusted system prompts
 - **Severity:** High

@@ -3,28 +3,28 @@
   "project": "NexCode",
   "status": "in_progress",
   "bootstrapRequired": false,
-  "iteration": 16,
+  "iteration": 17,
   "currentPhase": "F",
   "totalFindings": 45,
   "counts": {
-    "pending": 28,
+    "pending": 27,
     "inProgress": 0,
-    "fixed": 17,
+    "fixed": 18,
     "blocked": 0,
     "obsolete": 0,
     "falsePositive": 0
   },
   "activeFindingIds": [],
-  "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004", "NC-005", "NC-006", "NC-007", "NC-008", "NC-009", "NC-010", "NC-016", "NC-017", "NC-020", "NC-022", "NC-024", "NC-028", "NC-035"],
+  "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004", "NC-005", "NC-006", "NC-007", "NC-008", "NC-009", "NC-010", "NC-016", "NC-017", "NC-020", "NC-021", "NC-022", "NC-024", "NC-028", "NC-035"],
   "blockedFindingIds": [],
-  "lastCommit": "82b4a60",
-  "lastSummary": "NC-020 fixed: Cross-platform path containment. (1) Added isPathAbsoluteCrossPlatform() that detects Windows absolute paths (drive letters, drive-relative, UNC, device, extended-length) on any host OS. (2) Added containsNullBytes() validator. (3) Added isPathSafeCrossPlatform() composite check. (4) Both resolveWorkspacePath() and checkPathWithinWorkspace() now apply cross-platform safety checks for non-host-absolute paths, while still allowing host-absolute paths through the existing containment logic. (5) Updated editValidation.test.ts null-byte test to expect rejection. (6) 61 new cross-platform path containment tests cover: isPathAbsoluteCrossPlatform (23 tests), containsNullBytes (5 tests), isPathSafeCrossPlatform (8 tests), checkPathWithinWorkspace cross-platform (19 tests), resolveWorkspacePath cross-platform (8 tests). (7) Exported new utilities from barrel. 1009/1009 unit tests pass. Build clean. All type-checks clean.",
+  "lastCommit": "pending",
+  "lastSummary": "NC-021 fixed: Directory clearing follows symlinks and deletes targets. (1) clearDirectory() now uses Dirent.isSymbolicLink() to detect symlinks, resolves target for containment check, then calls fs.unlink(entryPath) to remove only the symlink itself — never deleting the resolved target. (2) deletePath() now uses fs.lstat() to detect symlinks without following them, then fs.unlink() for symlinks and fs.rm() for regular files/dirs. (3) Broken symlinks are safely unlinked. (4) 12 new regression tests in symlinkDelete.test.ts covering: deletePath unlinks symlink to file (target survives), deletePath unlinks symlink to directory (target survives), deletePath unlinks symlink pointing outside workspace, deletePath unlinks broken symlink, clearDirectory unlinks in-workspace symlinks (targets survive), clearDirectory skips outside-workspace symlinks, clearDirectory handles broken symlinks, clearDirectory handles mixed files/dirs/symlinks, clearDirectory symlink to directory only removes symlink, regular file delete still works, empty directory clear works, traversal rejection for symlinks. 1021/1021 unit tests pass. Build clean. All type-checks clean.",
   "lastVerification": {
-    "focusedTests": "PASS — 61/61 crossPlatformPathContainment tests pass",
+    "focusedTests": "PASS — 12/12 symlinkDelete tests pass",
     "typecheck": "PASS — agent-core, extension, and webview tsc --noEmit all clean",
     "lint": "PASS — no lint configured beyond tsc (NC-030)",
     "build": "PASS — full npm run build clean",
-    "fullTests": "PASS — 1009/1009 unit tests pass (3 pre-existing e2e failures unrelated)",
+    "fullTests": "PASS — 1021/1021 unit tests pass (3 pre-existing e2e failures unrelated)",
     "packaging": "SKIPPED — not attempted this iteration"
   }
 }

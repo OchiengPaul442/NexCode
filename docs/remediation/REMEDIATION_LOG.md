@@ -1225,3 +1225,68 @@ Append one section per autonomous iteration. Never rewrite prior entries.
 | `agent-core/tests/editValidation.test.ts` | Update null-byte test to expect rejection | -7 |
 | `agent-core/tests/crossPlatformPathContainment.test.ts` | New regression test file | +343 |
 
+---
+
+## Iteration 17 — NC-021: Symlink delete — unlink symlinks instead of following targets
+
+**Date:** 20 July 2026
+**Finding IDs:** NC-021 (High)
+**Phase:** F — Filesystem and edit integrity
+
+### What was done
+
+1. **Verified NC-021 against current source code:**
+   - `agent-core/src/tools/fileSystemTool.ts:160-183` — confirmed `clearDirectory()` uses `fs.realpath(entryPath)` to resolve symlinks to their real targets, then calls `fs.rm(resolvedEntry, { recursive: true, force: true })` which deletes the resolved target's contents rather than unlinking the symlink entry itself. For in-workspace symlinks, this causes the target file/directory to be deleted. For out-of-workspace symlinks, the containment check skips them (correct behavior), but the architecture is still wrong.
+   - `agent-core/src/tools/fileSystemTool.ts:143-158` — confirmed `deletePath()` uses `fs.rm(absolutePath, { recursive: true, force: true })` which follows symlinks and deletes the target.
+
+2. **Implemented fix (1 production file changed):**
+   - `agent-core/src/tools/fileSystemTool.ts`:
+     - `clearDirectory()` (+38, -18): Now uses `entry.isSymbolicLink()` from `Dirent` to detect symlinks without following them. For symlinks: resolves target with `realpath()` for containment check, then calls `fs.unlink(entryPath)` — removes only the symlink, never the resolved target. For broken symlinks: unlinks safely (realpath failure caught). For directories: containment check then `fs.rm(entryPath, { recursive: true })`. For files: containment check then `fs.rm(entryPath, { force: true })`.
+     - `deletePath()` (+16, -4): Now uses `fs.lstat()` to detect symlinks without following them. For symlinks: `fs.unlink()` removes only the symlink. For regular entries: `fs.rm()` as before.
+
+3. **Added regression tests (1 new file, 12 tests):**
+   - `agent-core/tests/symlinkDelete.test.ts`:
+     - deletePath unlinks symlink to file (target survives)
+     - deletePath unlinks symlink to directory (target survives)
+     - deletePath unlinks symlink pointing outside workspace
+     - deletePath unlinks broken symlink
+     - clearDirectory unlinks in-workspace symlinks (target files survive)
+     - clearDirectory skips symlinks pointing outside workspace
+     - clearDirectory handles broken symlinks gracefully
+     - clearDirectory handles mixed files, directories, and symlinks
+     - clearDirectory symlink to in-workspace directory — only symlink removed, not target dir contents
+     - deletePath regular file still works after symlink fixes
+     - clearDirectory empty directory works after symlink fixes
+     - clearDirectory rejects traversal even for symlinks
+
+4. **Validated:**
+   - 12/12 new symlinkDelete tests pass.
+   - 1021/1021 full unit tests pass (3 pre-existing e2e failures unrelated).
+   - `tsc --noEmit` clean in agent-core, extension, and webview.
+   - `npm run build` clean.
+
+### Validation
+
+| Check | Result | Notes |
+|---|---|---|
+| Focused tests (NC-021) | PASS | 12/12 symlinkDelete tests pass |
+| Existing filesystem tests | PASS | 11/11 fileSystemTool tests pass, 61/61 realModelSecurity tests pass |
+| Full test suite | PASS | 1021/1021 unit tests pass; 3 pre-existing e2e failures |
+| Type check (agent-core) | PASS | `tsc --noEmit` clean |
+| Type check (extension) | PASS | `tsc --noEmit` clean |
+| Type check (webview) | PASS | `tsc --noEmit` clean |
+| Build | PASS | Full `npm run build` clean |
+| No secrets in diff | PASS | No API keys, tokens, or secrets in the diff |
+| No test suppression | PASS | All existing tests retained and passing |
+
+### Remaining risks
+
+- None. The symlink handling is now correct: symlinks are unlinked (not followed), targets survive, containment is checked for out-of-workspace targets, broken symlinks are safely unlinked, and mixed directories with files, dirs, and symlinks are handled correctly.
+
+### Files changed
+
+| File | Change | Lines |
+|---|---|---|
+| `agent-core/src/tools/fileSystemTool.ts` | Fix clearDirectory to unlink symlinks; fix deletePath to use lstat+unlink for symlinks | +54, -22 |
+| `agent-core/tests/symlinkDelete.test.ts` | New regression test file | +273 |
+

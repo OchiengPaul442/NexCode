@@ -144,7 +144,24 @@ export class FileSystemTool {
     try {
       const absolutePath = await this.resolveWorkspacePathSafe(targetPath);
       this.ensureNotWorkspaceRoot(absolutePath, targetPath);
-      await fs.rm(absolutePath, { recursive: true, force: true });
+
+      // Use lstat to detect symlinks without following them.
+      // Unlink the symlink itself rather than deleting its target.
+      let stat: import("fs").Stats;
+      try {
+        stat = await fs.lstat(absolutePath);
+      } catch {
+        // Path doesn't exist — let rm handle the error.
+        await fs.rm(absolutePath, { recursive: true, force: true });
+        return { ok: true, output: `Deleted ${targetPath}` };
+      }
+
+      if (stat.isSymbolicLink()) {
+        await fs.unlink(absolutePath);
+      } else {
+        await fs.rm(absolutePath, { recursive: true, force: true });
+      }
+
       return {
         ok: true,
         output: `Deleted ${targetPath}`,
@@ -165,21 +182,38 @@ export class FileSystemTool {
 
       for (const entry of entries) {
         const entryPath = path.join(absolutePath, entry.name);
-        // Resolve symlinks to prevent escape via symlinked entries
-        let resolvedEntry: string;
-        try {
-          resolvedEntry = await fs.realpath(entryPath);
-        } catch {
-          resolvedEntry = entryPath;
+
+        if (entry.isSymbolicLink()) {
+          // Symlink: resolve target for containment check, but unlink the
+          // symlink itself rather than deleting the resolved target.
+          let resolvedTarget: string;
+          try {
+            resolvedTarget = await fs.realpath(entryPath);
+          } catch {
+            // Broken symlink — resolve target failed; still safe to unlink.
+            await fs.unlink(entryPath);
+            continue;
+          }
+          const relative = path.relative(this.workspaceRoot, resolvedTarget);
+          if (relative.startsWith("..") || path.isAbsolute(relative)) {
+            continue; // skip symlinks whose target escapes workspace
+          }
+          await fs.unlink(entryPath);
+        } else if (entry.isDirectory()) {
+          // Real directory (not a symlink): check containment then remove.
+          const relative = path.relative(this.workspaceRoot, entryPath);
+          if (relative.startsWith("..") || path.isAbsolute(relative)) {
+            continue;
+          }
+          await fs.rm(entryPath, { recursive: true, force: true });
+        } else {
+          // Regular file: check containment then remove.
+          const relative = path.relative(this.workspaceRoot, entryPath);
+          if (relative.startsWith("..") || path.isAbsolute(relative)) {
+            continue;
+          }
+          await fs.rm(entryPath, { force: true });
         }
-        const relative = path.relative(this.workspaceRoot, resolvedEntry);
-        if (relative.startsWith("..") || path.isAbsolute(relative)) {
-          continue; // skip entries that escape workspace
-        }
-        await fs.rm(resolvedEntry, {
-          recursive: true,
-          force: true,
-        });
       }
 
       return {

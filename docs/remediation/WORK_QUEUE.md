@@ -213,14 +213,15 @@
 
 ### NC-018 — Batch edits are sequential and non-transactional
 - **Severity:** High
-- **Status:** pending
+- **Status:** fixed
 - **Phase:** F
 - **Dependencies:** NC-019 (atomic writes), NC-006 (edit preconditions)
-- **Affected files:** `agent-core/src/tools/toolRegistry.ts` batch-edit execution paths
-- **Verified:** unverified
+- **Affected files:** `agent-core/src/tools/toolRegistry.ts:331-486`
+- **Verified:** yes — verified against current source; pre-validation, atomic writes, and rollback implemented
 - **Required tests:** batch edit rollback leaves no partial modifications; full edit set validated before writing; duplicate/conflicting paths rejected
-- **Verification commands:** `npx vitest run agent-core/tests/batchEdit.test.ts`
-- **Resolution evidence:** (none yet)
+- **Verification commands:** `npx vitest run agent-core/tests/batchEditTransactional.test.ts`
+- **Resolution evidence:** `agent-core/src/tools/toolRegistry.ts` changed: (1) Pre-validation phase: resolves all paths and checks for duplicates/traversal before any writes. Rejects entire batch if validation fails. (2) Atomic writes: all create/update operations use atomicWriteFile() instead of direct fs.writeFile(). (3) Rollback on failure: captures original state before each edit; on failure, rolls back all prior edits in reverse order. (4) Early termination: stops processing on first failure. (5) Removed dead executeBatchEditItem() method. 20 regression tests in batchEditTransactional.test.ts. 1066/1066 unit tests pass. Build clean. All type-checks clean.
+- **Remaining risk:** Directory delete rollback is not fully supported (cannot meaningfully re-create a deleted directory tree). This is documented in the code as a known limitation.
 
 ### NC-019 — File writes are non-atomic and patch semantics are ambiguous
 - **Severity:** High

@@ -1,7 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 import { ToolResult } from "../types";
-import { FileSystemTool } from "./fileSystemTool";
+import { FileSystemTool, atomicWriteFile } from "./fileSystemTool";
 import { GitTool } from "./gitTool";
 import { McpRegistry } from "../mcp/mcpRegistry";
 import { FilesystemAdapter } from "../mcp/adapters/filesystemAdapter";
@@ -331,18 +331,154 @@ export class ToolRegistry {
       case "batch_edit": {
         try {
           const batchArgs = JSON.parse(arg);
-          const results: ToolResult[] = [];
+          const edits: Array<{ filePath: string; content: string; operation: string }> = batchArgs.edits;
 
-          for (const edit of batchArgs.edits) {
-            const batchResult = await this.executeBatchEditItem(edit);
-            results.push(batchResult);
+          // Phase 1: Pre-validate the full edit set before writing anything.
+          const resolvedPaths = new Map<number, string>();
+          const seenPaths = new Set<string>();
+          const validationErrors: string[] = [];
+
+          for (let i = 0; i < edits.length; i++) {
+            const edit = edits[i];
+            try {
+              const absolutePath = await this.filesystem.resolveWorkspacePathSafe(edit.filePath);
+              resolvedPaths.set(i, absolutePath);
+              const normalized = path.normalize(absolutePath);
+              if (seenPaths.has(normalized)) {
+                validationErrors.push(`Duplicate path in batch: ${edit.filePath}`);
+              }
+              seenPaths.add(normalized);
+            } catch (error) {
+              validationErrors.push(`Path ${edit.filePath}: ${String(error)}`);
+            }
           }
 
-          const successCount = results.filter(r => r.ok).length;
-          result = {
-            ok: successCount === results.length,
-            output: `Batch edit: ${successCount}/${results.length} succeeded`,
-          };
+          if (validationErrors.length > 0) {
+            result = {
+              ok: false,
+              output: `Batch edit rejected during pre-validation:\n${validationErrors.join("\n")}`,
+            };
+            break;
+          }
+
+          // Phase 2: Save original content for rollback and execute edits.
+          // Rollback info: for each edit, store what needs to be undone.
+          const rollbackActions: Array<() => Promise<void>> = [];
+          const results: ToolResult[] = [];
+          let failed = false;
+
+          for (let i = 0; i < edits.length; i++) {
+            if (failed) break;
+            const edit = edits[i];
+            const absolutePath = resolvedPaths.get(i)!;
+
+            try {
+              switch (edit.operation) {
+                case "create": {
+                  // Save rollback: delete the file we're about to create (if it didn't exist).
+                  let existedBefore = false;
+                  try {
+                    await fs.access(absolutePath);
+                    existedBefore = true;
+                  } catch {
+                    // File doesn't exist — good, we'll create it.
+                  }
+                  if (!existedBefore) {
+                    rollbackActions.push(async () => {
+                      try { await fs.rm(absolutePath, { force: true }); } catch { /* best effort */ }
+                    });
+                  }
+                  await atomicWriteFile(absolutePath, edit.content);
+                  results.push({ ok: true, output: `Created ${edit.filePath}` });
+                  break;
+                }
+                case "update": {
+                  // Save original content for rollback.
+                  let originalContent: string;
+                  try {
+                    originalContent = await fs.readFile(absolutePath, "utf8");
+                  } catch {
+                    rollbackActions.push(async () => {
+                      try { await fs.rm(absolutePath, { force: true }); } catch { /* best effort */ }
+                    });
+                    originalContent = "";
+                  }
+                  const capturedOriginal = originalContent!;
+                  const capturedPath = absolutePath;
+                  rollbackActions.push(async () => {
+                    try {
+                      await atomicWriteFile(capturedPath, capturedOriginal);
+                    } catch { /* best effort rollback */ }
+                  });
+                  await atomicWriteFile(absolutePath, edit.content);
+                  results.push({ ok: true, output: `Updated ${edit.filePath}` });
+                  break;
+                }
+                case "delete": {
+                  // Save original content for rollback (re-create the file/dir).
+                  let deletedContent: string | null = null;
+                  let deletedWasDir = false;
+                  try {
+                    const stat = await fs.stat(absolutePath);
+                    if (stat.isDirectory()) {
+                      deletedWasDir = true;
+                    } else {
+                      deletedContent = await fs.readFile(absolutePath, "utf8");
+                    }
+                  } catch {
+                    // File doesn't exist — delete is a no-op, rollback is no-op.
+                  }
+                  if (deletedContent !== null) {
+                    const capturedPath2 = absolutePath;
+                    const capturedContent2 = deletedContent;
+                    rollbackActions.push(async () => {
+                      try { await atomicWriteFile(capturedPath2, capturedContent2); } catch { /* best effort */ }
+                    });
+                  } else if (deletedWasDir) {
+                    // Cannot meaningfully rollback a directory delete; skip.
+                  }
+                  this.filesystem.ensureNotWorkspaceRootPublic(absolutePath, edit.filePath);
+                  await fs.rm(absolutePath, { recursive: true, force: true });
+                  results.push({ ok: true, output: `Deleted ${edit.filePath}` });
+                  break;
+                }
+                default:
+                  results.push({ ok: false, output: `Unknown operation: ${edit.operation}` });
+                  failed = true;
+                  break;
+              }
+            } catch (error) {
+              results.push({ ok: false, output: `Failed to ${edit.operation} ${edit.filePath}: ${String(error)}` });
+              failed = true;
+            }
+          }
+
+          // Phase 3: Roll back all changes if any edit failed.
+          if (failed && rollbackActions.length > 0) {
+            const rollbackErrors: string[] = [];
+            // Roll back in reverse order.
+            for (let r = rollbackActions.length - 1; r >= 0; r--) {
+              try {
+                await rollbackActions[r]();
+              } catch (rollbackError) {
+                rollbackErrors.push(`Rollback ${r}: ${String(rollbackError)}`);
+              }
+            }
+            const successCount = results.filter(r => r.ok).length;
+            const rollbackNote = rollbackErrors.length > 0
+              ? `\nRollback errors: ${rollbackErrors.join("; ")}`
+              : "\nAll changes rolled back successfully.";
+            result = {
+              ok: false,
+              output: `Batch edit: ${successCount}/${results.length} succeeded before failure.${rollbackNote}`,
+            };
+          } else {
+            const successCount = results.filter(r => r.ok).length;
+            result = {
+              ok: successCount === results.length,
+              output: `Batch edit: ${successCount}/${results.length} succeeded`,
+            };
+          }
         } catch (error) {
           result = { ok: false, output: `Batch edit failed: ${error}` };
         }
@@ -525,30 +661,4 @@ export class ToolRegistry {
     return trimmed.split(/\s+/).filter(Boolean);
   }
 
-  private async executeBatchEditItem(edit: { filePath: string; content: string; operation: string }): Promise<ToolResult> {
-    try {
-      const absolutePath = await this.filesystem.resolveWorkspacePathSafe(edit.filePath);
-
-      switch (edit.operation) {
-        case "create": {
-          await fs.mkdir(path.dirname(absolutePath), { recursive: true });
-          await fs.writeFile(absolutePath, edit.content, "utf8");
-          return { ok: true, output: `Created ${edit.filePath}` };
-        }
-        case "update": {
-          await fs.writeFile(absolutePath, edit.content, "utf8");
-          return { ok: true, output: `Updated ${edit.filePath}` };
-        }
-        case "delete": {
-          this.filesystem.ensureNotWorkspaceRootPublic(absolutePath, edit.filePath);
-          await fs.rm(absolutePath, { recursive: true, force: true });
-          return { ok: true, output: `Deleted ${edit.filePath}` };
-        }
-        default:
-          return { ok: false, output: `Unknown operation: ${edit.operation}` };
-      }
-    } catch (error) {
-      return { ok: false, output: `Failed to ${edit.operation} ${edit.filePath}: ${String(error)}` };
-    }
-  }
 }

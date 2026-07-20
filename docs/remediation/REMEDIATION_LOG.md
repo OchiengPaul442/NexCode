@@ -1362,3 +1362,71 @@ Append one section per autonomous iteration. Never rewrite prior entries.
 | `agent-core/src/index.ts` | Export atomicWriteFile | +1 |
 | `agent-core/tests/fileWrites.test.ts` | New regression test file | +307 |
 
+---
+
+## Iteration 19 — NC-018: Batch edits transactional with rollback
+
+**Date:** 20 July 2026
+**Finding IDs:** NC-018 (High)
+**Phase:** F — Filesystem and edit integrity
+
+### What was done
+
+1. **Verified NC-018 against current source code:**
+   - `agent-core/src/tools/toolRegistry.ts:331-350` — confirmed `batch_edit` case loops through edits calling `executeBatchEditItem()` one by one, accumulating results. No pre-validation, no rollback, no atomic writes.
+   - `agent-core/src/tools/toolRegistry.ts:528-554` — confirmed `executeBatchEditItem()` uses `fs.writeFile()` directly for create/update operations (non-atomic), and has no precondition checks. If item 4 fails after items 1-3 succeed, the workspace is partially modified.
+
+2. **Implemented fix (1 production file changed):**
+   - `agent-core/src/tools/toolRegistry.ts`:
+     - Added `import { atomicWriteFile } from "./fileSystemTool"`.
+     - Replaced the simple `batch_edit` case handler with a three-phase transactional implementation:
+       - **Phase 1 — Pre-validation**: Resolves all edit paths upfront using `resolveWorkspacePathSafe()`. Checks for duplicate normalized paths (rejects batch if duplicates found). Checks for path traversal (rejects batch if any path fails resolution). If any validation error, the entire batch is rejected before any writes occur.
+       - **Phase 2 — Execution with rollback tracking**: Before each edit, captures the original state: for `create`, checks if file existed and records a delete-rollback; for `update`, reads original content and records a write-rollback; for `delete`, reads file content and records a create-rollback. Uses `atomicWriteFile()` for all create/update operations. Stops processing on first failure.
+       - **Phase 3 — Rollback**: If any edit failed, rolls back all prior successful edits in reverse order. Reports which edits succeeded before the failure. If no rollback actions exist (first item failed), reports standard failure count.
+     - Removed the old `executeBatchEditItem()` private method (26 lines) — its logic is now in the transactional handler.
+
+3. **Added regression tests (1 new file, 20 tests):**
+   - `agent-core/tests/batchEditTransactional.test.ts`:
+     - Pre-validation rejects before any writes (4 tests): duplicate normalized paths, traversal path, both errors combined, unique valid paths accepted.
+     - Rollback on failure (7 tests): create rolled back on later failure, update rolled back restoring original, delete rolled back re-creating file, multiple edits rolled back in reverse, correct count reported, early termination after failure, unknown operation triggers rollback.
+     - Atomic writes in batch (2 tests): create uses atomicWriteFile, update uses atomicWriteFile, no temp files left.
+     - Successful mixed-operation batch (2 tests): create+update+delete, three create operations.
+     - No partial modifications (2 tests): pre-validation keeps workspace unchanged, rollback keeps workspace unchanged.
+     - Edge cases (3 tests): empty batch succeeds, single-item succeeds, single-item failure.
+
+4. **Validated:**
+   - 20/20 new batchEditTransactional tests pass.
+   - 13/13 existing batchEditSecurity tests pass.
+   - 29/29 existing malformedToolCalls tests pass.
+   - 1066/1066 full unit tests pass (3 pre-existing e2e failures unrelated).
+   - `tsc --noEmit` clean in agent-core, extension, and webview.
+   - `npm run build` clean.
+   - `git diff --check` clean.
+
+### Validation
+
+| Check | Result | Notes |
+|---|---|---|
+| Focused tests (NC-018) | PASS | 20/20 batchEditTransactional tests pass |
+| Existing batch tests | PASS | 13/13 batchEditSecurity tests pass |
+| Full test suite | PASS | 1066/1066 unit tests pass; 3 pre-existing e2e failures |
+| Type check (agent-core) | PASS | `tsc --noEmit` clean |
+| Type check (extension) | PASS | `tsc --noEmit` clean |
+| Type check (webview) | PASS | `tsc --noEmit` clean |
+| Build | PASS | Full `npm run build` clean |
+| No secrets in diff | PASS | No API keys, tokens, or secrets in the diff |
+| No test suppression | PASS | All existing tests retained and passing |
+
+### Remaining risks
+
+- Directory delete rollback is not fully supported. If a `delete` on a directory succeeds and a later edit fails, the directory and its contents cannot be meaningfully restored. This is documented in the code as a known limitation.
+- The `update` operation creates files that don't exist (ENOENT is handled gracefully), so "update a non-existent file" doesn't fail — this is by design, as the operation is idempotent.
+- Per-file serialization (locking) for concurrent writes is not implemented. NC-010 already limits concurrency to 1, so concurrent write races are not possible in the current configuration.
+
+### Files changed
+
+| File | Change | Lines |
+|---|---|---|
+| `agent-core/src/tools/toolRegistry.ts` | Add transactional batch_edit with pre-validation, atomic writes, rollback; import atomicWriteFile; remove dead executeBatchEditItem | +140, -30 |
+| `agent-core/tests/batchEditTransactional.test.ts` | New regression test file | +310 |
+

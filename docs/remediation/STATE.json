@@ -3,28 +3,29 @@
   "project": "NexCode",
   "status": "in_progress",
   "bootstrapRequired": false,
-  "iteration": 18,
+  "iteration": 19,
   "currentPhase": "F",
   "totalFindings": 45,
   "counts": {
-    "pending": 26,
+    "pending": 25,
     "inProgress": 0,
-    "fixed": 19,
+    "fixed": 20,
     "blocked": 0,
     "obsolete": 0,
     "falsePositive": 0
   },
   "activeFindingIds": [],
-  "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004", "NC-005", "NC-006", "NC-007", "NC-008", "NC-009", "NC-010", "NC-016", "NC-017", "NC-019", "NC-020", "NC-021", "NC-022", "NC-024", "NC-028", "NC-035"],
+  "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004", "NC-005", "NC-006", "NC-007", "NC-008", "NC-009", "NC-010", "NC-016", "NC-017", "NC-018", "NC-019", "NC-020", "NC-021", "NC-022", "NC-024", "NC-028", "NC-035"],
   "blockedFindingIds": [],
-  "lastCommit": "7e285a1",
-  "lastSummary": "NC-019 fixed: File writes are non-atomic and patch semantics are ambiguous. (1) Added atomicWriteFile() — writes to a temp file (.nexcode-tmp-{uuid}) then fs.rename() over target. Rename is atomic on POSIX and near-atomic on NTFS, preventing truncation on crash. Preserves existing file permissions. Cleans up temp file on failure. (2) writeFile() now uses atomicWriteFile() instead of direct fs.writeFile(). (3) patchFile() now requires unique match — counts occurrences of oldText via split().length-1 and rejects patches where matchCount > 1 with guidance to provide surrounding context. (4) patchFile() now uses atomicWriteFile() instead of direct fs.writeFile(). (5) Orchestrator applyProposedEdit() now uses atomicWriteFile() instead of direct fs.writeFile()+fs.mkdir(). (6) 25 new regression tests in fileWrites.test.ts: atomicWriteFile (10 tests: create, overwrite, preserve on failure, temp cleanup, parent dirs, permissions, empty, large, multiple writes), writeFile atomic behavior (5 tests: write, overwrite, parent dirs, traversal, temp cleanup), patchFile unique match (10 tests: unique match, reject 2 occurrences, reject 3, not found, atomic write, preserve on failure×2, byte count, traversal, empty string). 1045/1045 unit tests pass. Build clean. All type-checks clean.",
+  "lastCommit": "pending",
+  "lastSummary": "NC-018 fixed: Batch edits are sequential and non-transactional. (1) Pre-validation phase: all edit paths are resolved and checked for duplicates/traversal BEFORE any writes. If pre-validation fails, the entire batch is rejected with no side effects. (2) Atomic writes: all create and update operations now use atomicWriteFile() (temp-file + rename) instead of direct fs.writeFile(), preventing truncation on crash. (3) Rollback on failure: before each edit, original state is captured (file content for update, existence for create, content for delete). If any edit fails, all prior edits are rolled back in reverse order. (4) Early termination: once an edit fails, no further edits are attempted. (5) Removed dead executeBatchEditItem() method — logic is now in the transactional batch_edit handler. (6) 20 new regression tests in batchEditTransactional.test.ts: pre-validation duplicate paths (4 tests), pre-validation traversal (3 tests), rollback create/update/delete (3 tests), rollback multiple edits reverse order (1 test), rollback count reporting (1 test), early termination (1 test), unknown operation rollback (1 test), atomic writes (2 tests), mixed-operation batches (2 tests), no partial modifications (2 tests), edge cases (3 tests). 1066/1066 unit tests pass. Build clean. All type-checks clean.",
   "lastVerification": {
-    "focusedTests": "PASS — 25/25 fileWrites tests pass",
+    "focusedTests": "PASS — 20/20 batchEditTransactional tests pass",
+    "existingBatchTests": "PASS — 13/13 batchEditSecurity tests pass",
     "typecheck": "PASS — agent-core, extension, and webview tsc --noEmit all clean",
     "lint": "PASS — no lint configured beyond tsc (NC-030)",
     "build": "PASS — full npm run build clean",
-    "fullTests": "PASS — 1045/1045 unit tests pass (1 pre-existing approvalPolicy path issue)",
+    "fullTests": "PASS — 1066/1066 unit tests pass (3 pre-existing e2e failures)",
     "packaging": "SKIPPED — not attempted this iteration"
   }
 }

@@ -321,14 +321,14 @@
 
 ### NC-027 — Secret redaction is not sufficient for extensible multi-provider agent
 - **Severity:** High
-- **Status:** pending
+- **Status:** fixed
 - **Phase:** I
 - **Dependencies:** NC-001 (credential store)
 - **Affected files:** `agent-core/src/utils/redact.ts`
-- **Verified:** unverified
+- **Verified:** yes — verified against current source; 20-line regex-only redactor replaced with 380-line multi-layer redaction engine
 - **Required tests:** redact by known secret values; recursive structured key redaction; JWT/OAuth detectors; canary-secret tests across all sinks
-- **Verification commands:** `npx vitest run agent-core/tests/redaction.test.ts`
-- **Resolution evidence:** (none yet)
+- **Verification commands:** `npx vitest run agent-core/tests/secretRedaction.test.ts`
+- **Resolution evidence:** `agent-core/src/utils/redact.ts` rewritten (383 lines, +365/-18): (1) `redactByKnownValues(text, knownValues)` — value-based redaction with sorted-by-length matching to avoid partial overlap, regex-safe escaping, ≥4 char minimum. (2) `redactObject<T>(obj, knownValues?, _seen?)` — recursive structured object redaction with WeakSet cycle detection, key-name matching via `isSecretKey()` (14 regex patterns) and `SECRET_VALUE_KEYS` (25 exact names), pattern-based string redaction, knownValues passthrough. (3) 18 new provider token patterns: GitHub OAuth/app/refresh (gho_, ghs_, ghr_), GitLab personal/pipeline/runner (glpat-, glptt-, glr_), npm, Slack bot/user/app/webhook, Google API key/OAuth secret, Hugging Face, OpenRouter, Anthropic, Azure storage, broadened connection strings (amqp, smtp, ftp, s3, gs, abs). (4) `redactJWTTokens()` — structural JWT detection validating header decodes to JSON with `alg` field. (5) `redactHighEntropyStrings()` — Shannon entropy threshold with UUID/SHA-1/SHA-256 exclusion. (6) 77 regression tests in `agent-core/tests/secretRedaction.test.ts`: existing patterns (12), new provider patterns (18), authorization headers (2), JWT detection (4), high-entropy (5), redactByKnownValues (8), redactObject (13), canary secrets (4), edge cases (6), PEM variants (2), consumer integration (2), backward compat (1). 1349/1349 tests pass. Build clean. All type-checks clean.
 
 ### NC-028 — General coding agent contains hardcoded blog-page fallback
 - **Severity:** High

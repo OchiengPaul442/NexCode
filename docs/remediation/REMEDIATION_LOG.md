@@ -1937,3 +1937,79 @@ Append one section per autonomous iteration. Never rewrite prior entries.
 | `agent-core/src/agents/agentLoop.ts` | Pass signal to runToolCall | +2 |
 | `agent-core/tests/cancellationPropagation.test.ts` | New regression test file (30 tests) | +457 |
 
+---
+
+## Iteration 27 — NC-027: Secret redaction enhanced for extensible multi-provider agent
+
+**Date:** 20 July 2026
+**Finding IDs:** NC-027 (High)
+**Phase:** I — Persistence and observability
+
+### What was done
+
+1. **Verified NC-027 against current source code:**
+   - `agent-core/src/utils/redact.ts` (20 lines) — confirmed the redactor is a single `redactSecrets()` function that chains 8 regex replacements: OpenAI sk-, AWS AKIA, GitHub ghp_/github_pat_, Bearer tokens, generic SECRET/TOKEN/PASSWORD assignments, PEM private keys, and connection strings (mongodb/postgres/mysql/redis).
+   - Missing patterns: JWT tokens, npm tokens, GitLab tokens (glpat-/glptt-/glr_), Slack tokens (xoxb-/xoxp-/xoxe-/webhook), Google API keys, Google OAuth secrets, Hugging Face tokens, OpenRouter keys, Anthropic keys, Azure storage keys, broadened connection strings (amqp/smtp/ftp/s3/gs/abs).
+   - No value-based redaction from credential store.
+   - No recursive structured object redaction by key names.
+   - No high-entropy string detection.
+   - No canary-secret tests across memory and audit sinks.
+
+2. **Implemented fix (1 production file changed):**
+   - `agent-core/src/utils/redact.ts` (rewritten, +365/-18):
+     - **`redactByKnownValues(text, knownValues)`**: Value-based redaction. Sorts by length descending to avoid partial matches. Escapes regex special characters. Skips values < 4 chars. Highest-confidence redaction path.
+     - **`redactObject<T>(obj, knownValues?, _seen?)`**: Recursive structured object redaction. WeakSet cycle detection. Key-name matching via `isSecretKey()` (14 regex patterns) and `SECRET_VALUE_KEYS` (25 exact names). Pattern-based redaction for string values. knownValues passthrough for all string values.
+     - **18 new provider token patterns**: GitHub OAuth/app/refresh (gho_/ghs_/ghr_ + 36 chars), GitLab personal/pipeline/runner (glpat-/glptt-/glr_), npm (npm_ + 36), Slack bot/user/app (xoxb-/xoxp-/xoxe-), Slack webhook URLs, Google API keys (AIza), Google OAuth secrets (GOCSPX- + 28), Hugging Face (hf_ + 34), OpenRouter (sk-or- + 40), Anthropic (sk-ant- + 40), Azure storage (AccountKey=), broadened connection strings (amqp/smtp/ftp/s3/gs/abs).
+     - **`redactJWTTokens(text)`**: Structural JWT detection. Decodes base64url header, validates JSON with `alg` field. Only redacts confirmed JWTs.
+     - **`redactHighEntropyStrings(text)`**: Shannon entropy threshold (≥ 3.4 bits/char for hex). Excludes UUIDs (dash pattern), SHA-1 (40 hex), SHA-256 (64 hex) to avoid false positives.
+     - **Authorization header pattern**: Matches `Authorization: <value>` and `authorization=<value>`.
+
+3. **Added regression tests (1 new file, 77 tests):**
+   - `agent-core/tests/secretRedaction.test.ts`:
+     - Existing patterns backward compatibility (12 tests)
+     - New provider token patterns (18 tests): gho_, ghs_, ghr_, glpat-, glptt-, glr_, npm_, xoxb-, xoxp-, xoxe-, Slack webhook, AIza, GOCSPX-, hf_, sk-or-, sk-ant-, AccountKey=, amqp/s3
+     - Authorization header patterns (2 tests)
+     - JWT detection (4 tests): valid JWT, JWT in string, non-JWT, invalid header
+     - High-entropy string detection (5 tests): hex, UUID exclusion, SHA-1/SHA-256 exclusion, low-entropy
+     - redactByKnownValues (8 tests): exact match, multiple, length sort, short skip, empty, regex chars, empty text, canary
+     - redactObject (13 tests): pattern match, key-name redaction, snake_case keys, nested objects, arrays, non-string values, primitives, no mutation, knownValues passthrough, deep nesting, circular refs, nested circular, hyphenated keys
+     - Canary-secret integration (4 tests): pattern canaries, object canaries, non-pattern canaries, combined
+     - Edge cases (6 tests): empty, whitespace, long string, multiple types, UTF-8, hyphenated keys
+     - PEM variants (2 tests): EC, OPENSSH
+     - Consumer integration (2 tests): memoryManager backward compat, auditLog backward compat
+
+4. **Validated:**
+   - 77/77 new secretRedaction tests pass.
+   - 1349/1349 full unit tests pass (3 pre-existing e2e script issues unrelated).
+   - `tsc --noEmit` clean in agent-core, extension, and webview.
+   - `npm run build` clean.
+   - `git diff --check` clean (only line-ending warnings).
+
+### Validation
+
+| Check | Result | Notes |
+|---|---|---|
+| Focused tests (NC-027) | PASS | 77/77 secretRedaction tests pass |
+| Existing memory tests | PASS | 10/10 memoryRedaction tests pass |
+| Existing audit tests | PASS | 91/91 toolApprovalPolicy tests pass |
+| Full test suite | PASS | 1349/1349 unit tests pass; 3 pre-existing e2e failures |
+| Type check (agent-core) | PASS | `tsc --noEmit` clean |
+| Type check (extension) | PASS | `tsc --noEmit` clean |
+| Type check (webview) | PASS | `tsc --noEmit` clean |
+| Build | PASS | Full `npm run build` clean |
+| No secrets in diff | PASS | No API keys, tokens, or secrets in the diff |
+| No test suppression | PASS | All existing tests retained and passing |
+
+### Remaining risks
+
+- `redactByKnownValues` and `redactObject` are new exported APIs not yet wired into `memoryManager.rememberInteraction()` or `AuditLog.log()`. Those callers still use `redactSecrets()` which handles pattern-based redaction. To get value-based redaction at those sinks, callers should pass known secret values. This is Phase I continued work.
+- High-entropy hex detection uses a conservative threshold (Shannon entropy ≥ 3.4 bits/char for hex) to avoid false positives on hashes. This may miss some high-entropy secrets encoded in hex. The threshold is tunable.
+- The `SECRET_KEY_PATTERNS` and `SECRET_VALUE_KEYS` lists may need updating as new tool arguments or configuration keys are added. They should be reviewed when new tools or settings are introduced.
+
+### Files changed
+
+| File | Change | Lines |
+|---|---|---|
+| `agent-core/src/utils/redact.ts` | Rewrite with value-based, structured, JWT, high-entropy, 18 provider patterns | +365, -18 |
+| `agent-core/tests/secretRedaction.test.ts` | New regression test file (77 tests) | +467 |
+

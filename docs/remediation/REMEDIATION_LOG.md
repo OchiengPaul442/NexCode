@@ -2340,6 +2340,7 @@ Append one section per autonomous iteration. Never rewrite prior entries.
 **Date:** 20 July 2026
 **Finding IDs:** NC-039 (Medium)
 **Phase:** D / J — Constructor lifecycle
+**Commit:** `30416be` — `fix(agent-core,extension): resolve NC-039 — orchestrator constructor lifecycle, no side effects`
 
 ### What was done
 

@@ -17,7 +17,7 @@
   "activeFindingIds": [],
   "resolvedFindingIds": ["NC-001", "NC-002", "NC-003", "NC-004", "NC-005", "NC-006", "NC-007", "NC-008", "NC-009", "NC-010", "NC-011", "NC-012", "NC-013", "NC-014", "NC-015", "NC-016", "NC-017", "NC-018", "NC-019", "NC-020", "NC-021", "NC-022", "NC-023", "NC-024", "NC-025", "NC-026", "NC-027", "NC-028", "NC-029", "NC-034", "NC-035", "NC-038", "NC-039", "NC-042", "NC-043"],
   "blockedFindingIds": [],
-  "lastCommit": "TBD",
+  "lastCommit": "30416be",
   "lastSummary": "NC-039 fixed: Constructor side effects perform network and persistence work. (1) Removed eager memory.initialize() from orchestrator constructor — no filesystem I/O during construction. (2) Added explicit initialize() method for async memory loading. (3) Added dispose() method that flushes memory and feedback logger resources. (4) Updated sidebarViewProvider to call initialize() after construction. (5) 19 regression tests in orchestratorLifecycle.test.ts: constructor has no filesystem reads/mkdirs/fetch calls, returns synchronously, initialize() is async/loads memory/handles errors, dispose() flushes resources/can be called without initialize(), backward compat. 1495/1495 tests pass. Build clean. All type-checks clean.",
   "lastVerification": {
     "focusedTests": "PASS — 19/19 orchestratorLifecycle tests pass",

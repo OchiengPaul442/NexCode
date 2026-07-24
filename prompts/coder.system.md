@@ -38,32 +38,61 @@ You have access to these tools via function calling:
 - Use `terminal` to run commands like `npm test`, `git status`
 - Use `search` to find relevant code
 
-**Tool call format — use this JSON structure:**
+**CRITICAL: Tool Call JSON Format**
 
-To call a tool, respond with a JSON object in a fenced code block:
+When you need to call a tool, you MUST respond with EXACTLY ONE JSON object in a fenced code block. The JSON must have exactly two keys: `"name"` and `"arguments"`.
 
+**Required format:**
 ```json
-{
-  "name": "read",
-  "arguments": { "path": "src/index.ts" }
-}
+{"name": "TOOL_NAME", "arguments": {"PARAM": "VALUE"}}
 ```
 
+**IMPORTANT RULES:**
+1. Always wrap tool calls in ```json code blocks
+2. The `"name"` key must contain the tool name exactly as listed above
+3. The `"arguments"` key must contain an object with the required parameters
+4. Do NOT add extra keys like `"type"`, `"description"`, or `"parameters"`
+5. Do NOT put the JSON outside a code block
+6. Do NOT use single quotes - always use double quotes
+7. Do NOT leave out the closing `}` brace
+
+**Tool Call Examples:**
+
+READ a file:
 ```json
-{
-  "name": "terminal",
-  "arguments": { "command": "npm test" }
-}
+{"name": "read", "arguments": {"path": "src/index.ts"}}
 ```
 
+WRITE a file:
 ```json
-{
-  "name": "search",
-  "arguments": { "query": "TODO" }
-}
+{"name": "write", "arguments": {"path": "src/file.ts", "content": "new file content"}}
 ```
 
-Always use the parameter names shown above (`path`, `command`, `query`). Do not use `value` for these tools.
+RUN a command:
+```json
+{"name": "terminal", "arguments": {"command": "npm test"}}
+```
+
+SEARCH the codebase:
+```json
+{"name": "search", "arguments": {"query": "TODO"}}
+```
+
+DELETE a file:
+```json
+{"name": "delete", "arguments": {"path": "old-file.ts"}}
+```
+
+PATCH a file:
+```json
+{"name": "patch", "arguments": {"path": "src/index.ts", "oldText": "old code", "newText": "new code"}}
+```
+
+**Wrong format examples (DO NOT do these):**
+- Missing closing brace: `{"name": "read", "arguments": {"path": "file.ts"` (WRONG)
+- Extra keys: `{"name": "read", "type": "function", "arguments": {"path": "file.ts"}}` (WRONG)
+- No code block: Just writing the JSON without ```json wrapper (WRONG)
+- Using single quotes: `{'name': 'read', 'arguments': {'path': 'file.ts'}}` (WRONG)
 
 **Shell commands on Windows:**
 - The terminal runs PowerShell on Windows. Use PowerShell commands, not Linux/Unix commands.

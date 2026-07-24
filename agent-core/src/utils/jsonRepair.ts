@@ -199,6 +199,62 @@ function closeUnclosedStrings(json: string): string {
 }
 
 /**
+ * Extract a tool call from malformed JSON using regex.
+ * Handles truncated JSON like `{"name":"read","arguments":{"path":"package.json"`
+ * where closing braces are missing.
+ *
+ * Returns `{ name, arguments }` if found, null otherwise.
+ */
+export function extractToolCallFromMalformedJson(
+  text: string,
+): { name: string; arguments: Record<string, unknown> } | null {
+  if (!text || typeof text !== "string") return null;
+
+  // Extract the tool name
+  const nameMatch = text.match(/"name"\s*:\s*"([^"]+)"/);
+  if (!nameMatch) return null;
+  const toolName = nameMatch[1];
+
+  // Extract the arguments object — match from the first { after "arguments": to end
+  const argsMatch = text.match(/"arguments"\s*:\s*(\{[\s\S]*$)/);
+  if (!argsMatch) return null;
+
+  let argsStr = argsMatch[1];
+
+  // Try to repair the truncated arguments
+  const repaired = repairTruncatedJson(argsStr);
+  try {
+    const parsed = JSON.parse(repaired);
+    if (typeof parsed === "object" && parsed !== null) {
+      return { name: toolName, arguments: parsed };
+    }
+  } catch {
+    // Repair didn't produce valid JSON, try deeper extraction
+  }
+
+  // Extract individual key-value pairs from the arguments body
+  const argsBody = argsStr.replace(/^\{/, "");
+  const args: Record<string, unknown> = {};
+  // Match "key": "value" patterns (handles escaped quotes and nested strings)
+  const kvPattern = /"([^"]+)"\s*:\s*"([^"]*?)"/g;
+  let kvMatch;
+  while ((kvMatch = kvPattern.exec(argsBody)) !== null) {
+    args[kvMatch[1]] = kvMatch[2];
+  }
+
+  // Also match "key": number/boolean patterns
+  const kvNumPattern = /"([^"]+)"\s*:\s*(\d+(?:\.\d+)?|true|false)/g;
+  while ((kvMatch = kvNumPattern.exec(argsBody)) !== null) {
+    const val = kvMatch[2];
+    args[kvMatch[1]] = val === "true" ? true : val === "false" ? false : Number(val);
+  }
+
+  return Object.keys(args).length > 0
+    ? { name: toolName, arguments: args }
+    : null;
+}
+
+/**
  * Validate that a JSON string is parseable and return the parsed object.
  * Returns null if parsing fails.
  */

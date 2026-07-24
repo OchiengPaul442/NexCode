@@ -12,7 +12,7 @@ import {
   MIN_OUTPUT_RESERVE,
   SAFETY_MARGIN,
 } from "../utils/tokenCounter";
-import { repairTruncatedJson } from "../utils/jsonRepair";
+import { repairTruncatedJson, extractToolCallFromMalformedJson } from "../utils/jsonRepair";
 
 export function isExplicitContextError(message: string): boolean {
   return /context (window|length)|too many tokens|input.*too large|exceeds.*context|prompt.*too long/i.test(message);
@@ -37,6 +37,90 @@ interface OllamaToolCall {
   };
 }
 
+/**
+ * Validate and repair a tool call's arguments.
+ * Returns the repaired arguments string, or the original if repair fails.
+ */
+function validateAndRepairToolCallArgs(
+  toolName: string,
+  rawArgs: string,
+  availableTools: Array<{ name: string }> | undefined,
+): string {
+  // If already valid, return as-is
+  try {
+    const parsed = JSON.parse(rawArgs);
+    if (typeof parsed === "object" && parsed !== null) {
+      return typeof rawArgs === "string" ? rawArgs : JSON.stringify(rawArgs);
+    }
+  } catch {
+    // Not valid, try to repair
+  }
+
+  // Try truncated JSON repair
+  const repaired = repairTruncatedJson(rawArgs);
+  try {
+    const parsed = JSON.parse(repaired);
+    if (typeof parsed === "object" && parsed !== null) {
+      return JSON.stringify(parsed);
+    }
+  } catch {
+    // Repair failed, continue to regex extraction
+  }
+
+  // Last resort: extract tool name and arguments separately using regex
+  const nameMatch = rawArgs.match(/["']?name["']?\s*[:=]\s*["']([^"']+)["']/i);
+  const extractedName = nameMatch?.[1] ?? toolName;
+
+  // Verify tool name exists in available tools
+  if (availableTools && availableTools.length > 0) {
+    const validTool = availableTools.find(
+      (t) => t.name.toLowerCase() === extractedName.toLowerCase(),
+    );
+    if (!validTool) {
+      // Tool name not valid, return empty args for validation to catch
+      return "{}";
+    }
+  }
+
+  // Extract arguments object from the raw string
+  const argsMatch = rawArgs.match(/["']?arguments["']?\s*[:=]\s*(\{[\s\S]*\})/i);
+  if (argsMatch) {
+    const argsStr = argsMatch[1];
+    const argsRepaired = repairTruncatedJson(argsStr);
+    try {
+      const parsed = JSON.parse(argsRepaired);
+      return JSON.stringify(parsed);
+    } catch {
+      // Fall through to generic field extraction
+    }
+  }
+
+  // Generic field extraction for common patterns
+  const fixedArgs: Record<string, unknown> = {};
+  const pathMatch = rawArgs.match(/["']?(?:path|filePath|file)["']?\s*[:=]\s*["']([^"']+)["']/i);
+  const contentMatch = rawArgs.match(/["'](?:content|text)["']?\s*[:=]\s*["']([\s\S]*?)["']/i);
+  const commandMatch = rawArgs.match(/["'](?:command|cmd)["']?\s*[:=]\s*["']([\s\S]*?)["']/i);
+  const queryMatch = rawArgs.match(/["'](?:query|search)["']?\s*[:=]\s*["']([\s\S]*?)["']/i);
+  const oldTextMatch = rawArgs.match(/["'](?:oldText|old)["']?\s*[:=]\s*["']([\s\S]*?)["']/i);
+  const newTextMatch = rawArgs.match(/["'](?:newText|new)["']?\s*[:=]\s*["']([\s\S]*?)["']/i);
+
+  if (pathMatch) fixedArgs.path = pathMatch[1];
+  if (contentMatch) fixedArgs.content = contentMatch[1];
+  if (commandMatch) fixedArgs.command = commandMatch[1];
+  if (queryMatch) fixedArgs.query = queryMatch[1];
+  if (oldTextMatch) fixedArgs.oldText = oldTextMatch[1];
+  if (newTextMatch) fixedArgs.newText = newTextMatch[1];
+
+  // For terminal/test, map content to command if no explicit command found
+  if ((toolName === "terminal" || toolName === "test") && fixedArgs.content && !fixedArgs.command) {
+    fixedArgs.command = fixedArgs.content;
+  }
+
+  return Object.keys(fixedArgs).length > 0
+    ? JSON.stringify(fixedArgs)
+    : rawArgs;
+}
+
 interface OllamaChatResponse {
   message?: {
     role?: string;
@@ -46,6 +130,122 @@ interface OllamaChatResponse {
   response?: string;
   prompt_eval_count?: number;
   eval_count?: number;
+}
+
+/**
+ * Models with known poor tool-calling support. These models may produce
+ * malformed JSON, emit tool calls as text instead of structured responses,
+ * or fail to follow the function-calling format entirely.
+ */
+const POOR_TOOL_CALLING_MODELS = [
+  "qwen3:8b",
+  "qwen2.5-coder:3b",
+  "qwen2.5:3b",
+  "gpt-oss:120b-cloud",
+  "phi3:mini",
+  "phi3:small",
+  "deepseek-r1:8b",
+  "gemma2:2b",
+  "gemma2:9b",
+  "llama3.2:1b",
+  "llama3.2:3b",
+  "mistral:7b",
+  "mixtral:8x7b",
+];
+
+/**
+ * Detect if a model is known to have poor tool-calling support.
+ */
+function isPoorToolCallingModel(model: string): boolean {
+  const lower = model.toLowerCase();
+  return POOR_TOOL_CALLING_MODELS.some((m) => lower.includes(m.toLowerCase()));
+}
+
+/**
+ * Build human-readable tool instructions for prompt-based tool calling.
+ * Used with low-tier models that can't use the Ollama `tools` API field.
+ * The model produces tool calls as text, which are then parsed by
+ * extractToolCallsFromText() and tryParseTextAsToolCall().
+ */
+function buildPromptBasedToolInstructions(
+  tools: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>,
+): string {
+  const toolDefs = tools.map((tool) => {
+    const schema = tool.inputSchema;
+    const required = (schema.required as string[]) ?? [];
+    const properties = (schema.properties as Record<string, unknown>) ?? {};
+    const paramList = required.length > 0
+      ? required.map((r) => {
+          const prop = properties[r] as Record<string, unknown> | undefined;
+          const desc = prop?.description as string | undefined;
+          return desc ? `${r} (${desc})` : r;
+        }).join(", ")
+      : Object.keys(properties).slice(0, 2).join(", ");
+
+    return `- ${tool.name}(${paramList}): ${tool.description}`;
+  });
+
+  const examples: string[] = [];
+  if (tools.some((t) => t.name === "read")) {
+    examples.push("TOOL: read\nPATH: src/index.ts");
+  }
+  if (tools.some((t) => t.name === "write")) {
+    examples.push("TOOL: write\nPATH: test.ts\nCONTENT: const x = 1;");
+  }
+  if (tools.some((t) => t.name === "terminal")) {
+    examples.push("TOOL: terminal\nCOMMAND: ls -la");
+  }
+  if (tools.some((t) => t.name === "search")) {
+    examples.push("TOOL: search\nQUERY: function");
+  }
+
+  return [
+    "\n\nYou have these tools available. When you need to use a tool, respond with this exact text format:\n",
+    "TOOL: <tool_name>",
+    "<parameter_name>: <parameter_value>",
+    "",
+    ...toolDefs,
+    "",
+    "Examples:",
+    ...examples,
+    "",
+    "Rules:",
+    "- Use EXACTLY this format: TOOL: <name> on its own line, then each parameter on its own line as KEY: VALUE",
+    "- Only one tool call per response",
+    "- Do NOT describe what you would do — actually do it using a tool call",
+    "- Do NOT use JSON or code blocks — use the plain text format above",
+  ].join("\n");
+}
+
+/**
+ * Build a simplified tool definition for models that struggle with
+ * complex JSON schemas. Strips optional fields and keeps only required
+ * parameters with minimal nesting.
+ */
+function buildSimplifiedToolSchema(
+  tool: { name: string; description: string; inputSchema: Record<string, unknown> },
+): Record<string, unknown> {
+  const schema = tool.inputSchema;
+  const required = (schema.required as string[]) ?? [];
+  const properties = (schema.properties as Record<string, unknown>) ?? {};
+
+  // Build a flat properties object with only required fields
+  const simplifiedProperties: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(properties)) {
+    if (required.includes(key) || Object.keys(properties).length <= 2) {
+      const prop = value as Record<string, unknown>;
+      simplifiedProperties[key] = {
+        type: prop.type ?? "string",
+        description: prop.description ?? key,
+      };
+    }
+  }
+
+  return {
+    type: "object",
+    properties: simplifiedProperties,
+    required: required.filter((k) => k in simplifiedProperties),
+  };
 }
 
 export class OllamaProvider implements ModelProvider {
@@ -173,7 +373,30 @@ export class OllamaProvider implements ModelProvider {
         }
       }
 
-      if (request.tools && request.tools.length > 0) {
+      // For models with poor tool calling, embed tools in the system prompt
+      // instead of using the Ollama `tools` API field which they handle poorly.
+      const usePromptBasedTools = isPoorToolCallingModel(request.model);
+
+      if (usePromptBasedTools && request.tools && request.tools.length > 0) {
+        console.warn(`[ollama] using prompt-based tool calling for ${request.model}`);
+        const toolInstructions = buildPromptBasedToolInstructions(request.tools);
+
+        // Find or create a system message and append tool instructions
+        const messages = [...request.messages];
+        const systemIdx = messages.findIndex((m) => m.role === "system");
+        if (systemIdx !== -1) {
+          messages[systemIdx] = {
+            ...messages[systemIdx],
+            content: messages[systemIdx].content + toolInstructions,
+          };
+        } else {
+          messages.unshift({
+            role: "system",
+            content: "You are a helpful coding assistant." + toolInstructions,
+          });
+        }
+        payload.messages = messages;
+      } else if (request.tools && request.tools.length > 0) {
         payload.tools = request.tools.map((tool) => ({
           type: "function",
           function: {
@@ -265,13 +488,12 @@ export class OllamaProvider implements ModelProvider {
           if (typeof args !== "string") {
             args = JSON.stringify(args);
           }
-          // Try to parse to validate, fall back to empty object on failure
-          try {
-            JSON.parse(args);
-          } catch {
-            // Malformed arguments from Ollama - try to extract useful parts
-            args = this.fixMalformedToolArgs(tc.function.name, args);
-          }
+          // Use the new validator/repairer with access to available tools
+          args = validateAndRepairToolCallArgs(
+            tc.function.name,
+            args,
+            request.tools,
+          );
           toolCalls.push({
             id: `call_${i}`,
             type: "function" as const,
@@ -428,6 +650,36 @@ export class OllamaProvider implements ModelProvider {
   private extractToolCallsFromText(text: string): ToolCallRequest[] {
     const calls: ToolCallRequest[] = [];
 
+    // Try simple text format first: TOOL: <name>\nPARAM: value
+    const simpleToolMatch = text.match(/TOOL:\s*(\S+)/i);
+    if (simpleToolMatch) {
+      const toolName = simpleToolMatch[1].toLowerCase();
+      const afterToolLine = text.slice(simpleToolMatch.index! + simpleToolMatch[0].length);
+      const lines = afterToolLine.split("\n");
+      const args: Record<string, string> = {};
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        const colonIdx = trimmed.indexOf(":");
+        if (colonIdx === -1) continue;
+        const key = trimmed.slice(0, colonIdx).trim().toLowerCase();
+        const value = trimmed.slice(colonIdx + 1).trim();
+        if (key && value) {
+          args[key] = value;
+        }
+      }
+
+      if (Object.keys(args).length > 0) {
+        calls.push({
+          id: `call_simple_${Date.now()}_${calls.length}`,
+          type: "function",
+          function: { name: toolName, arguments: JSON.stringify(args) },
+        });
+        return calls;
+      }
+    }
+
     // Try DSML format first: <| DSML | tool_calls> <| DSML | invoke name="read"> ...
     const dsmlPattern = /<\|\s*\|\s*DSML\s*\|\s*\|\s*tool_calls\s*>/i;
     if (dsmlPattern.test(text)) {
@@ -469,25 +721,52 @@ export class OllamaProvider implements ModelProvider {
       if (calls.length > 0) return calls;
     }
 
-    // Try "Proposed Edit" format: ## Proposed Edit\nFile: ...\nInstruction: ...
-    const proposedEditMatch = text.match(/##\s*Proposed\s*Edit\s*\n\s*File:\s*(.+?)\s*\n\s*Instruction:\s*(.+?)(?:\n\n|\n|$)/i);
-    if (proposedEditMatch) {
-      const filePath = proposedEditMatch[1].trim();
-      const instruction = proposedEditMatch[2].trim();
-      
-      // Try to extract content from code blocks
-      const codeBlockMatch = text.match(/```[\s\S]*?```/);
-      const content = codeBlockMatch ? codeBlockMatch[0].replace(/```\w*\n?/g, '').replace(/```/g, '').trim() : instruction;
-      
-      calls.push({
-        id: `call_ollama_proposed_${Date.now()}`,
-        type: "function",
-        function: {
-          name: "write",
-          arguments: JSON.stringify({ path: filePath, content: content }),
-        },
-      });
-      return calls;
+    // Try "Proposed Edit" format with flexible variations
+    // Supports: "Proposed Edit", "proposed edit", "PROPOSED EDIT", etc.
+    // Also supports: File:, file:, FilePath:, path:, Path:
+    const proposedEditPatterns = [
+      // Standard: ## Proposed Edit\nFile: ...\nInstruction: ...
+      /##\s*Proposed\s*Edit\s*\n\s*(?:File|Path|FilePath)\s*:\s*(.+?)\s*\n\s*(?:Instruction|Change|Edit|Description)\s*:\s*(.+?)(?:\n\n|\n|$)/i,
+      // With content block: ## Proposed Edit\nFile: ...\n\n```\n...\n```
+      /##\s*Proposed\s*Edit\s*\n\s*(?:File|Path|FilePath)\s*:\s*(.+?)\s*\n\s*(?:```[\s\S]*?```)/i,
+      // Alternative formats: "Edit File:", "Modify File:"
+      /##\s*(?:Edit|Modify)\s*(?:File|Path)\s*:\s*(.+?)\s*\n\s*(?:Change|Edit|Description|Content)\s*:\s*(.+?)(?:\n\n|\n|$)/i,
+      // Inline format: "Proposed Edit to <file>"
+      /(?:Proposed|Suggested)\s+(?:Edit|Change)\s+(?:to|for)\s+[`"']?([^\s`"']+)[`"']?\s*:\s*(.+?)(?:\n\n|\n|$)/i,
+      // H3 format: ### Edit\nFile: ...\nInstruction: ...
+      /###\s*(?:Edit|Proposed\s*Edit)\s*\n\s*(?:File|Path|FilePath)\s*:\s*(.+?)\s*\n\s*(?:Instruction|Change|Edit|Description|Content)\s*:\s*(.+?)(?:\n\n|\n|$)/i,
+      // "Proposed change to file" format
+      /Proposed\s+change\s+to\s+(?:file\s+)?[`"']?([^\s`"']+)[`"']?\s*\n\s*(?:Instruction|Change|Edit|Description|Content)\s*:\s*(.+?)(?:\n\n|\n|$)/i,
+      // "Edit file:" format (no heading)
+      /(?:Edit|Modify|Update)\s+(?:file|path)\s*:\s*[`"']?([^\s`"']+)[`"']?\s*\n\s*(?:Instruction|Change|Edit|Description|Content|New)\s*:\s*(.+?)(?:\n\n|\n|$)/i,
+      // "File: ...\nEdit:" format (no heading)
+      /(?:File|Path)\s*:\s*[`"']?([^\s`"']+)[`"']?\s*\n\s*(?:Edit|Change|Instruction|Description|Content|New)\s*:\s*(.+?)(?:\n\n|\n|$)/i,
+    ];
+
+    for (const pattern of proposedEditPatterns) {
+      const proposedEditMatch = text.match(pattern);
+      if (proposedEditMatch) {
+        const filePath = proposedEditMatch[1].trim();
+        const instruction = proposedEditMatch[2]?.trim() ?? "";
+        
+        // Try to extract content from code blocks (prefer actual code over instruction)
+        const codeBlockMatch = text.match(/```[\s\S]*?```/);
+        const content = codeBlockMatch 
+          ? codeBlockMatch[0].replace(/```\w*\n?/g, '').replace(/```/g, '').trim() 
+          : instruction;
+        
+        if (filePath && content) {
+          calls.push({
+            id: `call_ollama_proposed_${Date.now()}`,
+            type: "function",
+            function: {
+              name: "write",
+              arguments: JSON.stringify({ path: filePath, content: content }),
+            },
+          });
+          return calls;
+        }
+      }
     }
 
     // Try JSON code block: ```json\n{"name": "...", "arguments": {...}}\n```
@@ -521,7 +800,18 @@ export class OllamaProvider implements ModelProvider {
         }
       }
     } catch {
-      // Not valid JSON
+      // Not valid JSON — try regex extraction from malformed JSON
+      const extracted = extractToolCallFromMalformedJson(trimmed);
+      if (extracted) {
+        calls.push({
+          id: `call_ollama_malformed_${Date.now()}_${calls.length}`,
+          type: "function",
+          function: {
+            name: extracted.name,
+            arguments: JSON.stringify(extracted.arguments),
+          },
+        });
+      }
     }
 
     return calls;
@@ -641,6 +931,26 @@ export class OllamaProvider implements ModelProvider {
         } else {
           payload.think = effort;
         }
+      }
+
+      // For models with poor tool calling, embed tools in the system prompt
+      const usePromptBasedTools = isPoorToolCallingModel(request.model);
+      if (usePromptBasedTools && request.tools && request.tools.length > 0) {
+        const toolInstructions = buildPromptBasedToolInstructions(request.tools);
+        const messages = [...request.messages];
+        const systemIdx = messages.findIndex((m) => m.role === "system");
+        if (systemIdx !== -1) {
+          messages[systemIdx] = {
+            ...messages[systemIdx],
+            content: messages[systemIdx].content + toolInstructions,
+          };
+        } else {
+          messages.unshift({
+            role: "system",
+            content: "You are a helpful coding assistant." + toolInstructions,
+          });
+        }
+        payload.messages = messages;
       }
 
       const response = await fetch(`${this.baseUrl}/api/chat`, {

@@ -11,13 +11,118 @@ import { type ToolRegistry } from "../tools/toolRegistry";
 import { type ToolDefinition, validateInput } from "../tools/toolProtocol";
 import { type ApprovalCallback } from "../tools/toolApprovalPolicy";
 import { EvidenceStore } from "../tools/evidenceStore";
-import { repairTruncatedJson } from "../utils/jsonRepair";
+import { repairTruncatedJson, extractToolCallFromMalformedJson } from "../utils/jsonRepair";
 import { createDefaultRetryBudget } from "../utils/retryBudget";
 
 export interface AgentLoopConfig {
   maxTurns: number;
   maxTokensPerTurn: number;
   timeoutMs: number;
+}
+
+/**
+ * Models with known poor tool-calling support that need special handling.
+ */
+const POOR_TOOL_CALLING_MODELS = [
+  "qwen3:8b",
+  "qwen2.5-coder:3b",
+  "qwen2.5:3b",
+  "gpt-oss:120b-cloud",
+  "phi3:mini",
+  "phi3:small",
+  "deepseek-r1:8b",
+  "gemma2:2b",
+  "gemma2:9b",
+  "llama3.2:1b",
+  "llama3.2:3b",
+  "mistral:7b",
+  "mixtral:8x7b",
+];
+
+/**
+ * Check if a model is known to have poor tool-calling support.
+ */
+function isPoorToolCallingModel(model: string | undefined): boolean {
+  if (!model) return false;
+  const lower = model.toLowerCase();
+  return POOR_TOOL_CALLING_MODELS.some((m) => lower.includes(m.toLowerCase()));
+}
+
+/**
+ * Build a rehearsal message with explicit tool call format instructions.
+ * This is sent when the model fails to produce tool calls on the first turn.
+ */
+function buildToolCallRehearsalMessage(
+  toolDefinitions: ToolDefinition[],
+  suggestedToolName?: string,
+): string {
+  const toolList = toolDefinitions
+    .map((t) => `- ${t.name}: ${t.description}`)
+    .join("\n");
+
+  // Find the suggested tool in definitions for a specific example
+  const suggestedTool = suggestedToolName
+    ? toolDefinitions.find((t) => t.name === suggestedToolName)
+    : undefined;
+
+  const examples = toolDefinitions
+    .slice(0, 6)
+    .map((t) => {
+      const props = (t.inputSchema.properties as Record<string, unknown>) ?? {};
+      const required = (t.inputSchema.required as string[]) ?? [];
+      const firstProp = Object.keys(props)[0] ?? "value";
+      const requiredProps = required.length > 0 ? required : [firstProp];
+      const argsObj: Record<string, string> = {};
+      for (const k of requiredProps) {
+        argsObj[k] = "<" + k + ">";
+      }
+      return '{"name": "' + t.name + '", "arguments": ' + JSON.stringify(argsObj) + "}";
+    })
+    .join("\n");
+
+  // Build a targeted example if we know which tool the model should use
+  let targetedSection = "";
+  if (suggestedTool) {
+    const props = (suggestedTool.inputSchema.properties as Record<string, unknown>) ?? {};
+    const required = (suggestedTool.inputSchema.required as string[]) ?? [];
+    const requiredProps = required.length > 0 ? required : Object.keys(props).slice(0, 2);
+    const exampleArgs: Record<string, string> = {};
+    for (const k of requiredProps) {
+      const prop = props[k] as Record<string, unknown> | undefined;
+      const desc = prop?.description as string | undefined;
+      exampleArgs[k] = `<${k}${desc ? ` (${desc})` : ""}>`;
+    }
+    targetedSection = [
+      "",
+      `You should have used the "${suggestedTool.name}" tool.`,
+      `Here is the EXACT format for this tool:`,
+      "```json",
+      `{"name": "${suggestedTool.name}", "arguments": ${JSON.stringify(exampleArgs)}}`,
+      "```",
+      "",
+    ].join("\n");
+  }
+
+  return [
+    "IMPORTANT: You MUST use the available tools by responding with a JSON tool call.",
+    "",
+    "Available tools:",
+    toolList,
+    "",
+    "You MUST respond with EXACTLY ONE JSON object in a ```json code block:",
+    "```json",
+    '{"name": "TOOL_NAME", "arguments": {"PARAM": "VALUE"}}',
+    "```",
+    targetedSection,
+    "Examples:",
+    examples,
+    "",
+    "Rules:",
+    "- Always use double quotes",
+    "- Always close all braces",
+    "- Only one tool call per response",
+    "- Do NOT describe what you would do - actually do it using a tool call",
+  ].join("\n");
 }
 
 /**
@@ -113,6 +218,35 @@ function formatToolArgs(
 }
 
 function tryParseTextAsToolCall(text: string): ToolCallRequest[] | null {
+  // Try simple text format first: TOOL: <name>\nPARAM: value
+  const simpleToolMatch = text.match(/TOOL:\s*(\S+)/i);
+  if (simpleToolMatch) {
+    const toolName = simpleToolMatch[1].toLowerCase();
+    const afterToolLine = text.slice(simpleToolMatch.index! + simpleToolMatch[0].length);
+    const lines = afterToolLine.split("\n");
+    const args: Record<string, string> = {};
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const colonIdx = trimmed.indexOf(":");
+      if (colonIdx === -1) continue;
+      const key = trimmed.slice(0, colonIdx).trim().toLowerCase();
+      const value = trimmed.slice(colonIdx + 1).trim();
+      if (key && value) {
+        args[key] = value;
+      }
+    }
+
+    if (Object.keys(args).length > 0) {
+      return [{
+        id: `call_simple_text_${Date.now()}`,
+        type: "function",
+        function: { name: toolName, arguments: JSON.stringify(args) },
+      }];
+    }
+  }
+
   // Try JSON code block first
   const fenceMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
   const content = fenceMatch ? fenceMatch[1] : text;
@@ -146,28 +280,64 @@ function tryParseTextAsToolCall(text: string): ToolCallRequest[] | null {
 
       return calls.length > 0 ? calls : null;
     } catch {
-      // Fall through to other formats
+      // Fall through to regex extraction from malformed JSON
+      const extracted = extractToolCallFromMalformedJson(trimmed);
+      if (extracted) {
+        return [{
+          id: `call_malformed_text_${Date.now()}`,
+          type: "function",
+          function: {
+            name: extracted.name,
+            arguments: JSON.stringify(extracted.arguments),
+          },
+        }];
+      }
     }
   }
 
-  // Try "Proposed Edit" format: ## Proposed Edit\nFile: ...\nInstruction: ...
-  const proposedEditMatch = trimmed.match(/##\s*Proposed\s*Edit\s*\n\s*File:\s*(.+?)\s*\n\s*Instruction:\s*(.+?)(?:\n\n|\n|$)/i);
-  if (proposedEditMatch) {
-    const filePath = proposedEditMatch[1].trim();
-    const instruction = proposedEditMatch[2].trim();
-    
-    // Try to extract content from the instruction or patch preview
-    const contentMatch = trimmed.match(/```[\s\S]*?```/);
-    const content = contentMatch ? contentMatch[0].replace(/```\w*\n?/g, '').replace(/```/g, '').trim() : instruction;
-    
-    return [{
-      id: `call_proposed_${Date.now()}`,
-      type: "function",
-      function: {
-        name: "write",
-        arguments: JSON.stringify({ path: filePath, content: content }),
-      },
-    }];
+  // Try "Proposed Edit" format with flexible variations
+  const proposedEditPatterns = [
+    // Standard: ## Proposed Edit\nFile: ...\nInstruction: ...
+    /##\s*Proposed\s*Edit\s*\n\s*(?:File|Path|FilePath)\s*:\s*(.+?)\s*\n\s*(?:Instruction|Change|Edit|Description)\s*:\s*(.+?)(?:\n\n|\n|$)/i,
+    // With content block: ## Proposed Edit\nFile: ...\n\n```\n...\n```
+    /##\s*Proposed\s*Edit\s*\n\s*(?:File|Path|FilePath)\s*:\s*(.+?)\s*\n\s*(?:```[\s\S]*?```)/i,
+    // Alternative formats: "Edit File:", "Modify File:"
+    /##\s*(?:Edit|Modify)\s*(?:File|Path)\s*:\s*(.+?)\s*\n\s*(?:Change|Edit|Description|Content)\s*:\s*(.+?)(?:\n\n|\n|$)/i,
+    // Inline format: "Proposed Edit to <file>"
+    /(?:Proposed|Suggested)\s+(?:Edit|Change)\s+(?:to|for)\s+[`"']?([^\s`"']+)[`"']?\s*:\s*(.+?)(?:\n\n|\n|$)/i,
+    // H3 format: ### Edit\nFile: ...\nInstruction: ...
+    /###\s*(?:Edit|Proposed\s*Edit)\s*\n\s*(?:File|Path|FilePath)\s*:\s*(.+?)\s*\n\s*(?:Instruction|Change|Edit|Description|Content)\s*:\s*(.+?)(?:\n\n|\n|$)/i,
+    // "Proposed change to file" format
+    /Proposed\s+change\s+to\s+(?:file\s+)?[`"']?([^\s`"']+)[`"']?\s*\n\s*(?:Instruction|Change|Edit|Description|Content)\s*:\s*(.+?)(?:\n\n|\n|$)/i,
+    // "Edit file:" format (no heading)
+    /(?:Edit|Modify|Update)\s+(?:file|path)\s*:\s*[`"']?([^\s`"']+)[`"']?\s*\n\s*(?:Instruction|Change|Edit|Description|Content|New)\s*:\s*(.+?)(?:\n\n|\n|$)/i,
+    // "File: ...\nEdit:" format (no heading)
+    /(?:File|Path)\s*:\s*[`"']?([^\s`"']+)[`"']?\s*\n\s*(?:Edit|Change|Instruction|Description|Content|New)\s*:\s*(.+?)(?:\n\n|\n|$)/i,
+  ];
+
+  for (const pattern of proposedEditPatterns) {
+    const proposedEditMatch = trimmed.match(pattern);
+    if (proposedEditMatch) {
+      const filePath = proposedEditMatch[1].trim();
+      const instruction = proposedEditMatch[2]?.trim() ?? "";
+      
+      // Try to extract content from code blocks (prefer actual code over instruction)
+      const contentMatch = trimmed.match(/```[\s\S]*?```/);
+      const content = contentMatch 
+        ? contentMatch[0].replace(/```\w*\n?/g, '').replace(/```/g, '').trim() 
+        : instruction;
+      
+      if (filePath && content) {
+        return [{
+          id: `call_proposed_${Date.now()}`,
+          type: "function",
+          function: {
+            name: "write",
+            arguments: JSON.stringify({ path: filePath, content: content }),
+          },
+        }];
+      }
+    }
   }
 
   // Try DSML format: <| DSML | tool_calls> <| DSML | invoke name="read"> <| DSML | parameter name="path" string="true">value<| DSML | parameter>
@@ -344,6 +514,88 @@ function buildReducedRetryMessages(messages: ChatMessage[]): ChatMessage[] {
   const recentResults = nonSystemUser.slice(-2);
 
   return [system, latestUser, ...recentResults].filter(Boolean) as ChatMessage[];
+}
+
+/**
+ * Guess which tool the model should have used based on the response text content.
+ * Returns undefined if no clear match is found.
+ */
+function guessSuggestedTool(
+  text: string,
+  toolDefinitions: ToolDefinition[],
+): string | undefined {
+  const lowerText = text.toLowerCase();
+
+  // Look for keywords that strongly suggest a specific tool
+  const keywordPatterns: Array<{ keywords: string[]; tool: string }> = [
+    { keywords: ["read file", "read the file", "file contents"], tool: "read" },
+    { keywords: ["write file", "create file", "write to file"], tool: "write" },
+    { keywords: ["run command", "execute command", "shell command", "terminal"], tool: "terminal" },
+    { keywords: ["search for", "find in", "grep", "search files"], tool: "search" },
+    { keywords: ["delete file", "remove file"], tool: "delete" },
+    { keywords: ["git status", "check status"], tool: "git-status" },
+    { keywords: ["git diff", "show changes"], tool: "git-diff" },
+    { keywords: ["run test", "execute test", "test suite"], tool: "test" },
+    { keywords: ["patch file", "edit file", "modify file"], tool: "patch" },
+    { keywords: ["append to", "add to file"], tool: "append" },
+    { keywords: ["move file", "rename file"], tool: "move" },
+  ];
+
+  for (const { keywords, tool } of keywordPatterns) {
+    if (keywords.some((kw) => lowerText.includes(kw))) {
+      // Verify the tool exists in definitions
+      if (toolDefinitions.some((t) => t.name === tool)) {
+        return tool;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Build a simplified retry message with explicit tool listing and JSON format.
+ * Used when the model fails to produce valid tool calls after initial attempts.
+ */
+function buildSimplifiedRetryMessage(
+  toolDefinitions: ToolDefinition[],
+): string {
+  // List only the most common tools with minimal descriptions
+  const commonTools = ["read", "write", "terminal", "search", "patch", "delete"];
+  const availableTools = toolDefinitions.filter((t) => commonTools.includes(t.name));
+  const toolList = availableTools
+    .map((t) => `  - ${t.name}: ${t.description}`)
+    .join("\n");
+
+  // Build simple examples for the most common operations
+  const examples = [
+    'Read a file: {"name": "read", "arguments": {"path": "src/index.ts"}}',
+    'Write a file: {"name": "write", "arguments": {"path": "src/file.ts", "content": "new content"}}',
+    'Run a command: {"name": "terminal", "arguments": {"command": "npm test"}}',
+    'Search: {"name": "search", "arguments": {"query": "TODO"}}',
+    'Patch: {"name": "patch", "arguments": {"path": "src/file.ts", "oldText": "old", "newText": "new"}}',
+  ].join("\n");
+
+  return [
+    "CRITICAL: You MUST respond with a tool call in the EXACT format below.",
+    "",
+    "Available tools:",
+    toolList,
+    "",
+    "RESPOND WITH EXACTLY THIS FORMAT (one JSON object in a code block):",
+    "```json",
+    '{"name": "TOOL_NAME", "arguments": {"PARAM": "VALUE"}}',
+    "```",
+    "",
+    "Examples:",
+    examples,
+    "",
+    "Rules:",
+    "- Use double quotes ONLY",
+    "- Close ALL braces and brackets",
+    "- One tool call per response",
+    "- Do NOT explain - just use the tool",
+  ].join("\n");
 }
 
 export async function* runAgentLoop(
@@ -536,6 +788,32 @@ export async function* runAgentLoop(
       return messages;
     }
 
+    // Tool call rehearsal mode for poor tool-calling models
+    // On the first turn, if the model doesn't produce tool calls and returns
+    // text without any tool call content, send a follow-up with explicit
+    // format instructions before the model gets another chance.
+    const shouldUseRehearsal =
+      turn === 0 &&
+      model &&
+      isPoorToolCallingModel(model) &&
+      (!response.toolCalls || response.toolCalls.length === 0) &&
+      response.text &&
+      !response.text.includes("```json") &&
+      !response.text.includes('"name"');
+
+    if (shouldUseRehearsal) {
+      console.warn(`[agent-loop] triggering tool call rehearsal for ${model}`);
+      consecutiveNudges++;
+      messages.push({ role: "assistant", content: response.text });
+      // Try to guess which tool the model should have used based on context
+      const suggestedTool = guessSuggestedTool(response.text, toolDefinitions);
+      messages.push({
+        role: "user",
+        content: buildToolCallRehearsalMessage(toolDefinitions, suggestedTool),
+      });
+      continue;
+    }
+
     if (!response.toolCalls || response.toolCalls.length === 0) {
       const textToolCalls = tryParseTextAsToolCall(response.text);
       if (textToolCalls && textToolCalls.length > 0) {
@@ -574,21 +852,26 @@ export async function* runAgentLoop(
         // the actual tool.
         consecutiveNudges++;
         messages.push({ role: "assistant", content: response.text });
+        // For poor tool-calling models, use the simplified retry message
+        // with explicit tool listing and JSON format
+        const useSimplified = model && isPoorToolCallingModel(model);
         messages.push({
           role: "user",
-          content: [
-            "You described what to do but did not use a tool. Use the available structured tools directly.",
-            "",
-            "Respond with a JSON tool call in this format:",
-            "```json",
-            '{ "name": "tool_name", "arguments": { "param": "value" } }',
-            "```",
-            "",
-            "Examples:",
-            '- To edit a file: { "name": "write", "arguments": { "path": "src/file.ts", "content": "new content" } }',
-            '- To run a command: { "name": "terminal", "arguments": { "command": "npm install" } }',
-            '- To apply a patch: { "name": "patch", "arguments": { "path": "src/file.ts", "oldText": "old", "newText": "new" } }',
-          ].join("\n"),
+          content: useSimplified
+            ? buildSimplifiedRetryMessage(toolDefinitions)
+            : [
+                "You described what to do but did not use a tool. Use the available structured tools directly.",
+                "",
+                "Respond with a JSON tool call in this format:",
+                "```json",
+                '{ "name": "tool_name", "arguments": { "param": "value" } }',
+                "```",
+                "",
+                "Examples:",
+                '- To edit a file: { "name": "write", "arguments": { "path": "src/file.ts", "content": "new content" } }',
+                '- To run a command: { "name": "terminal", "arguments": { "command": "npm install" } }',
+                '- To apply a patch: { "name": "patch", "arguments": { "path": "src/file.ts", "oldText": "old", "newText": "new" } }',
+              ].join("\n"),
         });
         continue;
       } else {

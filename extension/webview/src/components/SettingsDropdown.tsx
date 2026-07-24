@@ -48,7 +48,7 @@ export function SettingsDropdown({
   setLocalSearchApiKey: (v: string) => void;
 }) {
   const debouncedUpdateSetting = useDebouncedCallback(
-    (key: string, value: unknown) => {
+    (key: keyof SidebarSettings, value: unknown) => {
       useStore.getState().updateSetting(key, value);
     },
     400,

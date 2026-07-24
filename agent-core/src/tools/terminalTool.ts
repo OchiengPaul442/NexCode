@@ -285,6 +285,7 @@ const SHELL_EXPANSION_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /;\s*(?:rm|del|format|mkfs|shutdown|reboot)/i, reason: 'Chained destructive command blocked.' },
   { pattern: /&&\s*\w/, reason: 'Chained command (&&) is blocked.' },
   { pattern: /\|\s*\w/, reason: 'Piped command (|) is blocked.' },
+  { pattern: /\|\|/, reason: 'OR chaining (||) is blocked. Use separate tool calls instead.' },
   { pattern: /;\s*\w/, reason: 'Chained command (;) is blocked.' },
   // C-02: Output redirection (>, >>) must be rejected — it turns read-only commands into writes.
   { pattern: /[^|;]\s*>\s*\S/, reason: 'Output redirection (>) is blocked. Use typed file tools instead.' },
@@ -566,7 +567,16 @@ export function normalizeTerminalCommand(command: string): string {
   }
 
   const trimmed = cmd.trim();
-  const prefixMatch = trimmed.match(
+
+  // Strip "cd <workspace> && " or "cd <workspace>; " prefix — terminal already runs in workspace root
+  const cdPrefix = trimmed.match(
+    /^cd\s+["']?[^;&|]+["']?\s*(?:&&\s*|;\s*)/i,
+  );
+  if (cdPrefix) {
+    cmd = trimmed.slice(cdPrefix[0].length).trim();
+  }
+
+  const prefixMatch = cmd.match(
     /^(?:pnpm\s+create\s+next-app(?:@latest)?|npx\s+create-next-app(?:@latest)?|npm\s+create-next-app(?:@latest)?)\s+/i,
   );
 
@@ -803,9 +813,10 @@ export class TerminalTool {
       killProcessTree(child);
     }, timeoutMs);
 
-    // Abort signal handler: kill the process tree
+    // Abort signal handler: kill the process tree and clear timeout
     const onAbort = () => {
       cancelled = true;
+      clearTimeout(timeout);
       pushChunk("\n[command cancelled by abort signal]\n");
       killProcessTree(child);
     };

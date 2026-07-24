@@ -1,8 +1,30 @@
-import React from "react";
+import React, { useRef, useCallback } from "react";
 import { Settings } from "lucide-react";
 import type { ProviderId, SearchProviderId, SidebarSettings } from "../types";
 import { providerPresets, getSearchProviderPlaceholder, getSearchProviderHint, getSearchProviderUrlPlaceholder } from "../utils";
 import { useStore, vscode } from "../store";
+
+function useDebouncedCallback<T extends (...args: any[]) => void>(
+  callback: T,
+  delayMs: number,
+): T {
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const callbackRef = useRef(callback);
+  callbackRef.current = callback;
+
+  return useCallback(
+    (...args: any[]) => {
+      if (timerRef.current !== null) {
+        clearTimeout(timerRef.current);
+      }
+      timerRef.current = setTimeout(() => {
+        callbackRef.current(...args);
+        timerRef.current = null;
+      }, delayMs);
+    },
+    [delayMs],
+  ) as T;
+}
 
 export function SettingsDropdown({
   isOpen,
@@ -25,6 +47,12 @@ export function SettingsDropdown({
   localSearchApiKey: string;
   setLocalSearchApiKey: (v: string) => void;
 }) {
+  const debouncedUpdateSetting = useDebouncedCallback(
+    (key: string, value: unknown) => {
+      useStore.getState().updateSetting(key, value);
+    },
+    400,
+  );
   return (
     <div className="nk-settings-dropdown-wrap">
       <button
@@ -95,6 +123,9 @@ export function SettingsDropdown({
                 placeholder="http://localhost:11434"
                 value={settings.ollamaBaseUrl ?? 'http://localhost:11434'}
                 onChange={(e) => {
+                  debouncedUpdateSetting('ollamaBaseUrl', e.target.value);
+                }}
+                onBlur={(e) => {
                   useStore.getState().updateSetting('ollamaBaseUrl', e.target.value);
                 }}
               />
@@ -114,6 +145,9 @@ export function SettingsDropdown({
                     placeholder={preset.baseUrl || "https://api.example.com/v1"}
                     value={settings.openAIBaseUrl ?? ''}
                     onChange={(e) => {
+                      debouncedUpdateSetting('openAIBaseUrl', e.target.value);
+                    }}
+                    onBlur={(e) => {
                       useStore.getState().updateSetting('openAIBaseUrl', e.target.value);
                     }}
                   />
@@ -217,6 +251,9 @@ export function SettingsDropdown({
                     placeholder={getSearchProviderUrlPlaceholder(settings.searchProvider ?? 'tavily')}
                     value={settings.searchBaseUrl ?? ''}
                     onChange={(e) => {
+                      debouncedUpdateSetting('searchBaseUrl', e.target.value);
+                    }}
+                    onBlur={(e) => {
                       useStore.getState().updateSetting('searchBaseUrl', e.target.value);
                     }}
                   />

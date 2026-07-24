@@ -6,17 +6,41 @@ export class ReflectionEngine {
     response: string,
     acceptedEdits: number,
     rejectedEdits: number,
+    diagnosticsCount: number = 0,
+    hasErrors: boolean = false,
   ): InteractionFeedback {
     const base = 50;
-    const responseLengthBonus = Math.min(20, Math.floor(response.length / 200));
+
+    // Response length bonus: reward substantive responses, penalize very short ones
+    const responseLength = response.length;
+    let responseLengthBonus: number;
+    if (responseLength < 50) {
+      responseLengthBonus = -5; // Penalty for empty/trivial responses
+    } else if (responseLength < 200) {
+      responseLengthBonus = 5;
+    } else {
+      responseLengthBonus = Math.min(20, Math.floor(responseLength / 200));
+    }
+
+    // Prompt coverage: how well the response addresses the prompt
     const promptCoverageBonus = this.estimatePromptCoverage(prompt, response);
-    const editSignal = acceptedEdits * 8 - rejectedEdits * 10;
+
+    // Edit signal: weighted by acceptance/rejection
+    const editSignal = acceptedEdits * 8 - rejectedEdits * 12;
+
+    // Error penalty: diagnostics indicate issues
+    const errorPenalty = hasErrors ? -10 : 0;
+    const diagnosticPenalty = Math.min(0, -diagnosticsCount * 2);
+
+    // Prompt-response alignment: penalize responses that are much shorter than prompts
+    const alignmentRatio = prompt.length > 0 ? response.length / prompt.length : 1;
+    const alignmentBonus = alignmentRatio > 0.5 ? Math.min(5, Math.floor(alignmentRatio * 3)) : -3;
 
     const score = Math.max(
       0,
       Math.min(
         100,
-        base + responseLengthBonus + promptCoverageBonus + editSignal,
+        base + responseLengthBonus + promptCoverageBonus + editSignal + errorPenalty + diagnosticPenalty + alignmentBonus,
       ),
     );
 

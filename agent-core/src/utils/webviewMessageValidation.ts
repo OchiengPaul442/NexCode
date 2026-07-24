@@ -252,14 +252,20 @@ function validateMessageFields(
       }
       break;
 
-    case "addAttachment":
-      if (typeof obj.name !== "string" || !obj.name.trim()) {
-        return { valid: false, error: "addAttachment requires non-empty 'name' string" };
+    case "addAttachment": {
+      // The webview sends { type: "addAttachment", attachment: { fileName, mimeType, ... } }
+      const attachment = obj.attachment as Record<string, unknown> | undefined;
+      if (!attachment || typeof attachment !== "object") {
+        return { valid: false, error: "addAttachment requires 'attachment' object" };
       }
-      if (obj.name.length > 256) {
+      if (typeof attachment.fileName !== "string" || !attachment.fileName.trim()) {
+        return { valid: false, error: "addAttachment requires non-empty 'attachment.fileName' string" };
+      }
+      if (attachment.fileName.length > 256) {
         return { valid: false, error: "Attachment name exceeds maximum length of 256" };
       }
       break;
+    }
 
     case "removeAttachment":
       if (typeof obj.attachmentId !== "string" || !obj.attachmentId.trim()) {

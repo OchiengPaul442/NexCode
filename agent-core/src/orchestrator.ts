@@ -553,15 +553,11 @@ export class NexcodeOrchestrator {
         diagnostics.push(
           `[context-budget] approaching limit: estimated ${contextTokenEstimate} tokens, budget ${compressionThreshold} tokens, model context ${modelContextWindow} tokens`,
         );
-        const compressedSession = this.sessionCompressor.compressSession(
-          rawSessionMessages.map((m) => ({ role: m.role, text: m.content })),
-        );
-        sessionContextRaw = compressedSession
-          .map((m) => {
-            const prefix = m.role === "user" ? "User" : "Assistant";
-            return `${prefix}: ${m.text}`;
-          })
-          .join("\n");
+        // Session was already compressed above. If still over budget,
+        // further reduce session context by taking only the most recent messages.
+        const sessionParts = sessionContextRaw.split("\n");
+        const keepCount = Math.max(4, Math.floor(sessionParts.length * 0.5));
+        sessionContextRaw = sessionParts.slice(-keepCount).join("\n");
         sessionContext = clampText(
           sessionContextRaw,
           MAX_SESSION_CONTEXT_CHARS,
@@ -1057,6 +1053,8 @@ export class NexcodeOrchestrator {
         response.text,
         response.proposedEdits.length,
         0,
+        diagnostics.length,
+        diagnostics.some(d => d.toLowerCase().includes("error")),
       );
       await this.feedbackLogger.log({
         ...feedback,
@@ -1291,6 +1289,7 @@ export class NexcodeOrchestrator {
           : prompt;
 
         // Use agent loop for each pipeline stage
+        const stageFiles: ActivityFile[] = [];
         for await (const event of this.runAgentLoopStreaming(
           stage,
           stagePrompt,
@@ -1310,9 +1309,30 @@ export class NexcodeOrchestrator {
             stageText += event.token;
             composedChunks.push(event.token);
             yield event;
-          } else if (event.type === "status" || event.type === "toolExecuted") {
+          } else if (event.type === "status") {
             yield event;
+          } else if (event.type === "toolExecuted") {
+            yield event;
+            // Track files changed by tool execution
+            if (event.filesChanged && event.status === "success") {
+              for (const filePath of event.filesChanged) {
+                if (filePath && !stageFiles.some(f => f.path === filePath)) {
+                  stageFiles.push({
+                    path: filePath,
+                    status: "modified",
+                    summary: `${event.toolName}: ${event.command.slice(0, 80)}`,
+                  });
+                }
+              }
+            }
           }
+        }
+        if (stageFiles.length > 0) {
+          yield {
+            type: "activity",
+            files: stageFiles,
+            note: `${stageLabel} modified ${stageFiles.length} file(s)`,
+          };
         }
       } catch (error) {
         if (isAbortErrorFn(error)) {
@@ -1486,10 +1506,21 @@ export class NexcodeOrchestrator {
       let userMessage = "I could not complete this request due to an internal error. Please try again or rephrase your request.";
       if (errorStr.includes("malformed JSON") || errorStr.includes("can't find closing") || errorStr.includes("invalid response")) {
         userMessage = `The model "${model}" had trouble processing this request. This can happen when a model doesn't fully support tool calling. Try using a different model or simplifying your request.`;
-      } else if (errorStr.includes("Context window overflow")) {
+      } else if (errorStr.includes("Context window overflow") || errorStr.includes("context length")) {
         userMessage = "Your request was too long for the model's context window. Try breaking it into smaller parts or using a model with a larger context window.";
-      } else if (errorStr.includes("Provider returned no response")) {
-        userMessage = "The model didn't return a response. Please check if your provider is running and try again.";
+      } else if (errorStr.includes("Provider returned no response") || errorStr.includes("ECONNREFUSED")) {
+        userMessage = "Could not reach the model provider. Please check if it's running and accessible, then try again.";
+      } else if (errorStr.includes("timeout") || errorStr.includes("timed out")) {
+        userMessage = "The request timed out. Try a simpler task or a faster model.";
+      } else if (errorStr.includes("401") || errorStr.includes("403") || errorStr.includes("unauthorized")) {
+        userMessage = "Authentication failed. Check your API key in settings.";
+      } else if (errorStr.includes("429") || errorStr.includes("rate limit")) {
+        userMessage = "Rate limit reached. Wait a moment and try again.";
+      } else if (errorStr.includes("All") && errorStr.includes("attempt(s) failed")) {
+        // Extract the last error from the aggregated error message
+        const lastErrMatch = errorStr.match(/:\s*(.+?)$/);
+        const lastErr = lastErrMatch ? lastErrMatch[1].trim() : errorStr;
+        userMessage = `All model attempts failed. Last error: ${lastErr.slice(0, 200)}`;
       }
       
       return {

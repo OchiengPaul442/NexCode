@@ -150,6 +150,65 @@ function tryParseTextAsToolCall(text: string): ToolCallRequest[] | null {
     }
   }
 
+  // Try DSML format: <| DSML | tool_calls> <| DSML | invoke name="read"> <| DSML | parameter name="path" string="true">value<| DSML | parameter>
+  const dsmlPattern = /<\|\s*\|\s*DSML\s*\|\s*\|\s*tool_calls\s*>/i;
+  if (dsmlPattern.test(trimmed)) {
+    const invokePattern = /<\|\s*\|\s*DSML\s*\|\s*\|\s*invoke\s+name="([^"]+)"\s*>([\s\S]*?)<\|\s*\|\s*DSML\s*\|\s*\|\s*invoke\s*>/gi;
+    const calls: ToolCallRequest[] = [];
+    let invokeMatch;
+    while ((invokeMatch = invokePattern.exec(trimmed)) !== null) {
+      const toolName = invokeMatch[1].toLowerCase();
+      const body = invokeMatch[2];
+      const args: Record<string, string> = {};
+      
+      // Extract parameters: <| DSML | parameter name="path" string="true">value<| DSML | parameter>
+      const paramPattern = /<\|\s*\|\s*DSML\s*\|\s*\|\s*parameter\s+name="([^"]+)"[^>]*>([\s\S]*?)<\|\s*\|\s*DSML\s*\|\s*\|\s*parameter\s*>/gi;
+      let paramMatch;
+      while ((paramMatch = paramPattern.exec(body)) !== null) {
+        const paramName = paramMatch[1];
+        const paramValue = paramMatch[2].trim();
+        args[paramName] = paramValue;
+      }
+      
+      // Fallback: if no parameters found, try to extract value from the body text
+      if (Object.keys(args).length === 0) {
+        const cleanBody = body.replace(/<\|\s*\|\s*DSML\s*\|\s*\|\s*[^>]*>/gi, '').trim();
+        if (cleanBody) {
+          // Map to expected argument name based on tool
+          if (toolName === "terminal" || toolName === "test") {
+            args.command = cleanBody;
+          } else if (toolName === "read" || toolName === "delete") {
+            args.path = cleanBody;
+          } else if (toolName === "write") {
+            const sepIdx = cleanBody.indexOf("::");
+            if (sepIdx !== -1) {
+              args.path = cleanBody.slice(0, sepIdx).trim();
+              args.content = cleanBody.slice(sepIdx + 2).trim();
+            } else {
+              args.path = cleanBody;
+            }
+          } else if (toolName === "search" || toolName === "web-search") {
+            args.query = cleanBody;
+          } else {
+            args.path = cleanBody;
+          }
+        }
+      }
+
+      if (Object.keys(args).length > 0) {
+        calls.push({
+          id: `call_dsml_${Date.now()}_${calls.length}`,
+          type: "function",
+          function: {
+            name: toolName,
+            arguments: JSON.stringify(args),
+          },
+        });
+      }
+    }
+    if (calls.length > 0) return calls;
+  }
+
   // Try XML format: <terminal><command>...</command></terminal>
   // or <tool><name>terminal</name><args>...</args></tool>
   const xmlPatterns = [

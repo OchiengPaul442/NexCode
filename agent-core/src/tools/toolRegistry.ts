@@ -260,9 +260,12 @@ export class ToolRegistry {
       case "test":
         result = await this.test.run(arg, signal);
         break;
-      case "read":
-        result = await this.filesystem.readFile(arg);
+      case "read": {
+        // Clean up path: strip trailing instruction text that models sometimes include
+        const cleanPath = this.cleanFilePath(arg);
+        result = await this.filesystem.readFile(cleanPath);
         break;
+      }
       case "write": {
         const writeMatch = arg.match(/^(.+?)\s*\|\|\|\s*([\s\S]*)$/);
         if (!writeMatch) {
@@ -637,6 +640,38 @@ export class ToolRegistry {
       mcp: "MCP_CALL_FAILED",
     };
     return map[toolName] ?? "TOOL_FAILED";
+  }
+
+  /**
+   * Clean a file path argument by stripping trailing natural-language text
+   * that models sometimes append (e.g. "read file.ts and tell me what it does").
+   * Extracts just the path portion that looks like a real file path.
+   */
+  private cleanFilePath(arg: string): string {
+    const trimmed = arg.trim();
+    if (!trimmed) return trimmed;
+
+    // Extract the first token that looks like a file path (contains a dot for extension
+    // or starts with ./ or ../ or is an absolute path)
+    const pathMatch = trimmed.match(/^([A-Za-z]:[\\/]|[.\\/])[\w.\-/\\]*/);
+    if (pathMatch) {
+      return pathMatch[0];
+    }
+
+    // If no path-like token found, try to extract just the first space-delimited word
+    // but only if it looks like a filename (contains a dot)
+    const firstWord = trimmed.split(/\s+/)[0];
+    if (firstWord && firstWord.includes('.')) {
+      return firstWord;
+    }
+
+    // Last resort: take everything before the first natural-language word
+    const nlMatch = trimmed.match(/^(\S+)\s+(?:and|or|then|please|tell|show|explain|what|how|why)/i);
+    if (nlMatch) {
+      return nlMatch[1];
+    }
+
+    return trimmed;
   }
 
   private extractAffectedFiles(toolName: string, arg: string): string[] | undefined {

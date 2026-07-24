@@ -416,6 +416,47 @@ export class OllamaProvider implements ModelProvider {
   private extractToolCallsFromText(text: string): ToolCallRequest[] {
     const calls: ToolCallRequest[] = [];
 
+    // Try DSML format first: <| DSML | tool_calls> <| DSML | invoke name="read"> ...
+    const dsmlPattern = /<\|\s*\|\s*DSML\s*\|\s*\|\s*tool_calls\s*>/i;
+    if (dsmlPattern.test(text)) {
+      const invokePattern = /<\|\s*\|\s*DSML\s*\|\s*\|\s*invoke\s+name="([^"]+)"\s*>([\s\S]*?)<\|\s*\|\s*DSML\s*\|\s*\|\s*invoke\s*>/gi;
+      let invokeMatch;
+      while ((invokeMatch = invokePattern.exec(text)) !== null) {
+        const toolName = invokeMatch[1].toLowerCase();
+        const body = invokeMatch[2];
+        const args: Record<string, string> = {};
+
+        const paramPattern = /<\|\s*\|\s*DSML\s*\|\s*\|\s*parameter\s+name="([^"]+)"[^>]*>([\s\S]*?)<\|\s*\|\s*DSML\s*\|\s*\|\s*parameter\s*>/gi;
+        let paramMatch;
+        while ((paramMatch = paramPattern.exec(body)) !== null) {
+          args[paramMatch[1]] = paramMatch[2].trim();
+        }
+
+        if (Object.keys(args).length === 0) {
+          const cleanBody = body.replace(/<\|\s*\|\s*DSML\s*\|\s*\|\s*[^>]*>/gi, '').trim();
+          if (cleanBody) {
+            if (toolName === "terminal" || toolName === "test") args.command = cleanBody;
+            else if (toolName === "read" || toolName === "delete") args.path = cleanBody;
+            else if (toolName === "write") {
+              const sepIdx = cleanBody.indexOf("::");
+              args.path = sepIdx !== -1 ? cleanBody.slice(0, sepIdx).trim() : cleanBody;
+              if (sepIdx !== -1) args.content = cleanBody.slice(sepIdx + 2).trim();
+            } else if (toolName === "search" || toolName === "web-search") args.query = cleanBody;
+            else args.path = cleanBody;
+          }
+        }
+
+        if (Object.keys(args).length > 0) {
+          calls.push({
+            id: `call_ollama_dsml_${Date.now()}_${calls.length}`,
+            type: "function",
+            function: { name: toolName, arguments: JSON.stringify(args) },
+          });
+        }
+      }
+      if (calls.length > 0) return calls;
+    }
+
     // Try JSON code block: ```json\n{"name": "...", "arguments": {...}}\n```
     const fenceMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
     const content = fenceMatch ? fenceMatch[1] : text;

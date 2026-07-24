@@ -115,12 +115,6 @@ function playCompletionSound(): void {
 
 // ── Git-style diff utility — extracted to ./utils/diffUtils ──────────────────
 
-declare const acquireVsCodeApi: <T = unknown>() => {
-  postMessage: (message: unknown) => void;
-  setState: (state: T) => void;
-  getState: () => T | undefined;
-};
-
 // NC-036: Types, providerPresets, and utility functions imported from extracted modules (types.ts, utils.ts, store.ts)
 // Types and utilities now imported from ./types, ./utils, ./store (NC-036)
 // Removed: AgentMode, UiMode, PermissionLevel, EditStatus, ActivityStatus,
@@ -467,7 +461,6 @@ function MessageBubble({
                 message={message}
                 isStreaming={Boolean(message.streaming || message.thinking)}
                 onOpenFile={(filePath) => {
-                  const vscode = acquireVsCodeApi();
                   vscode.postMessage({ type: "openFile", filePath });
                 }}
                 onFrame={onAnimatedFrame}

@@ -554,6 +554,101 @@ function guessSuggestedTool(
 }
 
 /**
+ * Detect if text describes an action that can be executed as a tool call.
+ * Returns the tool name and parsed arguments if a match is found.
+ */
+function detectDescribedAction(
+  text: string,
+  toolDefinitions: ToolDefinition[],
+): { toolName: string; args: Record<string, string> } | null {
+  const lower = text.toLowerCase();
+  const available = new Set(toolDefinitions.map((t) => t.name));
+
+  // Terminal command patterns
+  const terminalPatterns = [
+    /(?:run|execute|launch|start|do)\s+(?:the\s+)?(?:command|terminal|shell|script)\s*[:：]?\s*`([^`]+)`/i,
+    /(?:run|execute|launch|start|do)\s+`([^`]+)`(?:\s+(?:in|from)\s+the\s+(?:terminal|shell|command))?/i,
+    /(?:running|executing|launching)\s+(?:the\s+)?(?:command|terminal|shell)\s*[:：]?\s*`([^`]+)`/i,
+    /(?:running|executing)\s+`([^`]+)`/i,
+    /(?:here(?:'s| is))\s+(?:the\s+)?(?:result\s+of\s+(?:running|executing)\s+)?`([^`]+)`/i,
+    /(?:the\s+)?(?:command|terminal)\s+(?:would\s+)?(?:be|is)\s*[:：]?\s*`([^`]+)`/i,
+    /(?:I(?:'ll| will)|let me|we (?:should|can|will))\s+(?:run|execute|launch|start)\s+(?:the\s+)?(?:command|terminal|shell)\s*[:：]?\s*`([^`]+)`/i,
+    /(?:I(?:'ll| will)|let me|we (?:should|can|will))\s+(?:run|execute|launch|start)\s+`([^`]+)`/i,
+  ];
+
+  for (const pattern of terminalPatterns) {
+    const match = text.match(pattern);
+    if (match && available.has("terminal")) {
+      return { toolName: "terminal", args: { command: match[1].trim() } };
+    }
+  }
+
+  // Git command patterns
+  const gitPatterns = [
+    /(?:run|execute|do)\s+(?:git\s+)?((?:git\s+)?(?:status|diff|log|show|branch|stage|unstage|commit|push|pull|fetch|checkout|merge|rebase|stash|reset|revert|cherry-pick|bisect|blame|grep)\b[^.]*)/i,
+    /(?:running|executing)\s+(?:git\s+)?((?:git\s+)?(?:status|diff|log|show|branch|stage|unstage|commit|push|pull|fetch|checkout|merge|rebase|stash|reset|revert|cherry-pick|bisect|blame|grep)\b[^.]*)/i,
+    /(?:I(?:'ll| will)|let me)\s+(?:run|execute)\s+(?:git\s+)?((?:git\s+)?(?:status|diff|log|show|branch|stage|unstage|commit|push|pull|fetch|checkout|merge|rebase|stash|reset|revert|cherry-pick|bisect|blame|grep)\b[^.]*)/i,
+  ];
+
+  for (const pattern of gitPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      const cmd = match[1].trim();
+      const gitTool = cmd.startsWith("git ") ? cmd : `git ${cmd}`;
+      if (available.has("terminal")) {
+        return { toolName: "terminal", args: { command: gitTool } };
+      }
+    }
+  }
+
+  // Read file patterns
+  const readPatterns = [
+    /(?:read|show|display|open|view|cat|look at|check|inspect|examine)\s+(?:the\s+)?(?:file\s+)?[`"']?([^\s`"'.]+(?:\.\w+))[`"']?/i,
+    /(?:the\s+)?(?:contents?|content)\s+(?:of\s+)?[`"']?([^\s`"'.]+(?:\.\w+))[`"']?/i,
+    /(?:I(?:'ll| will)|let me)\s+(?:read|show|display|open|view|cat|look at|check|inspect|examine)\s+(?:the\s+)?(?:file\s+)?[`"']?([^\s`"'.]+(?:\.\w+))[`"']?/i,
+    /(?:here(?:'s| is))\s+(?:the\s+)?(?:contents?\s+of\s+)?[`"']?([^\s`"'.]+(?:\.\w+))[`"']?/i,
+  ];
+
+  for (const pattern of readPatterns) {
+    const match = text.match(pattern);
+    if (match && available.has("read")) {
+      return { toolName: "read", args: { path: match[1].trim() } };
+    }
+  }
+
+  // Write/create file patterns
+  const writePatterns = [
+    /(?:create|write|make|generate)\s+(?:a\s+)?(?:new\s+)?(?:file\s+)?[`"']?([^\s`"'.]+(?:\.\w+))[`"']?\s*(?:with|containing|that contains|with content)\s*[：:]?\s*([\s\S]*?)(?:\.?\s*$|\n\n)/i,
+    /(?:I(?:'ll| will)|let me)\s+(?:create|write|make|generate)\s+(?:a\s+)?(?:new\s+)?(?:file\s+)?[`"']?([^\s`"'.]+(?:\.\w+))[`"']?/i,
+    /(?:writing|creating|making)\s+(?:to\s+)?(?:the\s+)?(?:file\s+)?[`"']?([^\s`"'.]+(?:\.\w+))[`"']?/i,
+  ];
+
+  for (const pattern of writePatterns) {
+    const match = text.match(pattern);
+    if (match && available.has("write")) {
+      const filePath = match[1].trim();
+      const content = match[2]?.trim() ?? "";
+      return { toolName: "write", args: { path: filePath, content } };
+    }
+  }
+
+  // Search patterns
+  const searchPatterns = [
+    /(?:search|find|grep|look for|scan)\s+(?:for\s+)?[`"']([^`"']+)[`"']\s+(?:in|across|through)\s+(?:the\s+)?(?:files?|code|workspace)/i,
+    /(?:I(?:'ll| will)|let me)\s+(?:search|find|grep|look for|scan)\s+(?:for\s+)?[`"']([^`"']+)[`"']/i,
+  ];
+
+  for (const pattern of searchPatterns) {
+    const match = text.match(pattern);
+    if (match && available.has("search")) {
+      return { toolName: "search", args: { query: match[1].trim() } };
+    }
+  }
+
+  return null;
+}
+
+/**
  * Build a simplified retry message with explicit tool listing and JSON format.
  * Used when the model fails to produce valid tool calls after initial attempts.
  */
@@ -848,12 +943,42 @@ export async function* runAgentLoop(
         }
       } else if (turn < config.maxTurns - 1 && consecutiveNudges < MAX_NUDGES) {
         // Model returned text without tool calls — it may be describing what it
-        // would do instead of doing it. Send a follow-up to nudge it toward using
-        // the actual tool.
+        // would do instead of doing it. Try to detect and execute the described action.
+        const describedAction = detectDescribedAction(response.text, toolDefinitions);
+        if (describedAction) {
+          // Execute the detected action directly
+          const argString = formatToolArgs(describedAction.toolName, describedAction.args);
+          const toolStartTime = Date.now();
+          const toolResult = await tools.runToolCall(
+            `${describedAction.toolName} ${argString}`,
+            signal,
+          );
+          const toolDurationMs = Date.now() - toolStartTime;
+
+          yield {
+            type: "toolExecuted",
+            toolName: describedAction.toolName,
+            command: argString,
+            status: toolResult.ok ? "success" : "error",
+            message: toolResult.output.slice(0, 200),
+            durationMs: toolDurationMs,
+          };
+
+          // Add the assistant's text and tool result to the conversation
+          messages.push({ role: "assistant", content: response.text });
+          messages.push({
+            role: "tool",
+            content: toolResult.output.slice(0, MAX_TOOL_OUTPUT_TOKENS * 4),
+            tool_call_id: `call_described_${Date.now()}`,
+          });
+
+          // Don't nudge — let the loop continue so the model sees the tool result
+          continue;
+        }
+
+        // No detectable action — nudge the model to use tools
         consecutiveNudges++;
         messages.push({ role: "assistant", content: response.text });
-        // For poor tool-calling models, use the simplified retry message
-        // with explicit tool listing and JSON format
         const useSimplified = model && isPoorToolCallingModel(model);
         messages.push({
           role: "user",
@@ -875,7 +1000,45 @@ export async function* runAgentLoop(
         });
         continue;
       } else {
-        messages.push({ role: "assistant", content: response.text });
+        // Last turn — try to execute any described action before giving up
+        const describedAction = detectDescribedAction(response.text, toolDefinitions);
+        if (describedAction) {
+          const argString = formatToolArgs(describedAction.toolName, describedAction.args);
+          const toolStartTime = Date.now();
+          const toolResult = await tools.runToolCall(
+            `${describedAction.toolName} ${argString}`,
+            signal,
+          );
+          const toolDurationMs = Date.now() - toolStartTime;
+
+          yield {
+            type: "toolExecuted",
+            toolName: describedAction.toolName,
+            command: argString,
+            status: toolResult.ok ? "success" : "error",
+            message: toolResult.output.slice(0, 200),
+            durationMs: toolDurationMs,
+          };
+
+          messages.push({ role: "assistant", content: response.text });
+          messages.push({
+            role: "tool",
+            content: toolResult.output.slice(0, MAX_TOOL_OUTPUT_TOKENS * 4),
+            tool_call_id: `call_described_final_${Date.now()}`,
+          });
+
+          // Get a final summary from the model
+          const finalResponse = await router.generate(messages, {
+            model,
+            provider: provider as ProviderId | undefined,
+            maxTokens: config.maxTokensPerTurn,
+            signal,
+            retryBudget,
+          });
+          messages.push({ role: "assistant", content: finalResponse.text });
+        } else {
+          messages.push({ role: "assistant", content: response.text });
+        }
         return messages;
       }
     } else {

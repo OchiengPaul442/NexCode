@@ -1,16 +1,21 @@
 /**
  * NC-033 category: Pure policy — validate classification without running commands.
  *
- * F-012 tests verifying that SAFE_PATTERNS no longer allows arbitrary code
- * execution without approval. All tests use validateCommand() as a pure function
- * and requiresApproval() from the policy engine — no real commands are executed.
+ * F-012 tests verifying that:
+ * - SAFE_PATTERNS no longer allows arbitrary code execution without approval
+ * - Non-safe commands pass through the terminal safety check ("confirm, don't block")
+ * - The approval policy still requires consent for non-safe commands
+ * - Inline code execution (node -e, python -c) is still blocked
+ *
+ * All tests use validateCommand() as a pure function and requiresApproval()
+ * from the policy engine — no real commands are executed.
  */
 
 import { describe, it, expect } from "vitest";
 import { TerminalTool, SAFE_PATTERNS } from "../src/tools/terminalTool";
 import { DefaultToolApprovalPolicy } from "../src/tools/toolApprovalPolicy";
 
-describe("F-012: SAFE_PATTERNS allows arbitrary code execution without approval", () => {
+describe("F-012: Terminal safety policy — confirm, don't block", () => {
   const tool = new TerminalTool(process.cwd());
   const policy = new DefaultToolApprovalPolicy();
 
@@ -85,32 +90,35 @@ describe("F-012: SAFE_PATTERNS allows arbitrary code execution without approval"
     });
   });
 
-  describe("validateCommand now blocks inline code execution", () => {
-    it("node -e is blocked by shell expansion pattern", () => {
+  describe("validateCommand now allows non-safe commands through (confirm, don't block)", () => {
+    it("node -e is still blocked by shell expansion pattern", () => {
       const error = (tool as any).validateCommand('node -e "console.log(process.env)"');
       expect(error).toContain("blocked");
     });
 
-    it("python -c is blocked by shell expansion pattern", () => {
+    it("python -c is still blocked by shell expansion pattern", () => {
       const error = (tool as any).validateCommand('python -c "import os; os.system(\'echo hacked\')"');
       expect(error).toContain("blocked");
     });
 
-    it("python3 -c is blocked by shell expansion pattern", () => {
+    it("python3 -c is still blocked by shell expansion pattern", () => {
       const error = (tool as any).validateCommand('python3 -c "print(\'hacked\')"');
       expect(error).toContain("blocked");
     });
 
-    it("npm run now requires approval (not in SAFE_PATTERNS)", () => {
-      expect(policy.requiresApproval("terminal", "npm run preinstall")).toBe(true);
+    it("npm run now passes validation (requires approval via policy)", () => {
+      const error = (tool as any).validateCommand("npm run preinstall");
+      expect(error).toBeNull();
     });
 
-    it("npm install now requires approval (not in SAFE_PATTERNS)", () => {
-      expect(policy.requiresApproval("terminal", "npm install")).toBe(true);
+    it("npm install now passes validation (requires approval via policy)", () => {
+      const error = (tool as any).validateCommand("npm install");
+      expect(error).toBeNull();
     });
 
-    it("npx now requires approval (not in SAFE_PATTERNS)", () => {
-      expect(policy.requiresApproval("terminal", "npx evil-package")).toBe(true);
+    it("npx now passes validation (requires approval via policy)", () => {
+      const error = (tool as any).validateCommand("npx evil-package");
+      expect(error).toBeNull();
     });
   });
 

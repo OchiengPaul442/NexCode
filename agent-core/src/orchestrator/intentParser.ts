@@ -177,11 +177,18 @@ export function extractToolCommandRequest(
     return null;
   }
 
-  const readMatch = normalized.match(
+  const readFileMatch = normalized.match(
     /^(?:please\s+)?(?:read|open|show)\s+(?:the\s+)?file\s+(.+)$/i,
   );
-  if (readMatch) {
-    return `read ${readMatch[1].trim()}`;
+  if (readFileMatch) {
+    return `read ${readFileMatch[1].trim()}`;
+  }
+
+  const readPathMatch = normalized.match(
+    /^(?:please\s+)?(?:read|open|show)\s+(?:the\s+)?([a-z0-9_./\\-]+\.\w+)$/i,
+  );
+  if (readPathMatch) {
+    return `read ${readPathMatch[1].trim()}`;
   }
 
   const searchMatch = normalized.match(

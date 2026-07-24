@@ -5,6 +5,7 @@ node_modules/
 **/*.vsix
 **/.next/
 **/.opencode/
+**/.agent-bench/
 **/.pytest_cache/
 **/__pycache__/
 extension/package-lock.json

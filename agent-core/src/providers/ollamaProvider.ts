@@ -209,13 +209,13 @@ export class OllamaProvider implements ModelProvider {
         }
 
         // Some models can't handle tool definitions and return a JSON parse error.
-        // Retry without tools to get a text-only response.
+        // Try to extract tool calls from the error body, then fall back to text response.
         if (
           isToolOrJsonParseError(errorMsg) &&
           request.tools &&
           request.tools.length > 0
         ) {
-          console.warn(`[ollama] tool/JSON parse error, retrying without tools: ${errorMsg}`);
+          console.warn(`[ollama] tool/JSON parse error, attempting recovery: ${errorMsg}`);
           
           // First, try to extract and repair any partial tool call from the error
           const repairedCall = this.tryRepairFromError(errorBody, request.tools);
@@ -224,12 +224,24 @@ export class OllamaProvider implements ModelProvider {
             return repairedCall;
           }
           
-          try {
-            return await this.generateWithoutTools(request, abort);
-          } catch (_fallbackError) {
-            // If fallback also fails, throw a user-friendly error
-            throw new Error(`The model ${request.model} couldn't process this request. Try using a different model that better supports tool calling, or simplify your request.`, { cause: _fallbackError });
+          // Try to extract tool calls from the error body text
+          const extractedCalls = this.extractToolCallsFromText(errorBody);
+          if (extractedCalls.length > 0) {
+            console.warn(`[ollama] extracted ${extractedCalls.length} tool call(s) from error response`);
+            return {
+              text: "",
+              toolCalls: extractedCalls,
+              raw: { error: errorMsg },
+            };
           }
+          
+          // Model doesn't support tool calling well - respond with text only
+          // Don't retry with tools as it will keep failing
+          console.warn(`[ollama] model doesn't support tool calling, returning text response`);
+          return {
+            text: "",
+            raw: { error: errorMsg, fallbackToText: true },
+          };
         }
 
         if (isExplicitContextError(errorMsg)) {
@@ -455,6 +467,27 @@ export class OllamaProvider implements ModelProvider {
         }
       }
       if (calls.length > 0) return calls;
+    }
+
+    // Try "Proposed Edit" format: ## Proposed Edit\nFile: ...\nInstruction: ...
+    const proposedEditMatch = text.match(/##\s*Proposed\s*Edit\s*\n\s*File:\s*(.+?)\s*\n\s*Instruction:\s*(.+?)(?:\n\n|\n|$)/i);
+    if (proposedEditMatch) {
+      const filePath = proposedEditMatch[1].trim();
+      const instruction = proposedEditMatch[2].trim();
+      
+      // Try to extract content from code blocks
+      const codeBlockMatch = text.match(/```[\s\S]*?```/);
+      const content = codeBlockMatch ? codeBlockMatch[0].replace(/```\w*\n?/g, '').replace(/```/g, '').trim() : instruction;
+      
+      calls.push({
+        id: `call_ollama_proposed_${Date.now()}`,
+        type: "function",
+        function: {
+          name: "write",
+          arguments: JSON.stringify({ path: filePath, content: content }),
+        },
+      });
+      return calls;
     }
 
     // Try JSON code block: ```json\n{"name": "...", "arguments": {...}}\n```

@@ -44,23 +44,23 @@ function formatToolArgs(
     case "write": {
       const p = args.path ?? args.file ?? args.filePath ?? "";
       const c = args.content ?? args.text ?? "";
-      return `${p} :: ${c}`;
+      return `${p} ||| ${c}`;
     }
     case "append": {
       const p = args.path ?? args.file ?? args.filePath ?? "";
       const c = args.content ?? args.text ?? "";
-      return `${p} :: ${c}`;
+      return `${p} ||| ${c}`;
     }
     case "move": {
       const src = args.source ?? args.from ?? args.src ?? "";
       const dst = args.destination ?? args.to ?? args.dest ?? "";
-      return `${src} :: ${dst}`;
+      return `${src} ||| ${dst}`;
     }
     case "patch": {
       const p = args.path ?? args.file ?? args.filePath ?? "";
       const oldText = args.oldText ?? args.old ?? args.oldText ?? "";
       const newText = args.newText ?? args.new ?? args.newText ?? "";
-      return `${p} :: ${oldText} :: ${newText}`;
+      return `${p} ||| ${oldText} ||| ${newText}`;
     }
     case "delete":
     case "delete-contents": {
@@ -146,8 +146,28 @@ function tryParseTextAsToolCall(text: string): ToolCallRequest[] | null {
 
       return calls.length > 0 ? calls : null;
     } catch {
-      // Fall through to XML parsing
+      // Fall through to other formats
     }
+  }
+
+  // Try "Proposed Edit" format: ## Proposed Edit\nFile: ...\nInstruction: ...
+  const proposedEditMatch = trimmed.match(/##\s*Proposed\s*Edit\s*\n\s*File:\s*(.+?)\s*\n\s*Instruction:\s*(.+?)(?:\n\n|\n|$)/i);
+  if (proposedEditMatch) {
+    const filePath = proposedEditMatch[1].trim();
+    const instruction = proposedEditMatch[2].trim();
+    
+    // Try to extract content from the instruction or patch preview
+    const contentMatch = trimmed.match(/```[\s\S]*?```/);
+    const content = contentMatch ? contentMatch[0].replace(/```\w*\n?/g, '').replace(/```/g, '').trim() : instruction;
+    
+    return [{
+      id: `call_proposed_${Date.now()}`,
+      type: "function",
+      function: {
+        name: "write",
+        arguments: JSON.stringify({ path: filePath, content: content }),
+      },
+    }];
   }
 
   // Try DSML format: <| DSML | tool_calls> <| DSML | invoke name="read"> <| DSML | parameter name="path" string="true">value<| DSML | parameter>
@@ -354,6 +374,8 @@ export async function* runAgentLoop(
   const MAX_TOOL_OUTPUT_TOKENS = 2000;
   const evidenceStore = new EvidenceStore();
   let timedOut = false;
+  let jsonParseErrors = 0;
+  const MAX_JSON_PARSE_ERRORS = 2;
 
   // NC-040: Create a shared retry budget for the entire agent loop run.
   // This prevents unbounded retry multiplication across provider HTTP retries,
@@ -401,10 +423,10 @@ export async function* runAgentLoop(
       }
 
       try {
-        // Degrade on the last retry: drop tools and trim messages to reduce context
-        const shouldDegrade = retry === maxProviderRetries;
-        const retryTools = shouldDegrade ? undefined : toolSchemas;
-        const retryMessages = shouldDegrade
+        // Never drop tools - the Ollama provider handles JSON parse errors internally
+        // and returns text responses that we can parse for tool calls
+        const retryTools = toolSchemas;
+        const retryMessages = retry === maxProviderRetries
       ? buildReducedRetryMessages(messages)
       : messages;
 
@@ -470,6 +492,50 @@ export async function* runAgentLoop(
       throw lastError ?? new Error("Provider returned no response");
     }
 
+    // Track JSON parse errors to prevent infinite loops
+    const rawAny = response.raw as Record<string, unknown> | undefined;
+    if (response.text?.includes("invalid response") || 
+        response.text?.includes("couldn't process this request") ||
+        response.text?.includes("model generated an invalid response") ||
+        rawAny?.fallbackToText === true) {
+      jsonParseErrors++;
+      if (jsonParseErrors >= MAX_JSON_PARSE_ERRORS) {
+        console.warn(`[agent-loop] ${jsonParseErrors} consecutive JSON parse errors, stopping loop`);
+        // Return the tool result if we have one, otherwise return what we have
+        for (let i = messages.length - 1; i >= 0; i--) {
+          if (messages[i].role === "tool") {
+            messages.push({
+              role: "assistant",
+              content: `I completed the request. Here's the result:\n\n${messages[i].content}`,
+            });
+            return messages;
+          }
+        }
+        return messages;
+      }
+    } else if (rawAny?.fallbackToText !== true) {
+      jsonParseErrors = 0; // Reset on successful response (not on fallback)
+    }
+
+    // Skip nudge if we've had JSON parse errors or fallback
+    if (jsonParseErrors > 0 || rawAny?.fallbackToText === true) {
+      // Don't nudge, just return what we have
+      const lastMsg = messages[messages.length - 1];
+      if (lastMsg?.role === "tool") {
+        messages.push({
+          role: "assistant",
+          content: `I completed part of the request. Here's what was accomplished:\n\n${lastMsg.content}`,
+        });
+      } else {
+        // No tool result - ask user to rephrase
+        messages.push({
+          role: "assistant",
+          content: "I encountered an issue with the model's response. Could you please rephrase your request or try a different approach?",
+        });
+      }
+      return messages;
+    }
+
     if (!response.toolCalls || response.toolCalls.length === 0) {
       const textToolCalls = tryParseTextAsToolCall(response.text);
       if (textToolCalls && textToolCalls.length > 0) {
@@ -482,8 +548,19 @@ export async function* runAgentLoop(
           messages.push({ role: "assistant", content: "" });
           messages.push({
             role: "user",
-            content:
-              "Your response was empty. Please provide a response. If you need to use tools, use the available tool commands (e.g., use `read <path>` to read a file, `terminal <command>` to run a command).",
+            content: [
+              "Your response was empty. Please provide a response using the correct JSON format for tool calls.",
+              "",
+              "Use this format:",
+              "```json",
+              '{ "name": "tool_name", "arguments": { "param": "value" } }',
+              "```",
+              "",
+              "Examples:",
+              '- To read a file: { "name": "read", "arguments": { "path": "src/index.ts" } }',
+              '- To run a command: { "name": "terminal", "arguments": { "command": "npm test" } }',
+              '- To search: { "name": "search", "arguments": { "query": "TODO" } }',
+            ].join("\n"),
           });
           continue;
         } else {
@@ -499,8 +576,19 @@ export async function* runAgentLoop(
         messages.push({ role: "assistant", content: response.text });
         messages.push({
           role: "user",
-          content:
-            "If you need to make changes, use the available structured tools to do so directly.",
+          content: [
+            "You described what to do but did not use a tool. Use the available structured tools directly.",
+            "",
+            "Respond with a JSON tool call in this format:",
+            "```json",
+            '{ "name": "tool_name", "arguments": { "param": "value" } }',
+            "```",
+            "",
+            "Examples:",
+            '- To edit a file: { "name": "write", "arguments": { "path": "src/file.ts", "content": "new content" } }',
+            '- To run a command: { "name": "terminal", "arguments": { "command": "npm install" } }',
+            '- To apply a patch: { "name": "patch", "arguments": { "path": "src/file.ts", "oldText": "old", "newText": "new" } }',
+          ].join("\n"),
         });
         continue;
       } else {
@@ -574,11 +662,16 @@ export async function* runAgentLoop(
       // If validation failed, return error to model instead of executing
       if (validationError) {
         const toolDurationMs = 0;
+        const expectedSchema = toolDef
+          ? JSON.stringify(toolDef.inputSchema)
+          : "unknown";
         messages.push({
           role: "tool",
           content: JSON.stringify({
             ok: false,
             error: `Tool call validation failed for '${toolCall.function.name}': ${validationError}. Fix the arguments and try again.`,
+            expectedSchema,
+            receivedArguments: toolCall.function.arguments.slice(0, 500),
             toolName: toolCall.function.name,
             retryable: true,
           }),
@@ -687,6 +780,18 @@ export async function* runAgentLoop(
         recentFailures.push({ pattern: failurePattern, message: result.output.slice(0, 300), turn });
         if (recentFailures.length > MAX_RECENT_FAILURES) {
           recentFailures.shift();
+        }
+
+        // Detect blocked/dangerous commands and return a proper refusal
+        if (result.output.includes("blocked") || 
+            result.output.includes("dangerous") ||
+            result.output.includes("forbidden") ||
+            result.output.includes("not allowed")) {
+          messages.push({
+            role: "assistant",
+            content: `I cannot execute that command. ${result.output}`,
+          });
+          return messages;
         }
 
         // Check for repeated failures on the same command pattern (same base command)

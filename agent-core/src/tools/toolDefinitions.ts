@@ -6,6 +6,18 @@ const stringSchema = (required: boolean = false): Record<string, unknown> => ({
   required: required ? ["value"] : [],
 });
 
+const queryStringSchema = (required: boolean = false): Record<string, unknown> => ({
+  type: "object",
+  properties: { query: { type: "string", description: "The search query" } },
+  required: required ? ["query"] : [],
+});
+
+const commandStringSchema = (required: boolean = false): Record<string, unknown> => ({
+  type: "object",
+  properties: { command: { type: "string", description: "The command to execute" } },
+  required: required ? ["command"] : [],
+});
+
 const pathSchema = (required: boolean = false): Record<string, unknown> => ({
   type: "object",
   properties: {
@@ -50,7 +62,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     description: "Search for files and content within the workspace using ripgrep.",
     risk: "read-only",
     timeoutMs: 30_000,
-    inputSchema: stringSchema(),
+    inputSchema: queryStringSchema(),
   },
   {
     name: "web-search",
@@ -59,7 +71,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     description: "Search the web using Tavily for up-to-date information.",
     risk: "network-egress",
     timeoutMs: 15_000,
-    inputSchema: stringSchema(true),
+    inputSchema: queryStringSchema(true),
   },
   {
     name: "terminal",
@@ -68,7 +80,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     description: "Execute a shell command in the workspace.",
     risk: "terminal",
     timeoutMs: 120_000,
-    inputSchema: stringSchema(true),
+    inputSchema: commandStringSchema(true),
   },
   {
     name: "git-status",

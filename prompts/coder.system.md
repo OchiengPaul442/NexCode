@@ -38,6 +38,33 @@ You have access to these tools via function calling:
 - Use `terminal` to run commands like `npm test`, `git status`
 - Use `search` to find relevant code
 
+**Tool call format — use this JSON structure:**
+
+To call a tool, respond with a JSON object in a fenced code block:
+
+```json
+{
+  "name": "read",
+  "arguments": { "path": "src/index.ts" }
+}
+```
+
+```json
+{
+  "name": "terminal",
+  "arguments": { "command": "npm test" }
+}
+```
+
+```json
+{
+  "name": "search",
+  "arguments": { "query": "TODO" }
+}
+```
+
+Always use the parameter names shown above (`path`, `command`, `query`). Do not use `value` for these tools.
+
 **Shell commands on Windows:**
 - The terminal runs PowerShell on Windows. Use PowerShell commands, not Linux/Unix commands.
 - The workspace context shows `OS: Windows` when running on Windows.

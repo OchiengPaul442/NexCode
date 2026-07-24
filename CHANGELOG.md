@@ -1,12 +1,46 @@
 # Changelog
 
+## 0.3.0
+
+**Date:** 2026-07-25
+**Previous version:** 0.2.1
+
+### Tool Calling Reliability
+- Improved Ollama provider error recovery for malformed JSON responses
+- Added "Proposed Edit" format detection in text-to-tool-call extraction
+- Fixed tool argument separator from `::` to `|||` for write/append/move/patch operations
+- Added blocked command detection with proper refusal messages
+- Improved JSON parse error handling with retry limits
+
+### Prompt Engineering
+- Added few-shot examples to coder system prompt for better tool calling
+- Improved tool schema parameter names to match runtime expectations
+- Added explicit JSON format instructions for models with weak tool calling
+
+### Agent Loop Improvements
+- Never drop tools on retry - always pass tool schemas to the model
+- Added `fallbackToText` detection to prevent infinite retry loops
+- Improved nudge messages with specific JSON format examples
+- Better validation error messages with expected schema information
+
+### Model Compatibility
+- Added support for models with poor tool calling (qwen2.5-coder, gpt-oss)
+- Improved text-to-tool-call extraction for multiple output formats
+- Better handling of models that generate malformed JSON
+
+### Project Cleanup
+- Removed agent-bench-workspace (embedded benchmark repository)
+- Removed dead extensibility scaffolding
+- Removed redundant test files
+- Updated documentation and changelogs
+
 ## 0.2.1
 
 **Date:** 2026-07-17
 **Previous version:** 0.2.0
 
 ### Documentation
-- docs: add AGENT.md, CLAUDE.md, and auto-version script
+- Added AGENT.md, CLAUDE.md, and auto-version script
 
 ## 0.2.0
 

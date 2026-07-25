@@ -484,8 +484,10 @@ function buildPromptBasedToolInstructions(
     "- Each parameter must be on its own line as KEY: VALUE",
     "- Only ONE tool call per response",
     "- Do NOT describe what you would do - actually do it using a tool call",
-    "- Do NOT use JSON or code blocks - use the plain text format above",
+    "- Do NOT use JSON, code blocks, or any other format - use ONLY the plain text format above",
     "- Do NOT add extra text before or after the tool call",
+    "- Do NOT wrap the tool call in markdown code blocks (```...```)",
+    "- Do NOT use curly braces {} or square brackets [] anywhere in your response",
     "- The tool name must match exactly (e.g., 'read', 'write', 'terminal', 'search')",
   ].join("\n");
 }
@@ -812,7 +814,7 @@ export class OllamaProvider implements ModelProvider {
       // instead of in the structured tool_calls field. Try to detect this.
       const text = json.message?.content ?? json.response ?? "";
       if (text) {
-        const extractedCalls = this.extractToolCallsFromText(text);
+        const extractedCalls = this.extractToolCallsFromText(text, request.messages);
         if (extractedCalls.length > 0) {
           return {
             text,
@@ -822,6 +824,10 @@ export class OllamaProvider implements ModelProvider {
               ? { promptTokens: json.prompt_eval_count, completionTokens: json.eval_count, totalTokens: json.prompt_eval_count + json.eval_count }
               : undefined,
           };
+        }
+        // Debug: log text when extraction fails for poor tool-calling models
+        if (isPoorToolCallingModel(request.model) && text.length > 0 && text.length < 500) {
+          console.warn(`[ollama] text extraction failed for poor model, text: ${JSON.stringify(text.substring(0, 300))}`);
         }
       }
 
@@ -950,7 +956,7 @@ export class OllamaProvider implements ModelProvider {
     return null;
   }
 
-  private extractToolCallsFromText(text: string): ToolCallRequest[] {
+  private extractToolCallsFromText(text: string, messages?: Array<{role: string; content: string}>): ToolCallRequest[] {
     const calls: ToolCallRequest[] = [];
 
     // Try simple text format first: TOOL: <name>\nPARAM: value
@@ -1110,9 +1116,85 @@ export class OllamaProvider implements ModelProvider {
     const fenceMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
     const fencedContent = fenceMatch ? fenceMatch[1].trim() : null;
 
-    if (fencedContent && (fencedContent.startsWith("{") || fencedContent.startsWith("["))) {
+      if (fencedContent && (fencedContent.startsWith("{") || fencedContent.startsWith("["))) {
       const parsed = this.tryParseJsonToolCall(fencedContent);
       if (parsed.length > 0) return parsed;
+      
+      // If the JSON code block is not a tool call, check if it looks like file content
+      // Models sometimes produce the edited file content in a JSON code block instead of using TOOL: format
+      try {
+        const jsonContent = JSON.parse(fencedContent);
+        // Check if this looks like a tool call (has "name" that's a known tool AND "arguments")
+        const knownTools = new Set(["read", "write", "terminal", "search", "patch", "delete", "append", "move", "test", "git-status", "git-diff"]);
+        const isToolCall = jsonContent.name && typeof jsonContent.name === "string" && 
+          knownTools.has(jsonContent.name.toLowerCase()) && jsonContent.arguments;
+        
+        if (jsonContent && typeof jsonContent === "object" && !isToolCall) {
+          console.warn(`[ollama] detected JSON code block that looks like file content, attempting to infer file path`);
+          // This looks like file content, not a tool call
+          // Try to infer the file path from the text context (multiple patterns)
+          const filePathMatch = text.match(/(?:file|path|to|for|in|of)\s*[`"']?([^\s`"']+\.json)[`"']?/i)
+            ?? text.match(/[`"']?([^\s`"']+\.json)[`"']?/i)
+            ?? text.match(/(?:file|path|to|for|in|of)\s*[`"']?([^\s`"']+\.ts)[`"']?/i)
+            ?? text.match(/[`"']?([^\s`"']+\.ts)[`"']?/i)
+            ?? text.match(/(?:file|path|to|for|in|of)\s*[`"']?([^\s`"']+\.js)[`"']?/i)
+            ?? text.match(/[`"']?([^\s`"']+\.js)[`"']?/i);
+          if (filePathMatch) {
+            console.warn(`[ollama] inferred file path from text: ${filePathMatch[1]}`);
+            calls.push({
+              id: `call_ollama_json_content_${Date.now()}_${calls.length}`,
+              type: "function",
+              function: {
+                name: "write",
+                arguments: JSON.stringify({ path: filePathMatch[1], content: fencedContent }),
+              },
+            });
+            return calls;
+          }
+          
+          // If no file path found in text, try to infer from the JSON structure
+          // e.g., package.json has "name", "version", "scripts" fields
+          if (jsonContent.scripts || jsonContent.dependencies || jsonContent.devDependencies) {
+            console.warn(`[ollama] inferred file path from JSON structure: package.json`);
+            calls.push({
+              id: `call_ollama_json_content_${Date.now()}_${calls.length}`,
+              type: "function",
+              function: {
+                name: "write",
+                arguments: JSON.stringify({ path: "package.json", content: fencedContent }),
+              },
+            });
+            return calls;
+          }
+          
+          // If still no file path, try to extract from the prompt messages
+          if (messages && messages.length > 0) {
+            const promptText = messages.map(m => m.content).join(" ");
+            const promptPathMatch = promptText.match(/(?:file|path|to|for|in|of)\s*[`"']?([^\s`"']+\.json)[`"']?/i)
+              ?? promptText.match(/[`"']?([^\s`"']+\.json)[`"']?/i)
+              ?? promptText.match(/(?:file|path|to|for|in|of)\s*[`"']?([^\s`"']+\.ts)[`"']?/i)
+              ?? promptText.match(/[`"']?([^\s`"']+\.ts)[`"']?/i)
+              ?? promptText.match(/(?:file|path|to|for|in|of)\s*[`"']?([^\s`"']+\.js)[`"']?/i)
+              ?? promptText.match(/[`"']?([^\s`"']+\.js)[`"']?/i);
+            if (promptPathMatch) {
+              console.warn(`[ollama] inferred file path from prompt: ${promptPathMatch[1]}`);
+              calls.push({
+                id: `call_ollama_json_content_${Date.now()}_${calls.length}`,
+                type: "function",
+                function: {
+                  name: "write",
+                  arguments: JSON.stringify({ path: promptPathMatch[1], content: fencedContent }),
+                },
+              });
+              return calls;
+            }
+          }
+          
+          console.warn(`[ollama] could not infer file path for JSON content`);
+        }
+      } catch {
+        // Not valid JSON, continue
+      }
     }
 
     // Try to find JSON objects embedded anywhere in the text (not just at start)
@@ -1387,7 +1469,7 @@ export class OllamaProvider implements ModelProvider {
         : undefined;
 
       // Extract tool calls from the text response
-      const extractedCalls = this.extractToolCallsFromText(text);
+      const extractedCalls = this.extractToolCallsFromText(text, request.messages);
       if (extractedCalls.length > 0) {
         return { text, toolCalls: extractedCalls, raw: json, usage };
       }

@@ -43,9 +43,11 @@ export function inferNaturalLanguageEditRequest(
   }
 
   const hasEditVerb =
-    /\b(refactor|rewrite|modify|change|update|fix|rename|remove|delete|add|implement|improve|clean up)\b/i.test(
+    /\b(refactor|rewrite|modify|change|update|fix|rename|remove|delete|implement|improve|clean up)\b/i.test(
       normalized,
     );
+  // Note: "add" is excluded from edit verbs because prompts like "Add a script to package.json"
+  // should be handled by the agent loop with tool calls, not by the proposed edit path.
   if (!hasEditVerb) {
     return null;
   }

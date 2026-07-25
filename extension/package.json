@@ -3,7 +3,7 @@
   "displayName": "NexCode Kiboko",
   "description": "Local-first AI coding assistant for VS Code with agent modes, safe tool execution, edit review, Ollama, and OpenAI-compatible providers.",
   "publisher": "nexcode",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "icon": "media/icon.png",
   "engines": {
     "vscode": "^1.95.0"
@@ -319,4 +319,5 @@
     "zustand": "^5.0.8"
   }
 }
+
 

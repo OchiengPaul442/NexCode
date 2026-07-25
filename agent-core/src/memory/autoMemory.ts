@@ -1,5 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
+import { randomUUID } from "crypto";
 
 /**
  * Memory entry types.
@@ -94,7 +95,7 @@ export class AutoMemory {
     value: string,
     tags: string[] = [],
   ): Promise<void> {
-    const id = `${type}-${key}-${Date.now()}`;
+    const id = randomUUID();
     const entry: MemoryEntry = {
       id,
       type,

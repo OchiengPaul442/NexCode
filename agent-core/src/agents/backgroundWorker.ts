@@ -126,7 +126,9 @@ export class BackgroundWorker extends EventEmitter {
 
       this.state = "failed";
       this.emit("stateChanged", { state: "failed", workerId: this.config.id });
-      this.emit("error", { error: String(error), workerId: this.config.id });
+      // Don't emit 'error' event as it crashes Node.js EventEmitter if no handler attached
+      // Instead, emit a 'failed' event with error details
+      this.emit("failed", { error: String(error), workerId: this.config.id });
     }
   }
 

@@ -1,6 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
+import { randomUUID } from "crypto";
 import { type ToolResult } from "../types";
 
 /**
@@ -13,17 +14,18 @@ export interface CodeInterpreterConfig {
   maxMemoryMb?: number;
   /** Allowed languages */
   allowedLanguages?: string[];
+  /** Maximum code length in characters */
+  maxCodeLength?: number;
 }
 
 /**
  * Code interpreter for sandboxed code execution.
- * 
- * Features:
- * - Execute JavaScript/TypeScript in sandboxed VM
- * - Execute Python via child process
- * - Input/output capture
+ *
+ * Executes JavaScript and Python in restricted environments with:
  * - Timeout enforcement
- * - Resource limits
+ * - Process isolation
+ * - Minimal environment variables
+ * - Code length limits
  */
 export class CodeInterpreter {
   private readonly config: CodeInterpreterConfig;
@@ -32,13 +34,18 @@ export class CodeInterpreter {
     this.config = {
       timeoutMs: 30000,
       maxMemoryMb: 256,
-      allowedLanguages: ["javascript", "typescript", "python"],
+      allowedLanguages: ["javascript", "python"],
+      maxCodeLength: 100000,
       ...config,
     };
   }
 
   /**
    * Execute code in a sandboxed environment.
+   * @param code - The code to execute
+   * @param language - The programming language (javascript or python)
+   * @param input - Optional input data
+   * @returns ToolResult with output or error
    */
   async execute(
     code: string,
@@ -53,10 +60,17 @@ export class CodeInterpreter {
       };
     }
 
+    // Validate code length
+    if (code.length > (this.config.maxCodeLength ?? 100000)) {
+      return {
+        ok: false,
+        output: `Code length ${code.length} exceeds maximum ${this.config.maxCodeLength} characters`,
+      };
+    }
+
     try {
       switch (language) {
         case "javascript":
-        case "typescript":
           return await this.executeJavaScript(code, input);
         case "python":
           return await this.executePython(code, input);
@@ -66,93 +80,107 @@ export class CodeInterpreter {
             output: `Unsupported language: ${language}`,
           };
       }
-    } catch (error) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
       return {
         ok: false,
-        output: `Execution failed: ${String(error)}`,
+        output: `Execution failed: ${message}`,
       };
     }
   }
 
   /**
-   * Execute JavaScript/TypeScript code.
+   * Execute JavaScript code in a restricted environment.
+   * Uses child_process.execFile with minimal environment.
+   * @param code - JavaScript code to execute
+   * @param _input - Optional input (not used for JavaScript)
+   * @returns ToolResult with output or error
    */
   private async executeJavaScript(
     code: string,
-    input?: string,
+    _input?: string,
   ): Promise<ToolResult> {
     const { execFile } = await import("child_process");
     const { promisify } = await import("util");
     const execFileAsync = promisify(execFile);
-    
-    try {
-      // Write code to a temp file and execute with node
-      const tmpFile = path.join(os.tmpdir(), `nexcode-eval-${Date.now()}.js`);
-      await fs.writeFile(tmpFile, code, "utf8");
-      
-      try {
-        const { stdout, stderr } = await execFileAsync("node", [tmpFile], {
-          timeout: this.config.timeoutMs,
-          maxBuffer: 1024 * 1024,
-        });
-        
-        return {
-          ok: true,
-          output: stdout + (stderr ? `\nStderr: ${stderr}` : ""),
-        };
-      } finally {
-        await fs.unlink(tmpFile).catch(() => {});
-      }
-    } catch (error: any) {
-      return {
-        ok: false,
-        output: `JavaScript error: ${error.message}\n${error.stdout || ""}${error.stderr || ""}`,
-      };
-    }
-  }
 
-  /**
-   * Execute Python code.
-   */
-  private async executePython(
-    code: string,
-    input?: string,
-  ): Promise<ToolResult> {
-    const { execFile } = await import("child_process");
-    const { promisify } = await import("util");
-    const execFileAsync = promisify(execFile);
-    
+    // Create minimal environment (no secrets, no tokens)
     const env = {
-      ...process.env,
-      PYTHONIOENCODING: "utf-8",
+      PATH: process.env.PATH ?? "",
+      HOME: process.env.HOME ?? "",
+      TMPDIR: os.tmpdir(),
+      NODE_ENV: "test",
     };
 
-    try {
-      const pythonCode = input
-        ? `import sys\nsys.stdin = open('/dev/null', 'r')\n${code}`
-        : code;
+    // Write code to a temp file with random name to prevent TOCTOU races
+    const tmpFile = path.join(os.tmpdir(), `nexcode-eval-${randomUUID()}.js`);
 
-      const { stdout, stderr } = await execFileAsync(
-        "python3",
-        ["-c", pythonCode],
-        {
-          timeout: this.config.timeoutMs,
-          env,
-          maxBuffer: 1024 * 1024, // 1MB
-        },
-      );
+    try {
+      await fs.writeFile(tmpFile, code, "utf8");
+
+      const { stdout, stderr } = await execFileAsync("node", [tmpFile], {
+        timeout: this.config.timeoutMs,
+        maxBuffer: 1024 * 1024,
+        env,
+      });
 
       return {
         ok: true,
         output: stdout + (stderr ? `\nStderr: ${stderr}` : ""),
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
       return {
         ok: false,
-        output: `Python error: ${error.message}\n${error.stdout || ""}${error.stderr || ""}`,
+        output: `JavaScript error: ${message}`,
       };
+    } finally {
+      await fs.unlink(tmpFile).catch(() => {});
     }
   }
 
-  private output: string[] = [];
+  /**
+   * Execute Python code in a restricted environment.
+   * Uses child_process.execFile with minimal environment.
+   * @param code - Python code to execute
+   * @param _input - Optional input (not used for Python)
+   * @returns ToolResult with output or error
+   */
+  private async executePython(
+    code: string,
+    _input?: string,
+  ): Promise<ToolResult> {
+    const { execFile } = await import("child_process");
+    const { promisify } = await import("util");
+    const execFileAsync = promisify(execFile);
+
+    // Create minimal environment (no secrets, no tokens)
+    const env = {
+      PATH: process.env.PATH ?? "",
+      HOME: process.env.HOME ?? "",
+      PYTHONIOENCODING: "utf-8",
+    };
+
+    // Determine Python executable based on platform
+    const pythonCmd = process.platform === "win32" ? "python" : "python3";
+
+    try {
+      const { stdout, stderr } = await execFileAsync(pythonCmd, ["-c", code], {
+        timeout: this.config.timeoutMs,
+        maxBuffer: 1024 * 1024,
+        env,
+      });
+
+      return {
+        ok: true,
+        output: stdout + (stderr ? `\nStderr: ${stderr}` : ""),
+      };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        ok: false,
+        output: `Python error: ${message}`,
+      };
+    }
+  }
 }

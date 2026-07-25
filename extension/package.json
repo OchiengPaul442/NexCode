@@ -1,9 +1,9 @@
 {
   "name": "nexcode-kiboko-extension",
-  "displayName": "Nexcode Kiboko",
-  "description": "Local-first, multi-agent AI coding assistant for VS Code.",
+  "displayName": "NexCode Kiboko",
+  "description": "Local-first, multi-agent AI coding assistant for VS Code. Chat with AI models, edit code, run commands, search files, and automate coding tasks. Supports Ollama, OpenAI, and other providers. Built-in security, memory, and hooks.",
   "publisher": "nexcode",
-  "version": "0.5.0",
+  "version": "0.7.0",
   "private": true,
   "icon": "media/icon.png",
   "engines": {
@@ -14,13 +14,76 @@
     "chat",
     "agent",
     "ollama",
+    "openai",
     "code-review",
-    "developer-tools"
+    "developer-tools",
+    "code-generation",
+    "copilot",
+    "llm",
+    "gpt",
+    "claude",
+    "coding-assistant",
+    "ai-assistant",
+    "code-completion",
+    "code-editing",
+    "terminal",
+    "git",
+    "search",
+    "refactoring",
+    "debugging",
+    "automation",
+    "productivity",
+    "multi-agent",
+    "local-ai",
+    "privacy-first",
+    "open-source",
+    "typescript",
+    "nextjs",
+    "react",
+    "webview",
+    "sidebar",
+    "workflow",
+    "pair-programming",
+    "code-analysis",
+    "security-scanning",
+    "test-generation",
+    "documentation",
+    "api-design",
+    "database",
+    "docker",
+    "kubernetes",
+    "devops",
+    "ci-cd",
+    "code-quality",
+    "linting",
+    "formatting",
+    "migration",
+    "deployment"
   ],
-  "license": "MIT",
   "categories": [
-    "Other"
+    "Other",
+    "Programming Languages",
+    "Linters",
+    "Formatters",
+    "Snippets",
+    "Testing",
+    "Debuggers"
   ],
+  "galleryBanner": {
+    "color": "#1E1E2E",
+    "theme": "dark"
+  },
+  "bugs": {
+    "url": "https://github.com/nexcode/nexcode-kiboko/issues"
+  },
+  "homepage": "https://nexcode.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nexcode/nexcode-kiboko"
+  },
+  "sponsor": {
+    "url": "https://nexcode.dev/sponsor"
+  },
   "main": "./out/extension.js",
   "activationEvents": [
     "onView:nexcodeKiboko.sidebarView"
@@ -272,3 +335,4 @@
     "zustand": "^5.0.8"
   }
 }
+

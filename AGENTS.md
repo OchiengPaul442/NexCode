@@ -64,19 +64,21 @@ remaining transparent and under developer control.
 - `agent-core/src/tools/`: tool definitions and implementations.
 - `agent-core/src/providers/`: LLM provider integrations.
 - `agent-core/src/mcp/`: MCP registry, adapters, and protocol-related code.
+- `agent-core/src/memory/`: memory managers (short-term, long-term, enhanced, auto).
+- `agent-core/src/hooks/`: hook registry for tool execution interception.
+- `agent-core/src/rules/`: path-scoped rules for context-specific instructions.
 - `agent-core/src/utils/`: redaction, path containment, token counting, and
   related utility modules.
-- `agent-core/tests/`: agent-core tests.
+- `agent-core/tests/`: agent-core unit and integration tests.
 - `extension/`: VS Code extension host and sidebar integration.
 - `extension/src/`: extension-host source code.
+- `extension/versions/`: packaged VSIX files for each version.
 - `extension/webview/`: React webview application.
 - `extension/media/`: extension assets.
 - `docs/`: project documentation.
-- `docs/refactor/source-reports/`: read-only external review reports and
-  specifications.
-- `docs/refactor/`: implementation records generated during the refactor.
 - `prompts/`: system and reusable prompt content.
 - `providers/`: provider configuration.
+- `tests/`: benchmark and integration test scripts.
 - `tools/`: build, release, and utility scripts.
 - `.opencode/commands/`: explicitly invoked OpenCode workflows.
 - `.opencode/agents/`: specialized project agents.

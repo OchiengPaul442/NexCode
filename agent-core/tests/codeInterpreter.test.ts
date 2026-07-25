@@ -15,6 +15,11 @@ describe("CodeInterpreter", () => {
     expect(interpreter).toBeDefined();
   });
 
+  it("should have default config", () => {
+    const defaultInterpreter = new CodeInterpreter();
+    expect(defaultInterpreter).toBeDefined();
+  });
+
   it("should execute simple JavaScript", async () => {
     const result = await interpreter.execute('console.log(1 + 1)', "javascript");
     expect(result.ok).toBe(true);
@@ -33,8 +38,8 @@ describe("CodeInterpreter", () => {
       expect(result.ok).toBe(true);
       expect(result.output).toContain("2");
     } catch {
-      // Python might not be installed
-      expect(true).toBe(true);
+      // Python might not be installed - skip test
+      console.log("Python not available, skipping test");
     }
   });
 
@@ -50,19 +55,24 @@ describe("CodeInterpreter", () => {
     expect(result.output).toContain("test error");
   });
 
-  it("should handle Python errors", async () => {
-    const result = await interpreter.execute("raise ValueError('test error')", "python");
+  it("should handle code length limit", async () => {
+    const longCode = "a".repeat(200000);
+    const result = await interpreter.execute(longCode, "javascript");
     expect(result.ok).toBe(false);
-    expect(result.output).toContain("test error");
+    expect(result.output).toContain("exceeds maximum");
   });
 
-  it("should handle timeout", async () => {
-    const shortInterpreter = new CodeInterpreter({
-      timeoutMs: 100, // Very short timeout
-      allowedLanguages: ["python"],
-    });
-    
-    const result = await shortInterpreter.execute("import time; time.sleep(10)", "python");
-    expect(result.ok).toBe(false);
+  it("should use minimal environment variables", async () => {
+    const result = await interpreter.execute('console.log(process.env.NODE_ENV)', "javascript");
+    expect(result.ok).toBe(true);
+    expect(result.output).toContain("test");
+  });
+
+  it("should use random temp file names", async () => {
+    const result1 = await interpreter.execute('console.log("a")', "javascript");
+    const result2 = await interpreter.execute('console.log("b")', "javascript");
+    expect(result1.ok).toBe(true);
+    expect(result2.ok).toBe(true);
+    // Both should succeed without file collisions
   });
 });

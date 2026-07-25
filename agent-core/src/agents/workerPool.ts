@@ -232,12 +232,13 @@ export class WorkerPool extends EventEmitter {
 
       const result: WorkerResult = {
         workerId,
-        success: true,
-        response: finalResponse,
+        success: mergeResult.success,
+        response: mergeResult.success ? finalResponse : `Merge failed: ${mergeResult.output}`,
         filesModified,
         toolCalls,
         durationMs: Date.now() - startTime,
         workspacePath: workspace.path,
+        error: mergeResult.success ? undefined : mergeResult.output,
       };
 
       this.emit("workerCompleted", {
@@ -271,7 +272,11 @@ export class WorkerPool extends EventEmitter {
       // Cleanup
       const workerState = this.workers.get(workerId);
       if (workerState) {
-        await this.isolation.releaseWorkspace(workerState.workspace.id);
+        try {
+          await this.isolation.releaseWorkspace(workerState.workspace.id);
+        } catch (cleanupError) {
+          console.warn(`[workerPool] Failed to release workspace for ${workerId}: ${cleanupError}`);
+        }
         this.workers.delete(workerId);
       }
     }

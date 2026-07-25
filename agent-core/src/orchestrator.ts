@@ -91,6 +91,7 @@ export interface NexcodeOrchestratorOptions {
   workspaceRoot?: string;
   promptsDir?: string;
   memoryDir?: string;
+  storagePath?: string;  // VS Code's globalStoragePath for extension data
   defaultProvider?: ProviderId;
   defaultModel?: string;
   defaultCloudModel?: string;
@@ -264,9 +265,9 @@ export class NexcodeOrchestrator {
     this.mcpRegistry.register(new GitMcpAdapter(this.tools.git));
     this.mcpRegistry.register(new SearchMcpAdapter(this.tools.search));
     
-    // Initialize path-scoped rules if workspace root is available
-    this.pathScopedRules = this.config.workspaceRoot
-      ? new PathScopedRuleManager(this.config.workspaceRoot)
+    // Initialize path-scoped rules using storage path (not workspace root)
+    this.pathScopedRules = this.config.storagePath
+      ? new PathScopedRuleManager(this.config.storagePath)
       : null;
     
     // Initialize agent isolation for subagent workspaces

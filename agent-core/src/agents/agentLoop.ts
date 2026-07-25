@@ -1173,7 +1173,9 @@ export async function* runAgentLoop(
   }
 
   // Enhanced memory system: load project memory and inject into context
-  const enhancedMemory = workspaceRoot ? new EnhancedMemoryManager(workspaceRoot) : null;
+  // Uses storagePath (VS Code's globalStoragePath) for storage, NOT workspace root
+  const storagePath = workspaceRoot; // Fallback to workspace root if no storage path provided
+  const enhancedMemory = storagePath ? new EnhancedMemoryManager(storagePath) : null;
   if (enhancedMemory) {
     await enhancedMemory.initialize();
     const memoryContext = enhancedMemory.getContext();

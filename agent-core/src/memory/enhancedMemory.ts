@@ -32,8 +32,12 @@ export class EnhancedMemoryManager {
   private readonly indexPath: string;
   private indexContent = "";
 
-  constructor(workspaceRoot: string) {
-    this.memoryDir = path.join(workspaceRoot, MEMORY_DIR);
+  /**
+   * @param storagePath - VS Code's globalStoragePath (NOT the workspace root)
+   *                      Data is stored here, not in the user's project.
+   */
+  constructor(storagePath: string) {
+    this.memoryDir = path.join(storagePath, "memory");
     this.topicsDir = path.join(this.memoryDir, "topics");
     this.indexPath = path.join(this.memoryDir, MEMORY_INDEX);
   }

@@ -30,6 +30,7 @@ export interface RuntimeConfig {
   workspaceRoot: string;
   promptsDir: string;
   memoryDir: string;
+  storagePath?: string;  // VS Code's globalStoragePath for extension data
   providerDefaults: {
     provider: ProviderId;
     model: string;

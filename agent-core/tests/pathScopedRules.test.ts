@@ -29,8 +29,8 @@ describe("PathScopedRuleManager", () => {
     expect(rules).toEqual([]);
   });
 
-  it("should load rules from .nexcode/rules directory", async () => {
-    const rulesDir = path.join(tempDir, ".nexcode", "rules");
+  it("should load rules from rules directory", async () => {
+    const rulesDir = path.join(tempDir, "rules");
     await fs.mkdir(rulesDir, { recursive: true });
     
     await fs.writeFile(
@@ -54,7 +54,7 @@ priority: 10
   });
 
   it("should build context for applicable rules", async () => {
-    const rulesDir = path.join(tempDir, ".nexcode", "rules");
+    const rulesDir = path.join(tempDir, "rules");
     await fs.mkdir(rulesDir, { recursive: true });
     
     await fs.writeFile(
@@ -75,7 +75,7 @@ pathPattern: "*.ts"
   });
 
   it("should filter rules by tool", async () => {
-    const rulesDir = path.join(tempDir, ".nexcode", "rules");
+    const rulesDir = path.join(tempDir, "rules");
     await fs.mkdir(rulesDir, { recursive: true });
     
     await fs.writeFile(
@@ -103,7 +103,7 @@ tools: ["write"]
     await manager.createDefaultRules();
     await manager.load();
     
-    const rulesDir = path.join(tempDir, ".nexcode", "rules");
+    const rulesDir = path.join(tempDir, "rules");
     const files = await fs.readdir(rulesDir);
     expect(files.length).toBeGreaterThan(0);
   });

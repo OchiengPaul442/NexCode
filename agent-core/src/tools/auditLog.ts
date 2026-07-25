@@ -47,7 +47,8 @@ export class AuditLog {
       workspaceRoot = workspaceRootOrOptions.workspaceRoot;
       this.onError = workspaceRootOrOptions.onError;
     }
-    this.logPath = path.join(workspaceRoot, ".nexcode", "audit.jsonl");
+    // Use workspace root for audit log (project-specific)
+    this.logPath = path.join(workspaceRoot, ".nexcode-audit.jsonl");
   }
 
   public async log(entry: AuditEntry): Promise<void> {

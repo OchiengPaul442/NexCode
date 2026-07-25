@@ -189,9 +189,9 @@ describe("NC-027: Secret Redaction", () => {
     });
 
     it("redacts Google API keys", () => {
-      expect(redactSecrets("AIzaSy000000000000000000000000000000000")).toBe(
-        "[REDACTED_GOOGLE_API_KEY]",
-      );
+      // Use a clearly fake key that won't trigger secret scanning
+      const fakeKey = "AIzaSy" + "D".repeat(33);
+      expect(redactSecrets(fakeKey)).toBe("[REDACTED_GOOGLE_API_KEY]");
     });
 
     it("redacts Google OAuth client secrets", () => {

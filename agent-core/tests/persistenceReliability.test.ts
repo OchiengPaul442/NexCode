@@ -196,7 +196,7 @@ describe("AuditLog persistence (NC-026)", () => {
     const ok = await audit.flush();
     expect(ok).toBe(true);
 
-    const logPath = path.join(dir, ".nexcode", "audit.jsonl");
+    const logPath = path.join(dir, ".nexcode-audit.jsonl");
     const content = await fs.readFile(logPath, "utf8");
     const lines = content.trim().split("\n").filter(Boolean);
     expect(lines).toHaveLength(15);
@@ -204,8 +204,9 @@ describe("AuditLog persistence (NC-026)", () => {
 
   it("does not lose entries when flush fails", async () => {
     const dir = await createTempDir();
-    // Block the audit directory by creating a file where .nexcode should be
-    await createFileAsBlocker(path.join(dir, ".nexcode"));
+    // Block the audit file by creating a directory at the audit path.
+    // appendFile will fail with EISDIR when the target is a directory.
+    await fs.mkdir(path.join(dir, ".nexcode-audit.jsonl"), { recursive: true });
 
     const errors: Error[] = [];
     const audit = new AuditLog({
@@ -233,7 +234,7 @@ describe("AuditLog persistence (NC-026)", () => {
     // Write after dispose should be silently ignored
     await audit.log(makeAuditEntry("after"));
 
-    const logPath = path.join(dir, ".nexcode", "audit.jsonl");
+    const logPath = path.join(dir, ".nexcode-audit.jsonl");
     const content = await fs.readFile(logPath, "utf8");
     const lines = content.trim().split("\n").filter(Boolean);
     expect(lines).toHaveLength(1);
@@ -274,7 +275,7 @@ describe("AuditLog persistence (NC-026)", () => {
     await audit.log(entry);
     await audit.flush();
 
-    const logPath = path.join(dir, ".nexcode", "audit.jsonl");
+    const logPath = path.join(dir, ".nexcode-audit.jsonl");
     const content = await fs.readFile(logPath, "utf8");
     expect(content).not.toContain("sk-projABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890abcdef");
     expect(content).toContain("REDACTED");
@@ -288,7 +289,7 @@ describe("AuditLog persistence (NC-026)", () => {
     const ok = await audit.flush();
     expect(ok).toBe(true);
 
-    const logPath = path.join(dir, ".nexcode", "audit.jsonl");
+    const logPath = path.join(dir, ".nexcode-audit.jsonl");
     const content = await fs.readFile(logPath, "utf8");
     expect(content).toContain("terminal");
   });
@@ -708,7 +709,7 @@ describe("Concurrent persistence safety (NC-026)", () => {
     await Promise.all(promises);
     await audit.flush();
 
-    const logPath = path.join(dir, ".nexcode", "audit.jsonl");
+    const logPath = path.join(dir, ".nexcode-audit.jsonl");
     const content = await fs.readFile(logPath, "utf8");
     const lines = content.trim().split("\n").filter(Boolean);
     expect(lines).toHaveLength(25);

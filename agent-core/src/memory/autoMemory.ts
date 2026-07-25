@@ -39,8 +39,12 @@ export class AutoMemory {
   private entries: Map<string, MemoryEntry> = new Map();
   private loaded = false;
 
-  constructor(workspaceRoot: string) {
-    this.memoryDir = path.join(workspaceRoot, ".opencode", "memory");
+  /**
+   * @param storagePath - VS Code's globalStoragePath (NOT the workspace root)
+   *                      Data is stored here, not in the user's project.
+   */
+  constructor(storagePath: string) {
+    this.memoryDir = path.join(storagePath, "auto-memory");
   }
 
   /**

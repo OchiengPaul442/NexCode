@@ -848,6 +848,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         workspaceRoot,
         promptsDir: path.join(workspaceRoot, "prompts"),
         memoryDir: path.join(this.context.globalStorageUri.fsPath, "memory"),
+        storagePath: this.context.globalStorageUri.fsPath,  // VS Code's storage path
         defaultProvider: settings.provider,
         defaultModel: settings.model,
         ollamaBaseUrl: settings.ollamaBaseUrl,
@@ -981,6 +982,9 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
     const styleUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this.context.extensionUri, "media", "main.css"),
     );
+    const iconUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.context.extensionUri, "media", "icon.png"),
+    );
     const nonce = this.createNonce();
 
     return `<!DOCTYPE html>
@@ -988,13 +992,64 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}'; img-src ${webview.cspSource} data:;">
   <link href="${styleUri}" rel="stylesheet" />
   <title>Nexcode Kiboko</title>
+  <style>
+    #loading-screen {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      background-color: var(--vscode-sideBar-background, #1e1e1e);
+      z-index: 1000;
+      transition: opacity 0.3s ease;
+    }
+    #loading-screen.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+    #loading-screen img {
+      width: 80px;
+      height: 80px;
+      animation: pulse 2s ease-in-out infinite;
+    }
+    #loading-screen .loading-text {
+      margin-top: 16px;
+      color: var(--vscode-foreground, #cccccc);
+      font-size: 14px;
+      font-family: var(--vscode-font-family);
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 0.6; transform: scale(1); }
+      50% { opacity: 1; transform: scale(1.05); }
+    }
+  </style>
 </head>
 <body style="margin:0;padding:0;">
+  <div id="loading-screen">
+    <img src="${iconUri}" alt="NexCode Kiboko" />
+    <div class="loading-text">Loading NexCode...</div>
+  </div>
   <div id="root"></div>
 
+  <script nonce="${nonce}">
+    // Hide loading screen when React app is ready
+    window.addEventListener('load', () => {
+      setTimeout(() => {
+        const loadingScreen = document.getElementById('loading-screen');
+        if (loadingScreen) {
+          loadingScreen.classList.add('hidden');
+          setTimeout(() => loadingScreen.remove(), 300);
+        }
+      }, 500);
+    });
+  </script>
   <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;

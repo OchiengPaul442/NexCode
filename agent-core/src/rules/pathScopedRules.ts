@@ -30,8 +30,12 @@ export class PathScopedRuleManager {
   private rules: PathScopedRule[] = [];
   private loaded = false;
 
-  constructor(workspaceRoot: string) {
-    this.rulesDir = path.join(workspaceRoot, ".nexcode", "rules");
+  /**
+   * @param storagePath - VS Code's globalStoragePath (NOT the workspace root)
+   *                      Rules are stored here, not in the user's project.
+   */
+  constructor(storagePath: string) {
+    this.rulesDir = path.join(storagePath, "rules");
   }
 
   /**

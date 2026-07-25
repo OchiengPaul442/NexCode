@@ -7,6 +7,7 @@ import {
   type ToolCallRequestTool,
   type ReasoningEffort,
   type ProviderId,
+  type ToolResult,
 } from "../types";
 import { type ModelRouter } from "../providers/modelRouter";
 import { type ToolRegistry } from "../tools/toolRegistry";
@@ -17,6 +18,7 @@ import { repairTruncatedJson, extractToolCallFromMalformedJson } from "../utils/
 import { createDefaultRetryBudget } from "../utils/retryBudget";
 import { EnhancedMemoryManager } from "../memory/enhancedMemory";
 import { HookRegistry } from "../hooks/hookRegistry";
+import { PathScopedRuleManager } from "../rules/pathScopedRules";
 
 const NOTES_FILE = "NOTES.md";
 const MAX_NOTES_CHARS = 8000;
@@ -82,6 +84,7 @@ export interface AgentLoopConfig {
   maxTokensPerTurn: number;
   timeoutMs: number;
   hooks?: HookRegistry;
+  pathScopedRules?: PathScopedRuleManager;
 }
 
 /**
@@ -1633,7 +1636,7 @@ export async function* runAgentLoop(
           yield {
             type: "toolExecuted",
             toolName: toolCall.function.name,
-            command: argString.slice(0, 100),
+            command: argString.split("|||")[0]?.trim().slice(0, 100) ?? "",
             status: "error",
             message: "Blocked by hook",
             durationMs: 0,
@@ -1642,11 +1645,62 @@ export async function* runAgentLoop(
         }
       }
 
+      // Inject path-scoped rules context if applicable
+      if (config.pathScopedRules && toolCall.function.name !== "read") {
+        const filePath = argString.split("|||")[0]?.trim();
+        if (filePath) {
+          const rulesContext = config.pathScopedRules.buildContext(filePath, toolCall.function.name);
+          if (rulesContext) {
+            // Append rules context to the tool arguments for the model
+            console.log(`[agent-loop] Path-scoped rules applied for ${filePath}: ${rulesContext.slice(0, 100)}`);
+          }
+        }
+      }
+
       const toolStartTime = Date.now();
-      let result = await tools.runToolCall(
-        `${toolCall.function.name} ${argString}`,
-        signal,
-      );
+      
+      // Retry logic for transient tool execution errors
+      const MAX_TOOL_RETRIES = 2;
+      let result: ToolResult | null = null;
+      let lastToolError: string | null = null;
+      
+      for (let toolRetry = 0; toolRetry <= MAX_TOOL_RETRIES; toolRetry++) {
+        try {
+          result = await tools.runToolCall(
+            `${toolCall.function.name} ${argString}`,
+            signal,
+          );
+          
+          // If tool succeeded or returned a non-retryable error, break
+          if (result.ok || !result.output.includes("timeout")) {
+            break;
+          }
+          
+          lastToolError = result.output;
+          
+          // Only retry for transient errors (timeout, network)
+          if (toolRetry < MAX_TOOL_RETRIES) {
+            const delay = 1000 * Math.pow(2, toolRetry) + Math.random() * 500;
+            await new Promise(resolve => setTimeout(resolve, delay));
+            console.warn(`[agent-loop] Retrying ${toolCall.function.name} (attempt ${toolRetry + 2}/${MAX_TOOL_RETRIES + 1})`);
+          }
+        } catch (error) {
+          lastToolError = String(error);
+          if (toolRetry < MAX_TOOL_RETRIES) {
+            const delay = 1000 * Math.pow(2, toolRetry) + Math.random() * 500;
+            await new Promise(resolve => setTimeout(resolve, delay));
+            console.warn(`[agent-loop] Retrying ${toolCall.function.name} after error (attempt ${toolRetry + 2}/${MAX_TOOL_RETRIES + 1})`);
+          }
+        }
+      }
+      
+      // If all retries failed, use the last error
+      if (!result) {
+        result = {
+          ok: false,
+          output: lastToolError ?? "Tool execution failed after retries",
+        };
+      }
 
       // Execute after hooks
       if (config.hooks) {

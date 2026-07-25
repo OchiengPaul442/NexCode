@@ -34,6 +34,7 @@ import { OllamaProvider } from "./providers/ollamaProvider";
 import { OpenAICompatibleProvider } from "./providers/openAICompatibleProvider";
 import { ToolRegistry } from "./tools/toolRegistry";
 import { type ApprovalCallback, DefaultToolApprovalPolicy } from "./tools/toolApprovalPolicy";
+import { EnhancedToolApprovalPolicy } from "./tools/enhancedApprovalPolicy";
 import { TokenCounter } from "./utils/tokenCounter";
 import { getModelCapabilityRegistry } from "./utils/modelCapabilityRegistry";
 import { chunkText, extractFirstCodeBlock } from "./utils/text";
@@ -84,6 +85,7 @@ import { HookRegistry } from "./hooks/hookRegistry";
 import { GitMcpAdapter } from "./mcp/adapters/gitAdapter";
 import { SearchMcpAdapter } from "./mcp/adapters/searchAdapter";
 import { PathScopedRuleManager } from "./rules/pathScopedRules";
+import { AgentIsolation } from "./agents/agentIsolation";
 
 export interface NexcodeOrchestratorOptions {
   workspaceRoot?: string;
@@ -158,6 +160,7 @@ export class NexcodeOrchestrator {
   private readonly efficiencyTracker = new EfficiencyTracker();
   private readonly hooks = new HookRegistry();
   private readonly pathScopedRules: PathScopedRuleManager | null;
+  private readonly agentIsolation: AgentIsolation | null;
 
   public constructor(options: NexcodeOrchestratorOptions = {}) {
     this.approvalCallback = options.approvalCallback;
@@ -246,7 +249,7 @@ export class NexcodeOrchestrator {
     // Full MCP support requires the official @modelcontextprotocol/sdk.
     this.mcpRegistry.register(new FilesystemAdapter(this.config.workspaceRoot));
     
-    // Register Git and Search MCP adapters
+    // Use EnhancedToolApprovalPolicy with glob-pattern support
     this.tools = new ToolRegistry(this.config.workspaceRoot, {
       searchProvider: this.config.toolDefaults.searchProvider,
       searchApiKey: this.config.toolDefaults.searchApiKey,
@@ -254,7 +257,7 @@ export class NexcodeOrchestrator {
       tavilyApiKey: this.config.toolDefaults.tavilyApiKey,
       tavilyBaseUrl: this.config.toolDefaults.tavilyBaseUrl,
       mcpRegistry: this.mcpRegistry,
-      approvalPolicy: new DefaultToolApprovalPolicy(),
+      approvalPolicy: new EnhancedToolApprovalPolicy(),
     });
     
     // Register MCP adapters for Git and Search
@@ -264,6 +267,11 @@ export class NexcodeOrchestrator {
     // Initialize path-scoped rules if workspace root is available
     this.pathScopedRules = this.config.workspaceRoot
       ? new PathScopedRuleManager(this.config.workspaceRoot)
+      : null;
+    
+    // Initialize agent isolation for subagent workspaces
+    this.agentIsolation = this.config.workspaceRoot
+      ? new AgentIsolation({ workspaceRoot: this.config.workspaceRoot, useWorktrees: true })
       : null;
 
     this.planner = new PlannerAgent(this.router, this.prompts);
@@ -321,6 +329,20 @@ export class NexcodeOrchestrator {
    */
   public getMcpRegistry(): McpRegistry {
     return this.mcpRegistry;
+  }
+
+  /**
+   * Get the agent isolation system for creating isolated workspaces.
+   */
+  public getAgentIsolation(): AgentIsolation | null {
+    return this.agentIsolation;
+  }
+
+  /**
+   * Get the path-scoped rules manager.
+   */
+  public getPathScopedRules(): PathScopedRuleManager | null {
+    return this.pathScopedRules;
   }
 
   /**
@@ -1567,6 +1589,7 @@ export class NexcodeOrchestrator {
       maxTokensPerTurn: parseInt(process.env.NEXCODE_MAX_TOKENS || "4096", 10),
       timeoutMs: parseInt(process.env.NEXCODE_TIMEOUT_MS || "600000", 10),
       hooks: this.hooks,
+      pathScopedRules: this.pathScopedRules ?? undefined,
     };
 
     yield {

@@ -168,3 +168,42 @@ export function createValidationHook(config: {
     },
   };
 }
+
+/**
+ * Verification hook: verifies tool execution results.
+ * Runs after tool execution and can flag suspicious results.
+ */
+export function createVerificationHook(config?: {
+  /** Patterns that indicate suspicious output */
+  suspiciousPatterns?: RegExp[];
+  /** Maximum output length before flagging */
+  maxOutputLength?: number;
+}): Hook {
+  const suspiciousPatterns = config?.suspiciousPatterns ?? [
+    /permission denied/i,
+    /access denied/i,
+    /not found/i,
+    /no such file/i,
+  ];
+  const maxOutputLength = config?.maxOutputLength ?? 10000;
+
+  return {
+    name: "verification",
+    description: "Verify tool execution results",
+    after: async (event) => {
+      if (!event.result) return;
+
+      // Check for suspicious patterns in output
+      for (const pattern of suspiciousPatterns) {
+        if (pattern.test(event.result.output)) {
+          console.warn(`[verification] Suspicious output detected for ${event.toolName}: ${event.result.output.slice(0, 200)}`);
+        }
+      }
+
+      // Check for excessively long output
+      if (event.result.output.length > maxOutputLength) {
+        console.warn(`[verification] Excessive output length (${event.result.output.length} chars) for ${event.toolName}`);
+      }
+    },
+  };
+}

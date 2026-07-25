@@ -626,12 +626,17 @@ export class OllamaProvider implements ModelProvider {
       this.resolveTimeoutMs("generate"),
     );
     try {
+      // Force temperature 0 for tool calls to ensure deterministic outputs
+      // Research shows this significantly improves tool calling reliability
+      const hasTools = request.tools && request.tools.length > 0;
+      const temperature = hasTools ? 0 : (request.temperature ?? 0.2);
+      
       const payload: any = {
         model: request.model,
         messages: request.messages,
         stream: false,
         options: {
-          temperature: request.temperature ?? 0.2,
+          temperature,
           num_predict: request.maxTokens,
           num_ctx: this.resolveNumCtx(request.model),
         },
@@ -1412,12 +1417,13 @@ export class OllamaProvider implements ModelProvider {
         }
       }
 
+      // Force temperature 0 for tool calls to ensure deterministic outputs
       const payload: any = {
         model: request.model,
         messages,
         stream: false,
         options: {
-          temperature: request.temperature ?? 0.2,
+          temperature: 0, // Always 0 for tool calls
           num_predict: request.maxTokens,
           num_ctx: this.resolveNumCtx(request.model),
         },

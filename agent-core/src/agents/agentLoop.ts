@@ -15,6 +15,8 @@ import { type ApprovalCallback } from "../tools/toolApprovalPolicy";
 import { EvidenceStore } from "../tools/evidenceStore";
 import { repairTruncatedJson, extractToolCallFromMalformedJson } from "../utils/jsonRepair";
 import { createDefaultRetryBudget } from "../utils/retryBudget";
+import { EnhancedMemoryManager } from "../memory/enhancedMemory";
+import { HookRegistry } from "../hooks/hookRegistry";
 
 const NOTES_FILE = "NOTES.md";
 const MAX_NOTES_CHARS = 8000;
@@ -79,6 +81,7 @@ export interface AgentLoopConfig {
   maxTurns: number;
   maxTokensPerTurn: number;
   timeoutMs: number;
+  hooks?: HookRegistry;
 }
 
 /**
@@ -1166,6 +1169,25 @@ export async function* runAgentLoop(
     }
   }
 
+  // Enhanced memory system: load project memory and inject into context
+  const enhancedMemory = workspaceRoot ? new EnhancedMemoryManager(workspaceRoot) : null;
+  if (enhancedMemory) {
+    await enhancedMemory.initialize();
+    const memoryContext = enhancedMemory.getContext();
+    if (memoryContext) {
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === "user") {
+          const original = messages[i].content;
+          messages[i] = {
+            ...messages[i],
+            content: `${original}\n\n${memoryContext}`,
+          };
+          break;
+        }
+      }
+    }
+  }
+
   let completedTurns = 0;
   for (let turn = 0; turn < config.maxTurns; turn++) {
     completedTurns = turn + 1;
@@ -1598,11 +1620,38 @@ export async function* runAgentLoop(
       };
 
       const argString = formatToolArgs(toolCall.function.name, args);
+
+      // Execute before hooks
+      if (config.hooks) {
+        const shouldContinue = await config.hooks.executeBefore(toolCall.function.name, argString);
+        if (!shouldContinue) {
+          messages.push({
+            role: "tool",
+            content: JSON.stringify({ ok: false, error: "Tool execution prevented by hook" }),
+            tool_call_id: toolCall.id,
+          });
+          yield {
+            type: "toolExecuted",
+            toolName: toolCall.function.name,
+            command: argString.slice(0, 100),
+            status: "error",
+            message: "Blocked by hook",
+            durationMs: 0,
+          };
+          continue;
+        }
+      }
+
       const toolStartTime = Date.now();
       let result = await tools.runToolCall(
         `${toolCall.function.name} ${argString}`,
         signal,
       );
+
+      // Execute after hooks
+      if (config.hooks) {
+        await config.hooks.executeAfter(toolCall.function.name, argString, result);
+      }
 
       if (result.requiresApproval) {
         const toolName = result.toolName ?? toolCall.function.name;
@@ -1697,6 +1746,25 @@ export async function* runAgentLoop(
         }
       }
 
+      // Enhanced memory: record successful file operations and commands
+      if (enhancedMemory && result.ok) {
+        const fileTools = new Set(["write", "patch", "append", "delete", "move"]);
+        if (fileTools.has(toolCall.function.name)) {
+          const filePath = argString.split("|||")[0]?.trim() ?? "";
+          await enhancedMemory.addEntry({
+            topic: "file-changes",
+            content: `${toolCall.function.name}: ${filePath}`,
+            source: "agent-loop",
+          });
+        } else if (toolCall.function.name === "terminal") {
+          await enhancedMemory.addEntry({
+            topic: "commands",
+            content: `Executed: ${argString.slice(0, 100)}${result.output.length > 0 ? ` → ${result.output.slice(0, 100)}` : ""}`,
+            source: "agent-loop",
+          });
+        }
+      }
+
       // Track failures and detect repeated failures on similar commands
       if (!result.ok) {
         const failurePattern = `${toolCall.function.name}:${argString.split(/\s+/)[0] ?? ""}`;
@@ -1768,6 +1836,11 @@ export async function* runAgentLoop(
     const toolNames = [...new Set(toolCalls.flatMap((m) => m.tool_calls!.map((tc) => tc.function.name)))];
     const summary = `## Loop completed (${completedTurns}/${config.maxTurns} turns)\nTools used: ${toolNames.join(", ") || "none"}\n`;
     await notesManager.writeSummary(summary);
+  }
+
+  // Enhanced memory: prune to stay under limits
+  if (enhancedMemory) {
+    await enhancedMemory.prune();
   }
 
   return messages;

@@ -94,10 +94,15 @@ const POOR_TOOL_CALLING_MODELS = [
   "deepseek-r1:8b",
   "gemma2:2b",
   "gemma2:9b",
+  "gemma4:31b-cloud",
   "llama3.2:1b",
   "llama3.2:3b",
   "mistral:7b",
   "mixtral:8x7b",
+  "gemma4:27b",
+  "gemma4:12b",
+  "qwen2.5-coder:7b",
+  "qwen2.5:7b",
 ];
 
 /**
@@ -112,6 +117,7 @@ function isPoorToolCallingModel(model: string | undefined): boolean {
 /**
  * Build a rehearsal message with explicit tool call format instructions.
  * This is sent when the model fails to produce tool calls on the first turn.
+ * Uses the simple TOOL: text format that models produce more reliably than JSON.
  */
 function buildToolCallRehearsalMessage(
   toolDefinitions: ToolDefinition[],
@@ -133,13 +139,12 @@ function buildToolCallRehearsalMessage(
       const required = (t.inputSchema.required as string[]) ?? [];
       const firstProp = Object.keys(props)[0] ?? "value";
       const requiredProps = required.length > 0 ? required : [firstProp];
-      const argsObj: Record<string, string> = {};
-      for (const k of requiredProps) {
-        argsObj[k] = "<" + k + ">";
-      }
-      return '{"name": "' + t.name + '", "arguments": ' + JSON.stringify(argsObj) + "}";
+      const paramLines = requiredProps
+        .map((k) => `${k.toUpperCase()}: <${k}>`)
+        .join("\n");
+      return `TOOL: ${t.name}\n${paramLines}`;
     })
-    .join("\n");
+    .join("\n\n");
 
   // Build a targeted example if we know which tool the model should use
   let targetedSection = "";
@@ -147,42 +152,45 @@ function buildToolCallRehearsalMessage(
     const props = (suggestedTool.inputSchema.properties as Record<string, unknown>) ?? {};
     const required = (suggestedTool.inputSchema.required as string[]) ?? [];
     const requiredProps = required.length > 0 ? required : Object.keys(props).slice(0, 2);
-    const exampleArgs: Record<string, string> = {};
-    for (const k of requiredProps) {
-      const prop = props[k] as Record<string, unknown> | undefined;
-      const desc = prop?.description as string | undefined;
-      exampleArgs[k] = `<${k}${desc ? ` (${desc})` : ""}>`;
-    }
+    const paramLines = requiredProps
+      .map((k) => {
+        const prop = props[k] as Record<string, unknown> | undefined;
+        const desc = prop?.description as string | undefined;
+        return `${k.toUpperCase()}: <${k}${desc ? ` (${desc})` : ""}>`;
+      })
+      .join("\n");
     targetedSection = [
       "",
       `You should have used the "${suggestedTool.name}" tool.`,
       `Here is the EXACT format for this tool:`,
-      "```json",
-      `{"name": "${suggestedTool.name}", "arguments": ${JSON.stringify(exampleArgs)}}`,
-      "```",
+      `TOOL: ${suggestedTool.name}`,
+      paramLines,
       "",
     ].join("\n");
   }
 
   return [
-    "IMPORTANT: You MUST use the available tools by responding with a JSON tool call.",
+    "IMPORTANT: You MUST use the available tools by responding with a tool call.",
+    "Your previous response did not include a tool call. You MUST use a tool now.",
     "",
     "Available tools:",
     toolList,
     "",
-    "You MUST respond with EXACTLY ONE JSON object in a ```json code block:",
-    "```json",
-    '{"name": "TOOL_NAME", "arguments": {"PARAM": "VALUE"}}',
-    "```",
+    "RESPOND WITH EXACTLY ONE TOOL CALL IN THIS FORMAT:",
+    "TOOL: <tool_name>",
+    "<PARAMETER>: <value>",
     targetedSection,
-    "Examples:",
+    "Examples (copy this format exactly):",
     examples,
     "",
-    "Rules:",
-    "- Always use double quotes",
-    "- Always close all braces",
-    "- Only one tool call per response",
+    "CRITICAL RULES:",
+    "- TOOL: must be on its own line, followed by the tool name",
+    "- Each parameter must be on its own line as KEY: VALUE",
+    "- Only ONE tool call per response",
     "- Do NOT describe what you would do - actually do it using a tool call",
+    "- Do NOT use JSON or code blocks - use the plain text format above",
+    "- Do NOT add extra text before or after the tool call",
+    "- The tool name must match exactly (e.g., 'read', 'write', 'terminal', 'search')",
   ].join("\n");
 }
 
@@ -287,15 +295,24 @@ function tryParseTextAsToolCall(text: string): ToolCallRequest[] | null {
     const lines = afterToolLine.split("\n");
     const args: Record<string, string> = {};
 
+    const multiLineKeys = new Set(["content", "oldtext", "newtext", "text"]);
+    let currentKey = "";
     for (const line of lines) {
       const trimmed = line.trim();
-      if (!trimmed) continue;
-      const colonIdx = trimmed.indexOf(":");
-      if (colonIdx === -1) continue;
-      const key = trimmed.slice(0, colonIdx).trim().toLowerCase();
-      const value = trimmed.slice(colonIdx + 1).trim();
-      if (key && value) {
+      if (!trimmed) {
+        if (currentKey && multiLineKeys.has(currentKey) && args[currentKey]) {
+          args[currentKey] += "\n";
+        }
+        continue;
+      }
+      const kvMatch = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*):\s*(.*)/);
+      if (kvMatch) {
+        const key = kvMatch[1].toLowerCase();
+        const value = kvMatch[2];
+        currentKey = key;
         args[key] = value;
+      } else if (currentKey && multiLineKeys.has(currentKey)) {
+        args[currentKey] += "\n" + trimmed;
       }
     }
 
@@ -308,53 +325,41 @@ function tryParseTextAsToolCall(text: string): ToolCallRequest[] | null {
     }
   }
 
-  // Try JSON code block first
-  const fenceMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
-  const content = fenceMatch ? fenceMatch[1] : text;
-
-  const trimmed = content.trim();
-
-  // Try JSON format first
-  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
-    try {
-      const parsed = JSON.parse(trimmed);
-      const items = Array.isArray(parsed) ? parsed : [parsed];
-      const calls: ToolCallRequest[] = [];
-
-      for (const item of items) {
-        if (
-          item &&
-          typeof item.name === "string" &&
-          item.arguments &&
-          typeof item.arguments === "object"
-        ) {
-          calls.push({
-            id: `call_text_${Date.now()}_${calls.length}`,
-            type: "function",
-            function: {
-              name: item.name,
-              arguments: JSON.stringify(item.arguments),
-            },
-          });
-        }
-      }
-
-      return calls.length > 0 ? calls : null;
-    } catch {
-      // Fall through to regex extraction from malformed JSON
-      const extracted = extractToolCallFromMalformedJson(trimmed);
-      if (extracted) {
-        return [{
-          id: `call_malformed_text_${Date.now()}`,
-          type: "function",
-          function: {
-            name: extracted.name,
-            arguments: JSON.stringify(extracted.arguments),
-          },
-        }];
+  // Try "call" function-call format: call tool="name" param="value"
+  const callFormatMatch = text.match(/call\s+tool\s*=\s*["']([^"']+)["']/i);
+  if (callFormatMatch) {
+    const toolName = callFormatMatch[1].toLowerCase();
+    const args: Record<string, string> = {};
+    const paramPattern = /([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*["']([\s\S]*?)["']/gi;
+    let paramMatch;
+    while ((paramMatch = paramPattern.exec(text)) !== null) {
+      const key = paramMatch[1].toLowerCase();
+      if (key !== "tool") {
+        args[key] = paramMatch[2];
       }
     }
+    if (Object.keys(args).length > 0) {
+      return [{
+        id: `call_func_format_${Date.now()}`,
+        type: "function",
+        function: { name: toolName, arguments: JSON.stringify(args) },
+      }];
+    }
   }
+
+  // Try JSON code block first
+  const fenceMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
+  const fencedContent = fenceMatch ? fenceMatch[1].trim() : null;
+
+  if (fencedContent && (fencedContent.startsWith("{") || fencedContent.startsWith("["))) {
+    const parsed = tryParseJsonToolCall(fencedContent);
+    if (parsed && parsed.length > 0) return parsed;
+  }
+
+  // Try to find JSON objects embedded anywhere in the text
+  // Models often produce: "I'll read the file. {"name": "read", "arguments": {"path": "src/index.ts"}}"
+  const embeddedCalls = extractEmbeddedJsonToolCalls(text);
+  if (embeddedCalls && embeddedCalls.length > 0) return embeddedCalls;
 
   // Try "Proposed Edit" format with flexible variations
   const proposedEditPatterns = [
@@ -376,14 +381,15 @@ function tryParseTextAsToolCall(text: string): ToolCallRequest[] | null {
     /(?:File|Path)\s*:\s*[`"']?([^\s`"']+)[`"']?\s*\n\s*(?:Edit|Change|Instruction|Description|Content|New)\s*:\s*(.+?)(?:\n\n|\n|$)/i,
   ];
 
+  const trimmedText = text.trim();
   for (const pattern of proposedEditPatterns) {
-    const proposedEditMatch = trimmed.match(pattern);
+    const proposedEditMatch = trimmedText.match(pattern);
     if (proposedEditMatch) {
       const filePath = proposedEditMatch[1].trim();
       const instruction = proposedEditMatch[2]?.trim() ?? "";
       
       // Try to extract content from code blocks (prefer actual code over instruction)
-      const contentMatch = trimmed.match(/```[\s\S]*?```/);
+      const contentMatch = trimmedText.match(/```[\s\S]*?```/);
       const content = contentMatch 
         ? contentMatch[0].replace(/```\w*\n?/g, '').replace(/```/g, '').trim() 
         : instruction;
@@ -403,11 +409,11 @@ function tryParseTextAsToolCall(text: string): ToolCallRequest[] | null {
 
   // Try DSML format: <| DSML | tool_calls> <| DSML | invoke name="read"> <| DSML | parameter name="path" string="true">value<| DSML | parameter>
   const dsmlPattern = /<\|\s*\|\s*DSML\s*\|\s*\|\s*tool_calls\s*>/i;
-  if (dsmlPattern.test(trimmed)) {
+  if (dsmlPattern.test(trimmedText)) {
     const invokePattern = /<\|\s*\|\s*DSML\s*\|\s*\|\s*invoke\s+name="([^"]+)"\s*>([\s\S]*?)<\|\s*\|\s*DSML\s*\|\s*\|\s*invoke\s*>/gi;
     const calls: ToolCallRequest[] = [];
     let invokeMatch;
-    while ((invokeMatch = invokePattern.exec(trimmed)) !== null) {
+    while ((invokeMatch = invokePattern.exec(trimmedText)) !== null) {
       const toolName = invokeMatch[1].toLowerCase();
       const body = invokeMatch[2];
       const args: Record<string, string> = {};
@@ -472,7 +478,7 @@ function tryParseTextAsToolCall(text: string): ToolCallRequest[] | null {
   for (const pattern of xmlPatterns) {
     const calls: ToolCallRequest[] = [];
     let match;
-    while ((match = pattern.exec(trimmed)) !== null) {
+    while ((match = pattern.exec(trimmedText)) !== null) {
       const toolName = match[1].toLowerCase();
       const argValue = match[2].trim();
       
@@ -519,7 +525,7 @@ function tryParseTextAsToolCall(text: string): ToolCallRequest[] | null {
   }
 
   // Try /tool command format: /tool terminal <command>
-  const slashToolMatch = trimmed.match(/^\/tool\s+(terminal|read|write|patch|delete|search|web-search|git-status|git-diff|test)\s+(.+)$/i);
+  const slashToolMatch = trimmedText.match(/^\/tool\s+(terminal|read|write|patch|delete|search|web-search|git-status|git-diff|test)\s+(.+)$/i);
   if (slashToolMatch) {
     const toolName = slashToolMatch[1].toLowerCase();
     const argValue = slashToolMatch[2].trim();
@@ -551,6 +557,124 @@ function tryParseTextAsToolCall(text: string): ToolCallRequest[] | null {
         arguments: JSON.stringify(args),
       },
     }];
+  }
+
+  return null;
+}
+
+/**
+ * Try to parse a JSON string as a tool call.
+ * Returns extracted tool calls, or null if parsing fails.
+ */
+function tryParseJsonToolCall(jsonStr: string): ToolCallRequest[] | null {
+  const calls: ToolCallRequest[] = [];
+  try {
+    const parsed = JSON.parse(jsonStr);
+    const items = Array.isArray(parsed) ? parsed : [parsed];
+
+    for (const item of items) {
+      if (
+        item &&
+        typeof item.name === "string" &&
+        item.arguments &&
+        typeof item.arguments === "object"
+      ) {
+        calls.push({
+          id: `call_json_${Date.now()}_${calls.length}`,
+          type: "function",
+          function: {
+            name: item.name,
+            arguments: JSON.stringify(item.arguments),
+          },
+        });
+      }
+    }
+
+    return calls.length > 0 ? calls : null;
+  } catch {
+    // Not valid JSON — try regex extraction from malformed JSON
+    const extracted = extractToolCallFromMalformedJson(jsonStr);
+    if (extracted) {
+      return [{
+        id: `call_malformed_text_${Date.now()}`,
+        type: "function",
+        function: {
+          name: extracted.name,
+          arguments: JSON.stringify(extracted.arguments),
+        },
+      }];
+    }
+    return null;
+  }
+}
+
+/**
+ * Extract tool calls from JSON objects embedded anywhere in text.
+ * Handles cases like: "I'll read the file. {"name": "read", "arguments": {"path": "src/index.ts"}}"
+ * or truncated versions: "...{"name":"read","arguments":{"path":"file.ts""
+ */
+function extractEmbeddedJsonToolCalls(text: string): ToolCallRequest[] | null {
+  // Find all potential JSON object starts (brace positions)
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] !== "{") continue;
+
+    // Try to find a matching closing brace using a simple depth counter
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    let endIdx = -1;
+
+    for (let j = i; j < text.length; j++) {
+      const ch = text[j];
+
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+
+      if (ch === "\\" && inString) {
+        escaped = true;
+        continue;
+      }
+
+      if (ch === '"') {
+        inString = !inString;
+        continue;
+      }
+
+      if (inString) continue;
+
+      if (ch === "{") depth++;
+      else if (ch === "}") {
+        depth--;
+        if (depth === 0) {
+          endIdx = j;
+          break;
+        }
+      }
+    }
+
+    // If we found a complete JSON object, try to parse it
+    if (endIdx > i) {
+      const jsonStr = text.slice(i, endIdx + 1);
+      const parsed = tryParseJsonToolCall(jsonStr);
+      if (parsed && parsed.length > 0) return parsed;
+      continue;
+    }
+
+    // If no complete object found but we have significant JSON content, try malformed extraction
+    const remaining = text.slice(i);
+    const extracted = extractToolCallFromMalformedJson(remaining);
+    if (extracted) {
+      return [{
+        id: `call_embedded_${Date.now()}`,
+        type: "function",
+        function: {
+          name: extracted.name,
+          arguments: JSON.stringify(extracted.arguments),
+        },
+      }];
+    }
   }
 
   return null;
@@ -710,8 +834,57 @@ function detectDescribedAction(
 }
 
 /**
- * Build a simplified retry message with explicit tool listing and JSON format.
+ * Process a text response and extract tool calls if present.
+ * Implements the text-based tool call extraction fallback chain:
+ *   1. Try structured text formats (TOOL:, DSML, Proposed Edit, XML)
+ *   2. Try JSON code blocks
+ *   3. Try described action detection
+ *   4. Return null if no tool calls found
+ *
+ * Returns an object with either tool calls or the original text.
+ */
+function processTextResponse(
+  text: string,
+  toolDefinitions: ToolDefinition[],
+): { toolCalls: ToolCallRequest[]; text: string } | null {
+  if (!text || text.trim().length === 0) {
+    return null;
+  }
+
+  // Try all text-based extraction formats
+  const extractedCalls = tryParseTextAsToolCall(text);
+  if (extractedCalls && extractedCalls.length > 0) {
+    return { toolCalls: extractedCalls, text };
+  }
+
+  // Try described action detection as a last resort
+  const describedAction = detectDescribedAction(text, toolDefinitions);
+  if (describedAction) {
+    const args: Record<string, string> = {};
+    // Map the detected action args to proper tool call format
+    for (const [key, value] of Object.entries(describedAction.args)) {
+      args[key] = value;
+    }
+    return {
+      toolCalls: [{
+        id: `call_process_text_${Date.now()}`,
+        type: "function",
+        function: {
+          name: describedAction.toolName,
+          arguments: JSON.stringify(args),
+        },
+      }],
+      text,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Build a simplified retry message with explicit tool listing and simple text format.
  * Used when the model fails to produce valid tool calls after initial attempts.
+ * Uses the TOOL: text format that models produce more reliably than JSON.
  */
 function buildSimplifiedRetryMessage(
   toolDefinitions: ToolDefinition[],
@@ -725,32 +898,34 @@ function buildSimplifiedRetryMessage(
 
   // Build simple examples for the most common operations
   const examples = [
-    'Read a file: {"name": "read", "arguments": {"path": "src/index.ts"}}',
-    'Write a file: {"name": "write", "arguments": {"path": "src/file.ts", "content": "new content"}}',
-    'Run a command: {"name": "terminal", "arguments": {"command": "npm test"}}',
-    'Search: {"name": "search", "arguments": {"query": "TODO"}}',
-    'Patch: {"name": "patch", "arguments": {"path": "src/file.ts", "oldText": "old", "newText": "new"}}',
-  ].join("\n");
+    "Read a file:\nTOOL: read\nPATH: src/index.ts",
+    "Write a file:\nTOOL: write\nPATH: src/file.ts\nCONTENT: new content",
+    "Run a command:\nTOOL: terminal\nCOMMAND: npm test",
+    "Search:\nTOOL: search\nQUERY: TODO",
+    "Patch:\nTOOL: patch\nPATH: src/file.ts\nOLDTEXT: old\nNEWTEXT: new",
+  ].join("\n\n");
 
   return [
     "CRITICAL: You MUST respond with a tool call in the EXACT format below.",
+    "Your previous response did not include a valid tool call.",
     "",
     "Available tools:",
     toolList,
     "",
-    "RESPOND WITH EXACTLY THIS FORMAT (one JSON object in a code block):",
-    "```json",
-    '{"name": "TOOL_NAME", "arguments": {"PARAM": "VALUE"}}',
-    "```",
+    "RESPOND WITH EXACTLY THIS FORMAT (copy it exactly):",
+    "TOOL: <tool_name>",
+    "<PARAMETER>: <value>",
     "",
-    "Examples:",
+    "Examples (copy this format):",
     examples,
     "",
-    "Rules:",
-    "- Use double quotes ONLY",
-    "- Close ALL braces and brackets",
+    "RULES (follow these exactly):",
+    "- TOOL: must be on its own line, followed by the tool name",
+    "- Each parameter must be on its own line as KEY: VALUE",
     "- One tool call per response",
     "- Do NOT explain - just use the tool",
+    "- Do NOT use JSON or code blocks - use the plain text format above",
+    "- Do NOT add extra text before or after the tool call",
   ].join("\n");
 }
 
@@ -977,6 +1152,7 @@ export async function* runAgentLoop(
       isPoorToolCallingModel(model) &&
       (!response.toolCalls || response.toolCalls.length === 0) &&
       response.text &&
+      !response.text.includes("TOOL:") &&
       !response.text.includes("```json") &&
       !response.text.includes('"name"');
 
@@ -994,9 +1170,10 @@ export async function* runAgentLoop(
     }
 
     if (!response.toolCalls || response.toolCalls.length === 0) {
-      const textToolCalls = tryParseTextAsToolCall(response.text);
-      if (textToolCalls && textToolCalls.length > 0) {
-        response.toolCalls = textToolCalls;
+      // Try text-based tool call extraction (combined format detection + described action)
+      const textResult = processTextResponse(response.text, toolDefinitions);
+      if (textResult && textResult.toolCalls.length > 0) {
+        response.toolCalls = textResult.toolCalls;
         consecutiveNudges = 0;
       } else if (!response.text || response.text.trim().length === 0) {
         // Model returned empty response - nudge it to try again
@@ -1006,17 +1183,16 @@ export async function* runAgentLoop(
           messages.push({
             role: "user",
             content: [
-              "Your response was empty. Please provide a response using the correct JSON format for tool calls.",
+              "Your response was empty. Please provide a response using the correct text format for tool calls.",
               "",
               "Use this format:",
-              "```json",
-              '{ "name": "tool_name", "arguments": { "param": "value" } }',
-              "```",
+              "TOOL: <tool_name>",
+              "<PARAMETER>: <value>",
               "",
               "Examples:",
-              '- To read a file: { "name": "read", "arguments": { "path": "src/index.ts" } }',
-              '- To run a command: { "name": "terminal", "arguments": { "command": "npm test" } }',
-              '- To search: { "name": "search", "arguments": { "query": "TODO" } }',
+              "- To read a file: TOOL: read\nPATH: src/index.ts",
+              "- To run a command: TOOL: terminal\nCOMMAND: npm test",
+              "- To search: TOOL: search\nQUERY: TODO",
             ].join("\n"),
           });
           continue;
@@ -1071,15 +1247,14 @@ export async function* runAgentLoop(
             : [
                 "You described what to do but did not use a tool. Use the available structured tools directly.",
                 "",
-                "Respond with a JSON tool call in this format:",
-                "```json",
-                '{ "name": "tool_name", "arguments": { "param": "value" } }',
-                "```",
+                "Respond with a tool call in this format:",
+                "TOOL: <tool_name>",
+                "<PARAMETER>: <value>",
                 "",
                 "Examples:",
-                '- To edit a file: { "name": "write", "arguments": { "path": "src/file.ts", "content": "new content" } }',
-                '- To run a command: { "name": "terminal", "arguments": { "command": "npm install" } }',
-                '- To apply a patch: { "name": "patch", "arguments": { "path": "src/file.ts", "oldText": "old", "newText": "new" } }',
+                "- To edit a file: TOOL: write\nPATH: src/file.ts\nCONTENT: new content",
+                "- To run a command: TOOL: terminal\nCOMMAND: npm install",
+                "- To apply a patch: TOOL: patch\nPATH: src/file.ts\nOLDTEXT: old\nNEWTEXT: new",
               ].join("\n"),
         });
         continue;

@@ -150,7 +150,11 @@ export async function resolveWorkspacePath(
     }
   }
 
-  const relative = path.relative(canonicalRoot, resolvedPath);
+  // Normalize both paths to consistent form before comparison (handles Windows
+  // drive-letter casing, mixed separators, and trailing separators).
+  const normalizedRoot = path.resolve(canonicalRoot);
+  const normalizedResolved = path.resolve(resolvedPath);
+  const relative = path.relative(normalizedRoot, normalizedResolved);
   if (relative.startsWith("..") || path.isAbsolute(relative)) {
     throw new Error(`Path escapes workspace root: ${targetPath}`);
   }

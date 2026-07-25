@@ -7,6 +7,15 @@ import { ContextCompressor } from "../utils/contextCompressor";
 import { resolveWorkspacePath } from "../utils/pathContainment";
 
 /**
+ * Canonicalize a workspace root path: resolve to absolute form and normalize
+ * separators. This prevents false containment-check failures on Windows where
+ * the same directory can be represented with different casings or separators.
+ */
+function canonicalizeWorkspaceRoot(p: string): string {
+  return path.resolve(path.normalize(p));
+}
+
+/**
  * Atomically write content to a file by writing to a temp file first, then
  * renaming over the target. This prevents truncation on crash: the rename is
  * atomic on POSIX (and near-atomic on NTFS), so the target is never left in a
@@ -75,7 +84,14 @@ function enhanceFileSystemError(error: unknown, operation: string, targetPath: s
 export class FileSystemTool {
   private readonly compressor = new ContextCompressor(8000);
 
-  public constructor(public readonly workspaceRoot: string) {}
+  public readonly workspaceRoot: string;
+
+  public constructor(workspaceRoot: string) {
+    // Canonicalize to prevent false containment-check failures on Windows
+    // where the same directory can be represented with different casings or
+    // separators (e.g., D:\projects vs d:\Projects).
+    this.workspaceRoot = canonicalizeWorkspaceRoot(workspaceRoot);
+  }
 
   public async readFile(targetPath: string): Promise<ToolResult> {
     try {

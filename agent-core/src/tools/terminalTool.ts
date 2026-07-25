@@ -669,7 +669,7 @@ export class TerminalTool {
     if (validationError) {
       return {
         ok: false,
-        output: `Command blocked by safety policy: ${validationError}`,
+        output: `Command requires user approval: ${validationError}`,
       };
     }
 
@@ -799,7 +799,7 @@ export class TerminalTool {
     if (validationError) {
       return {
         ok: false,
-        output: `Command blocked by safety policy: ${validationError}`,
+        output: `Command requires user approval: ${validationError}`,
       };
     }
 

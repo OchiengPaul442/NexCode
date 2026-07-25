@@ -1,11 +1,5 @@
 # NexCode Kiboko
 
-[![Version](https://img.shields.io/visual-studio-marketplace/v/nexcode.nexcode-kiboko-extension?label=Version&style=flat-square)](https://marketplace.visualstudio.com/items?itemName=nexcode.nexcode-kiboko-extension)
-[![Downloads](https://img.shields.io/visual-studio-marketplace/d/nexcode.nexcode-kiboko-extension?label=Downloads&style=flat-square)](https://marketplace.visualstudio.com/items?itemName=nexcode.nexcode-kiboko-extension)
-[![Rating](https://img.shields.io/visual-studio-marketplace/r/nexcode.nexcode-kiboko-extension?label=Rating&style=flat-square)](https://marketplace.visualstudio.com/items?itemName=nexcode.nexcode-kiboko-extension)
-[![License](https://img.shields.io/github/license/nexcode/nexcode-kiboko?style=flat-square)](https://github.com/nexcode/nexcode-kiboko/blob/main/LICENSE)
-[![Build](https://img.shields.io/github/actions/workflow/status/nexcode/nexcode-kiboko/ci.yml?branch=main&label=Build&style=flat-square)](https://github.com/nexcode/nexcode-kiboko/actions)
-
 NexCode Kiboko is a local-first AI coding assistant for VS Code. It gives you a dedicated sidebar for asking questions, planning changes, reviewing code, running approved tools, and working with local or OpenAI-compatible models without leaving your editor.
 
 Use it as a practical coding agent for private repositories, existing codebases, and everyday engineering tasks where you want clear control over model providers, tool access, and file changes.

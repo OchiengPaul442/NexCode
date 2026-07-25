@@ -174,7 +174,15 @@ export class ToolRegistry {
     if (!trimmed) {
       return {
         ok: false,
-        output: "Tool command cannot be empty.",
+        output: [
+          "Tool command cannot be empty.",
+          "Expected format: <tool_name> <arguments>",
+          "Examples:",
+          "  read src/index.ts",
+          "  write src/file.ts ||| content",
+          "  terminal npm test",
+          "  search TODO",
+        ].join("\n"),
       };
     }
 
@@ -187,7 +195,26 @@ export class ToolRegistry {
 
     const validationError = this.validateToolArg(toolName, arg);
     if (validationError) {
-      const r = { ok: false, output: `Invalid input: ${validationError}` };
+      const hints: string[] = [];
+      if (toolName === "write" || toolName === "append") {
+        hints.push("Format: " + toolName + " <path> ||| <content>");
+        hints.push("Example: " + toolName + " src/utils.ts ||| export function foo() {}");
+      } else if (toolName === "patch") {
+        hints.push("Format: patch <path> ||| <oldText> ||| <newText>");
+        hints.push("The oldText must match EXACTLY — include surrounding context for uniqueness.");
+      } else if (toolName === "move") {
+        hints.push("Format: move <source> ||| <destination>");
+        hints.push("Example: move src/old.ts ||| src/new.ts");
+      } else if (toolName === "mcp") {
+        hints.push("Format: mcp <server>:<tool> ||| <input>");
+        hints.push("Example: mcp filesystem:read_file ||| /path/to/file");
+      } else if (toolName === "batch_edit") {
+        hints.push("batch_edit requires JSON: {\"edits\": [{\"filePath\": \"...\", \"content\": \"...\", \"operation\": \"create|update|delete\"}]}");
+      }
+      const r = {
+        ok: false,
+        output: `Invalid input for '${toolName}': ${validationError}${hints.length > 0 ? "\n\nRecovery hints:\n" + hints.join("\n") : ""}`,
+      };
       this.emitAudit(toolName, arg, false, false, false, r.output, auditStart);
       return r;
     }
@@ -230,7 +257,10 @@ export class ToolRegistry {
       case "git-stage": {
         const stagePaths = this.parsePathList(arg);
         if (!stagePaths) {
-          result = { ok: false, output: "Use: git-stage <path1> [path2] ..." };
+          result = {
+            ok: false,
+            output: "Use: git-stage <path1> [path2] ...\nExample: git-stage src/index.ts\nTip: Use '.' to stage all changes.",
+          };
         } else {
           result = await this.git.stage(stagePaths, signal);
         }
@@ -239,39 +269,92 @@ export class ToolRegistry {
       case "git-unstage": {
         const unstagePaths = this.parsePathList(arg);
         if (!unstagePaths) {
-          result = { ok: false, output: "Use: git-unstage <path1> [path2] ..." };
+          result = {
+            ok: false,
+            output: "Use: git-unstage <path1> [path2] ...\nExample: git-unstage src/index.ts\nTip: Use '.' to unstage all.",
+          };
         } else {
           result = await this.git.unstage(unstagePaths, signal);
         }
         break;
       }
       case "git-commit":
-        result = await this.git.commit(arg, signal);
+        if (!arg.trim()) {
+          result = {
+            ok: false,
+            output: [
+              "Commit message is required.",
+              "Format: git-commit <message>",
+              "Example: git-commit feat(auth): add login endpoint",
+              "Use conventional commit prefixes: feat:, fix:, docs:, perf:, refactor:, test:, chore:, security:",
+            ].join("\n"),
+          };
+        } else {
+          result = await this.git.commit(arg, signal);
+        }
         break;
       case "git-create-branch":
-        result = await this.git.createBranch(arg, signal);
+        if (!arg.trim()) {
+          result = {
+            ok: false,
+            output: "Use: git-create-branch <branch-name>\nExample: git-create-branch feat/user-auth\nUse descriptive names like 'feat/' or 'fix/' prefixes.",
+          };
+        } else {
+          result = await this.git.createBranch(arg, signal);
+        }
         break;
       case "git-log":
         result = await this.git.log(arg ? parseInt(arg, 10) || 10 : 10, signal);
         break;
       case "git-show":
-        result = await this.git.show(arg, signal);
+        if (!arg.trim()) {
+          result = {
+            ok: false,
+            output: "Use: git-show <commit-hash|branch|tag>\nExample: git-show HEAD\nExample: git-show abc1234",
+          };
+        } else {
+          result = await this.git.show(arg, signal);
+        }
         break;
       case "test":
         result = await this.test.run(arg, signal);
         break;
       case "read": {
+        if (!arg.trim()) {
+          result = {
+            ok: false,
+            output: "Use: read <file-path>\nExample: read src/index.ts\nTip: Use search first to find the right file.",
+          };
+          break;
+        }
         // Clean up path: strip trailing instruction text that models sometimes include
         const cleanPath = this.cleanFilePath(arg);
         result = await this.filesystem.readFile(cleanPath);
         break;
       }
       case "write": {
+        if (!arg.trim()) {
+          result = {
+            ok: false,
+            output: [
+              "Use: write <path> ||| <content>",
+              "Example: write src/utils.ts ||| export const foo = () => {};",
+              "WARNING: This overwrites the entire file. Always read first.",
+              "For small edits, use patch instead — it's safer.",
+            ].join("\n"),
+          };
+          break;
+        }
         const writeMatch = arg.match(/^(.+?)\s*\|\|\|\s*([\s\S]*)$/);
         if (!writeMatch) {
           result = {
             ok: false,
-            output: "Use: write <path> ||| <content>",
+            output: [
+              "Use: write <path> ||| <content>",
+              "The ||| separator divides path from content.",
+              "Example: write src/config.ts ||| export const config = {};",
+              "For partial edits, use patch instead.",
+            ].join("\n"),
           };
         } else {
           result = await this.filesystem.writeFile(
@@ -282,11 +365,22 @@ export class ToolRegistry {
         break;
       }
       case "append": {
+        if (!arg.trim()) {
+          result = {
+            ok: false,
+            output: "Use: append <path> ||| <content>\nExample: append src/utils.ts ||| export function newFunc() {}",
+          };
+          break;
+        }
         const appendMatch = arg.match(/^(.+?)\s*\|\|\|\s*([\s\S]*)$/);
         if (!appendMatch) {
           result = {
             ok: false,
-            output: "Use: append <path> ||| <content>",
+            output: [
+              "Use: append <path> ||| <content>",
+              "The ||| separator divides path from content to append.",
+              "Example: append src/index.ts ||| import { foo } from './foo';",
+            ].join("\n"),
           };
         } else {
           result = await this.filesystem.appendFile(
@@ -297,11 +391,23 @@ export class ToolRegistry {
         break;
       }
       case "move": {
+        if (!arg.trim()) {
+          result = {
+            ok: false,
+            output: "Use: move <source> ||| <destination>\nExample: move src/old.ts ||| src/new.ts",
+          };
+          break;
+        }
         const moveMatch = arg.match(/^(.+?)\s*\|\|\|\s*(.+)$/);
         if (!moveMatch) {
           result = {
             ok: false,
-            output: "Use: move <source> ||| <destination>",
+            output: [
+              "Use: move <source> ||| <destination>",
+              "The ||| separator divides source from destination.",
+              "Example: move src/old.ts ||| src/new.ts",
+              "After moving, update imports that reference the old path.",
+            ].join("\n"),
           };
         } else {
           result = await this.filesystem.movePath(
@@ -312,9 +418,29 @@ export class ToolRegistry {
         break;
       }
       case "patch": {
+        if (!arg.trim()) {
+          result = {
+            ok: false,
+            output: [
+              "Use: patch <path> ||| <oldText> ||| <newText>",
+              "Example: patch src/utils.ts ||| function old() {} ||| function new() {}",
+              "oldText must match EXACTLY — include surrounding lines for uniqueness.",
+              "Only the FIRST occurrence is replaced.",
+            ].join("\n"),
+          };
+          break;
+        }
         const patchMatch = arg.match(/^(.+?)\s*\|\|\|\s*(.+?)\s*\|\|\|\s*([\s\S]*)$/);
         if (!patchMatch) {
-          result = { ok: false, output: "Use: patch <path> ||| <old text> ||| <new text>" };
+          result = {
+            ok: false,
+            output: [
+              "Use: patch <path> ||| <old text> ||| <new text>",
+              "The ||| separator divides path, oldText, and newText.",
+              "Example: patch src/utils.ts ||| const x = 1 ||| const x = 2",
+              "Tip: Include 2-3 lines of context around the change for uniqueness.",
+            ].join("\n"),
+          };
         } else {
           result = await this.filesystem.patchFile(
             patchMatch[1].trim(),
@@ -324,13 +450,41 @@ export class ToolRegistry {
         }
         break;
       }
-      case "delete":
+      case "delete": {
+        if (!arg.trim()) {
+          result = {
+            ok: false,
+            output: "Use: delete <path>\nExample: delete src/temp.ts\nWARNING: This is destructive and cannot be undone.",
+          };
+          break;
+        }
         result = await this.filesystem.deletePath(arg);
         break;
-      case "delete-contents":
+      }
+      case "delete-contents": {
+        if (!arg.trim()) {
+          result = {
+            ok: false,
+            output: "Use: delete-contents <directory-path>\nExample: delete-contents dist\nWARNING: Removes ALL contents of the directory.",
+          };
+          break;
+        }
         result = await this.filesystem.clearDirectory(arg);
         break;
+      }
       case "batch_edit": {
+        if (!arg.trim()) {
+          result = {
+            ok: false,
+            output: [
+              "batch_edit requires JSON arguments.",
+              "Format: {\"edits\": [{\"filePath\": \"...\", \"content\": \"...\", \"operation\": \"create|update|delete\"}]}",
+              "Example: {\"edits\": [{\"filePath\": \"src/a.ts\", \"content\": \"...\", \"operation\": \"update\"}]}",
+              "All edits are atomic — if any fails, all are rolled back.",
+            ].join("\n"),
+          };
+          break;
+        }
         try {
           const batchArgs = JSON.parse(arg);
           const edits: Array<{ filePath: string; content: string; operation: string }> = batchArgs.edits;
@@ -498,8 +652,11 @@ export class ToolRegistry {
         if (!this.mcpRegistry) {
           result = {
             ok: false,
-            output:
-              "MCP registry is not configured. Register adapters before using /tool mcp.",
+            output: [
+              "MCP registry is not configured. No MCP servers are registered.",
+              "Register adapters using orchestrator.registerMcpAdapter() before calling MCP tools.",
+              "Alternatively, use built-in tools: read, write, terminal, search, etc.",
+            ].join("\n"),
           };
         } else {
           const parsed = arg.match(
@@ -508,7 +665,12 @@ export class ToolRegistry {
           if (!parsed) {
             result = {
               ok: false,
-              output: "Use: mcp <server>:<tool> ||| <input>",
+              output: [
+                "Use: mcp <server>:<tool> ||| <input>",
+                "Example: mcp filesystem:read_file ||| /path/to/file",
+                "The ||| separator divides the server:tool from the input.",
+                "Available servers: " + (this.mcpRegistry.listServers().join(", ") || "none registered"),
+              ].join("\n"),
             };
           } else {
             const mcpResult = await this.mcpRegistry.call({
@@ -521,7 +683,11 @@ export class ToolRegistry {
               ok: mcpResult.ok,
               output: mcpResult.ok
                 ? `${mcpResult.output}\n\n[latency ${mcpResult.latencyMs}ms]`
-                : mcpResult.output,
+                : [
+                    `MCP call failed: ${mcpResult.output}`,
+                    `Server: ${parsed[1]}, Tool: ${parsed[2]}`,
+                    "Verify the server is running and the tool name is correct.",
+                  ].join("\n"),
             };
           }
         }
@@ -530,8 +696,17 @@ export class ToolRegistry {
       default:
         result = {
           ok: false,
-          output:
-            "Unknown tool command. Use one of: search, web-search, terminal, git-status, git-diff, git-branch, git-stage, git-unstage, git-commit, git-create-branch, git-log, git-show, test, read, write, append, patch, move, delete, delete-contents, mcp, batch_edit, workspace-stats",
+          output: [
+            `Unknown tool: '${toolName}'.`,
+            "",
+            "Available tools:",
+            "  read, write, append, patch, move, delete, delete-contents",
+            "  terminal, test, search, web-search",
+            "  git-status, git-diff, git-branch, git-stage, git-unstage, git-commit, git-create-branch, git-log, git-show",
+            "  batch_edit, mcp, workspace-stats",
+            "",
+            "Example: read src/index.ts",
+          ].join("\n"),
         };
     }
     } catch (error) {
@@ -539,6 +714,14 @@ export class ToolRegistry {
       let hint = "";
       if (errorStr.includes("command not found") || errorStr.includes("is not recognized")) {
         hint = " The command may not be available on this platform. Check the [HINT] in the error output for alternatives.";
+      } else if (errorStr.includes("ECONNREFUSED") || errorStr.includes("ENOTFOUND")) {
+        hint = " The service may not be running. Check if the required server or tool is available.";
+      } else if (errorStr.includes("permission denied") || errorStr.includes("EPERM")) {
+        hint = " Insufficient permissions. The file or directory may be read-only or locked.";
+      } else if (errorStr.includes("ENOENT") || errorStr.includes("no such file")) {
+        hint = " The file or directory does not exist. Check the path and try again.";
+      } else if (errorStr.includes("timeout") || errorStr.includes("timed out")) {
+        hint = " The operation timed out. Try a simpler command or increase the timeout.";
       }
       result = {
         ok: false,
@@ -559,7 +742,15 @@ export class ToolRegistry {
         "Empty command",
         startTime,
         undefined,
-        { code: "EMPTY_INPUT", message: "Tool command cannot be empty.", retryable: false },
+        {
+          code: "EMPTY_INPUT",
+          message: [
+            "Tool command cannot be empty.",
+            "Expected format: <tool_name> <arguments>",
+            "Examples: read src/index.ts, terminal npm test, search TODO",
+          ].join(" "),
+          retryable: false,
+        },
       );
     }
 

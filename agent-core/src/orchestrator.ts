@@ -1243,6 +1243,9 @@ export class NexcodeOrchestrator {
     const composedChunks: string[] = [];
     let planContent: string | undefined;
     let implementationDraft: string | undefined;
+    let reviewerFeedback: string | undefined;
+    const MAX_FEEDBACK_ITERATIONS = 2;
+    let feedbackIteration = 0;
     const stageTodos: ActivityTodo[] = pipeline.map((stage, index) => ({
       id: `pipeline-${index + 1}-${stage}`,
       title: `${formatPipelineStageFn(stage)} stage`,
@@ -1250,9 +1253,13 @@ export class NexcodeOrchestrator {
       detail: index === 0 ? "Active" : "Queued",
     }));
 
+    // Build a mutable pipeline we can extend with feedback iterations
+    const effectivePipeline = [...pipeline];
+    // Pre-allocate slots for potential feedback iterations (coder + reviewer re-runs)
+    // We'll process the pipeline linearly and insert feedback loops after reviewer
 
-    for (let stageIndex = 0; stageIndex < pipeline.length; stageIndex += 1) {
-      const stage = pipeline[stageIndex];
+    for (let stageIndex = 0; stageIndex < effectivePipeline.length; stageIndex += 1) {
+      const stage = effectivePipeline[stageIndex];
       ensureNotAbortedFn(abortSignal);
 
       const stageLabel = formatPipelineStageFn(stage);
@@ -1282,6 +1289,9 @@ export class NexcodeOrchestrator {
         const stageContextParts = [
           planContent && stage !== "planner" ? `Plan:\n${planContent}` : "",
           implementationDraft && stage === "reviewer" ? `Implementation draft:\n${implementationDraft}` : "",
+          reviewerFeedback && stage === "coder"
+            ? `Reviewer feedback (address these issues):\n${reviewerFeedback}`
+            : "",
         ].filter((part) => part.length > 0);
 
         const stagePrompt = stageContextParts.length > 0
@@ -1383,12 +1393,51 @@ export class NexcodeOrchestrator {
 
       if (stage === "coder") {
         implementationDraft = stageText.trim();
+        // Reset reviewer feedback for next iteration
+        reviewerFeedback = undefined;
+      }
+
+      // Evaluator-optimizer loop: after reviewer, if issues found, loop back to coder
+      if (stage === "reviewer" && feedbackIteration < MAX_FEEDBACK_ITERATIONS) {
+        const reviewText = stageText.trim().toLowerCase();
+        const hasBlockers = /\b(blocker|critical|must fix|must not|incorrect|wrong|bug|error|security issue|vulnerability)\b/.test(reviewText);
+        const hasSuggestions = /\b(suggestion|improve|consider|could|should|recommend)\b/.test(reviewText);
+
+        if (hasBlockers || hasSuggestions) {
+          feedbackIteration++;
+          reviewerFeedback = stageText.trim();
+
+          yield {
+            type: "status",
+            message: `Evaluator-optimizer loop: reviewer found issues (iteration ${feedbackIteration}/${MAX_FEEDBACK_ITERATIONS}). Sending feedback to coder.`,
+          };
+
+          const feedbackPrefix = `\n\n---\n## Review Feedback (iteration ${feedbackIteration})\n\nThe reviewer identified the following issues. Address them in your revised implementation:\n\n${reviewerFeedback}\n`;
+          composedChunks.push(feedbackPrefix);
+          yield {
+            type: "token",
+            token: feedbackPrefix,
+          };
+
+          // Insert a coder re-run after the current position
+          // We do this by pushing a "coder" stage back into the effective pipeline
+          // This will be processed in the next loop iteration
+          effectivePipeline.splice(stageIndex + 1, 0, "coder");
+          stageTodos.splice(stageIndex + 1, 0, {
+            id: `pipeline-feedback-${feedbackIteration}-coder`,
+            title: `Coder (feedback iteration ${feedbackIteration})`,
+            status: "not-started",
+            detail: `Reworking based on review feedback`,
+          });
+        }
       }
 
       stageTodos[stageIndex] = {
         ...stageTodos[stageIndex],
         status: "completed",
-        detail: "Completed",
+        detail: feedbackIteration > 0 && stage === "coder" && reviewerFeedback
+          ? `Reworked (${feedbackIteration} feedback iteration${feedbackIteration > 1 ? "s" : ""})`
+          : "Completed",
       };
       if (stageIndex + 1 < stageTodos.length) {
         const nextTodo = stageTodos[stageIndex + 1];
@@ -1405,6 +1454,10 @@ export class NexcodeOrchestrator {
         message: `${stageLabel} stage complete`,
       };
 
+    }
+
+    if (feedbackIteration > 0) {
+      composedChunks.push(`\n\n> Completed after ${feedbackIteration} review feedback iteration${feedbackIteration > 1 ? "s" : ""}.`);
     }
 
     return {
@@ -1473,6 +1526,7 @@ export class NexcodeOrchestrator {
         steeringProvider ?? this.steeringProvider,
         model,
         provider,
+        this.config.workspaceRoot,
       )) {
         yield event;
       }

@@ -1,3 +1,5 @@
+import fs from "fs/promises";
+import path from "path";
 import {
   type ChatMessage,
   type ToolCallRequest,
@@ -13,6 +15,65 @@ import { type ApprovalCallback } from "../tools/toolApprovalPolicy";
 import { EvidenceStore } from "../tools/evidenceStore";
 import { repairTruncatedJson, extractToolCallFromMalformedJson } from "../utils/jsonRepair";
 import { createDefaultRetryBudget } from "../utils/retryBudget";
+
+const NOTES_FILE = "NOTES.md";
+const MAX_NOTES_CHARS = 8000;
+
+/**
+ * Persistent notes manager: reads and writes a NOTES.md file in the workspace
+ * so the agent can track progress across turns.
+ */
+class AgentNotesManager {
+  private notesPath: string;
+  private existingNotes = "";
+
+  constructor(workspaceRoot: string) {
+    this.notesPath = path.join(workspaceRoot, NOTES_FILE);
+  }
+
+  async load(): Promise<string> {
+    try {
+      this.existingNotes = await fs.readFile(this.notesPath, "utf8");
+    } catch {
+      this.existingNotes = "";
+    }
+    return this.existingNotes;
+  }
+
+  async appendNote(note: string): Promise<void> {
+    const timestamp = new Date().toISOString().slice(0, 19).replace("T", " ");
+    const entry = `- [${timestamp}] ${note}\n`;
+    try {
+      await fs.appendFile(this.notesPath, entry, "utf8");
+      this.existingNotes += entry;
+    } catch {
+      // Best effort — don't fail the loop if notes write fails
+    }
+  }
+
+  getNotesContext(): string {
+    if (!this.existingNotes || this.existingNotes.trim().length === 0) return "";
+    // Truncate if too long
+    if (this.existingNotes.length > MAX_NOTES_CHARS) {
+      const lines = this.existingNotes.split("\n");
+      const keep = Math.max(4, Math.floor(lines.length * 0.6));
+      const kept = lines.slice(-keep).join("\n");
+      return `Previous session notes (truncated):\n${kept}`;
+    }
+    return `Previous session notes:\n${this.existingNotes}`;
+  }
+
+  async writeSummary(summary: string): Promise<void> {
+    const header = `# Agent Session Notes\n\nThis file tracks progress across agent turns. Updated automatically.\n\n`;
+    const content = `${header}${summary}\n`;
+    try {
+      await fs.writeFile(this.notesPath, content, "utf8");
+      this.existingNotes = content;
+    } catch {
+      // Best effort
+    }
+  }
+}
 
 export interface AgentLoopConfig {
   maxTurns: number;
@@ -705,6 +766,7 @@ export async function* runAgentLoop(
   steeringProvider?: () => string | undefined,
   model?: string,
   provider?: string,
+  workspaceRoot?: string,
 ): AsyncGenerator<OrchestratorEvent, ChatMessage[]> {
   const startedAt = Date.now();
   const toolSchemas: ToolCallRequestTool[] = toolDefinitions.map((def) => ({
@@ -731,7 +793,29 @@ export async function* runAgentLoop(
   // 2 HTTP retries per attempt) with headroom for one fallback candidate.
   const retryBudget = createDefaultRetryBudget();
 
+  // Persistent notes system: load existing notes and inject into context
+  const notesManager = workspaceRoot ? new AgentNotesManager(workspaceRoot) : null;
+  if (notesManager) {
+    await notesManager.load();
+    const notesContext = notesManager.getNotesContext();
+    if (notesContext) {
+      // Inject notes into the initial user message context
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === "user") {
+          const original = messages[i].content;
+          messages[i] = {
+            ...messages[i],
+            content: `${original}\n\n${notesContext}`,
+          };
+          break;
+        }
+      }
+    }
+  }
+
+  let completedTurns = 0;
   for (let turn = 0; turn < config.maxTurns; turn++) {
+    completedTurns = turn + 1;
     if (Date.now() - startedAt > config.timeoutMs) {
       timedOut = true;
       yield {
@@ -1220,6 +1304,15 @@ export async function* runAgentLoop(
         sources: result.sources,
       };
 
+      // Persistent notes: record significant successful operations
+      if (notesManager && result.ok) {
+        const noteTools = new Set(["write", "patch", "append", "delete", "move", "terminal", "test", "git-commit", "batch_edit"]);
+        if (noteTools.has(toolCall.function.name)) {
+          const noteSummary = `${toolCall.function.name} ${argString.slice(0, 80)}${result.output.length > 0 ? ` → ${result.output.slice(0, 120)}` : ""}`;
+          await notesManager.appendNote(noteSummary);
+        }
+      }
+
       // Track failures and detect repeated failures on similar commands
       if (!result.ok) {
         const failurePattern = `${toolCall.function.name}:${argString.split(/\s+/)[0] ?? ""}`;
@@ -1283,6 +1376,14 @@ export async function* runAgentLoop(
     });
 
     messages.push({ role: "assistant", content: finalResponse.text });
+  }
+
+  // Persistent notes: write a summary at the end of the loop
+  if (notesManager) {
+    const toolCalls = messages.filter((m) => m.role === "assistant" && m.tool_calls?.length);
+    const toolNames = [...new Set(toolCalls.flatMap((m) => m.tool_calls!.map((tc) => tc.function.name)))];
+    const summary = `## Loop completed (${completedTurns}/${config.maxTurns} turns)\nTools used: ${toolNames.join(", ") || "none"}\n`;
+    await notesManager.writeSummary(summary);
   }
 
   return messages;

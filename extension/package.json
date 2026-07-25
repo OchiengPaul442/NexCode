@@ -1,10 +1,9 @@
 {
   "name": "nexcode-kiboko-extension",
   "displayName": "NexCode Kiboko",
-  "description": "Local-first, multi-agent AI coding assistant for VS Code. Chat with AI models, edit code, run commands, search files, and automate coding tasks. Supports Ollama, OpenAI, and other providers. Built-in security, memory, and hooks.",
+  "description": "Local-first AI coding assistant for VS Code with agent modes, safe tool execution, edit review, Ollama, and OpenAI-compatible providers.",
   "publisher": "nexcode",
   "version": "0.7.0",
-  "private": true,
   "icon": "media/icon.png",
   "engines": {
     "vscode": "^1.95.0"
@@ -36,7 +35,6 @@
     "multi-agent",
     "local-ai",
     "privacy-first",
-    "open-source",
     "typescript",
     "nextjs",
     "react",
@@ -63,27 +61,13 @@
   "categories": [
     "Other",
     "Programming Languages",
-    "Linters",
-    "Formatters",
-    "Snippets",
-    "Testing",
-    "Debuggers"
+    "Testing"
   ],
   "galleryBanner": {
     "color": "#1E1E2E",
     "theme": "dark"
   },
-  "bugs": {
-    "url": "https://github.com/nexcode/nexcode-kiboko/issues"
-  },
   "homepage": "https://nexcode.dev",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/nexcode/nexcode-kiboko"
-  },
-  "sponsor": {
-    "url": "https://nexcode.dev/sponsor"
-  },
   "main": "./out/extension.js",
   "activationEvents": [
     "onView:nexcodeKiboko.sidebarView"
@@ -243,7 +227,7 @@
         "nexcodeKiboko.allowWorkspacePrompts": {
           "type": "boolean",
           "default": false,
-          "description": "Allow workspace prompt files to override built-in system prompts. Disabled by default for security — a malicious repository could otherwise inject arbitrary system instructions. Only enable in trusted workspaces where you explicitly want custom prompts."
+          "description": "Allow workspace prompt files to override built-in system prompts. Disabled by default for security - a malicious repository could otherwise inject arbitrary system instructions. Only enable in trusted workspaces where you explicitly want custom prompts."
         },
         "nexcodeKiboko.openAIBaseUrl": {
           "type": "string",

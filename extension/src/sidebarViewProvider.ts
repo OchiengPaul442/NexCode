@@ -134,7 +134,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
   private async handleWebviewMessage(
     message: unknown,
   ): Promise<void> {
-    // NC-005: Runtime validation — reject messages that don't have a recognized
+    // NC-005: Runtime validation - reject messages that don't have a recognized
     // type discriminator and valid shape. The TypeScript type system only
     // provides compile-time guarantees; the webview can send arbitrary objects.
     const validation = validateWebviewMessage(message);
@@ -213,9 +213,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
         return;
       case "openDocs":
         await vscode.env.openExternal(
-          vscode.Uri.parse(
-            "https://github.com/OchiengPaul442/NexCode#readme",
-          ),
+          vscode.Uri.parse("https://nexcode.dev/docs"),
         );
         return;
       case "openFile":
@@ -243,7 +241,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
                 String(msg.value),
               );
               if (validated !== String(msg.value).replace(/\/+$/, "")) {
-                // URL failed validation — reject the update and notify
+                // URL failed validation - reject the update and notify
                 this.postMessage({
                   type: "configError",
                   message:
@@ -684,7 +682,7 @@ export class KibokoSidebarViewProvider implements vscode.WebviewViewProvider {
           textContent = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
           break; // Found in this workspace folder
         } catch {
-          // File might not exist in this folder — try next
+          // File might not exist in this folder - try next
         }
       }
     }

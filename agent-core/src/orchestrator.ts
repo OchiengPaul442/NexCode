@@ -80,6 +80,10 @@ import { runAgentLoop, type AgentLoopConfig } from "./agents/agentLoop";
 import { getToolDefinitionsForMode } from "./tools/toolDefinitions";
 import { validateEditPreconditions } from "./utils/editValidation";
 import { atomicWriteFile } from "./tools/fileSystemTool";
+import { HookRegistry } from "./hooks/hookRegistry";
+import { GitMcpAdapter } from "./mcp/adapters/gitAdapter";
+import { SearchMcpAdapter } from "./mcp/adapters/searchAdapter";
+import { PathScopedRuleManager } from "./rules/pathScopedRules";
 
 export interface NexcodeOrchestratorOptions {
   workspaceRoot?: string;
@@ -152,6 +156,8 @@ export class NexcodeOrchestrator {
   private readonly steeringProvider?: () => string | undefined;
   private readonly tokenCounter = new TokenCounter();
   private readonly efficiencyTracker = new EfficiencyTracker();
+  private readonly hooks = new HookRegistry();
+  private readonly pathScopedRules: PathScopedRuleManager | null;
 
   public constructor(options: NexcodeOrchestratorOptions = {}) {
     this.approvalCallback = options.approvalCallback;
@@ -239,6 +245,8 @@ export class NexcodeOrchestrator {
     // NOTE: This is an in-process adapter registry, not a real MCP protocol client.
     // Full MCP support requires the official @modelcontextprotocol/sdk.
     this.mcpRegistry.register(new FilesystemAdapter(this.config.workspaceRoot));
+    
+    // Register Git and Search MCP adapters
     this.tools = new ToolRegistry(this.config.workspaceRoot, {
       searchProvider: this.config.toolDefaults.searchProvider,
       searchApiKey: this.config.toolDefaults.searchApiKey,
@@ -248,6 +256,15 @@ export class NexcodeOrchestrator {
       mcpRegistry: this.mcpRegistry,
       approvalPolicy: new DefaultToolApprovalPolicy(),
     });
+    
+    // Register MCP adapters for Git and Search
+    this.mcpRegistry.register(new GitMcpAdapter(this.tools.git));
+    this.mcpRegistry.register(new SearchMcpAdapter(this.tools.search));
+    
+    // Initialize path-scoped rules if workspace root is available
+    this.pathScopedRules = this.config.workspaceRoot
+      ? new PathScopedRuleManager(this.config.workspaceRoot)
+      : null;
 
     this.planner = new PlannerAgent(this.router, this.prompts);
     this.coder = new CoderAgent(this.router, this.prompts);
@@ -274,6 +291,36 @@ export class NexcodeOrchestrator {
     } catch (err) {
       console.error("[nexcode] Memory initialization failed:", err);
     }
+    
+    // Initialize path-scoped rules
+    if (this.pathScopedRules) {
+      try {
+        await this.pathScopedRules.load();
+      } catch (err) {
+        console.error("[nexcode] Path-scoped rules initialization failed:", err);
+      }
+    }
+  }
+
+  /**
+   * Register a hook for tool execution.
+   */
+  public registerHook(hook: import("./hooks/hookRegistry").Hook): void {
+    this.hooks.register(hook);
+  }
+
+  /**
+   * Unregister a hook by name.
+   */
+  public unregisterHook(name: string): void {
+    this.hooks.unregister(name);
+  }
+
+  /**
+   * Get the MCP registry for registering additional adapters.
+   */
+  public getMcpRegistry(): McpRegistry {
+    return this.mcpRegistry;
   }
 
   /**
@@ -1519,6 +1566,7 @@ export class NexcodeOrchestrator {
       maxTurns: parseInt(process.env.NEXCODE_MAX_TURNS || "30", 10),
       maxTokensPerTurn: parseInt(process.env.NEXCODE_MAX_TOKENS || "4096", 10),
       timeoutMs: parseInt(process.env.NEXCODE_TIMEOUT_MS || "600000", 10),
+      hooks: this.hooks,
     };
 
     yield {

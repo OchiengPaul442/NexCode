@@ -109,7 +109,16 @@ export class DatabaseMcpAdapter implements McpAdapter {
   }
 
   private async describeTable(tableName: string): Promise<McpToolResult> {
-    return this.executeQuery(`PRAGMA table_info(${tableName})`);
+    // Validate table name to prevent SQL injection
+    const safeName = tableName.replace(/[^a-zA-Z0-9_]/g, "");
+    if (safeName !== tableName || safeName.length === 0) {
+      return {
+        ok: false,
+        output: "Invalid table name. Only alphanumeric characters and underscores are allowed.",
+        latencyMs: 0,
+      };
+    }
+    return this.executeQuery(`PRAGMA table_info(${safeName})`);
   }
 
   private async getSchema(): Promise<McpToolResult> {

@@ -109,8 +109,11 @@ export function createAutoFormatHook(formatCommand: string): Hook {
       const filePath = event.args.split("|||")[0]?.trim();
       if (filePath && event.result?.ok) {
         try {
-          const { execSync } = await import("child_process");
-          execSync(`${formatCommand} "${filePath}"`, { timeout: 10000, stdio: "ignore" });
+          // Use execFile (async) to avoid blocking the event loop
+          const { execFile: execFileCb } = await import("child_process");
+          const { promisify } = await import("util");
+          const execFileAsync = promisify(execFileCb);
+          await execFileAsync(formatCommand, [filePath], { timeout: 10000 });
         } catch {
           // Best effort — don't fail if formatting fails
         }

@@ -25,6 +25,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/minimatch": "^5.1.2",
     "eslint": "^10.7.0",
     "typescript-eslint": "^8.64.0"
   }

@@ -1,94 +1,82 @@
 # Changelog
 
-## 0.2.0
+All notable changes to NexCode Kiboko will be documented in this file.
 
-### Security Hardening
-- Fixed SAFE_PATTERNS allowing arbitrary code execution via npm run, npm install, node, python, npx, pip
-- Added node -e, python -c, python3 -c to blocked patterns
-- Fixed batch_edit to use ensureNotWorkspaceRoot and resolveWorkspacePathSafe
-- Added approvedCalls Set to ToolRegistry for persistent approval state
-- Fixed symlink parent escape in resolveWorkspacePathSafe
-- Fixed clearDirectory to validate entries against workspace
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project follows semantic versioning for published extension releases.
 
-### Agent Improvements
-- Made agent loop universal across all modes (pipeline stages now use agent loop)
-- Added schema validation with errors fed back to model
-- Added retry logic with exponential backoff for provider errors
-- Fixed Ollama malformed JSON handling
-- Broadened isSimpleQuestion to catch conversational questions
-- Updated system prompts to tell model when NOT to use tools
-- Added slash command detection to skip simple question logic
+## [0.7.0] - 2026-07-25
 
-### Permission Modes
-- Fixed autopilot mode to read current settings each time (not captured in closure)
-- Both approval paths (callback and event) check permission mode correctly
-- Added auto/ask/bypass permission modes with proper descriptions
-- Terminal tool rejects tool names (git-status, git-diff, etc.) as shell commands
+### Added
 
-### Multi-Agent Model Configuration
-- Added agentModels config with manager, primaryWorker, lightweightWorker, reasoningReviewer
-- Added getModelForMode() function for per-mode model selection
-- Added VS Code settings for per-mode model selection
-- Available models: qwen3:8b, deepseek-r1:8b, qwen2.5-coder:14b
+- Marketplace-ready extension README with clearer setup, privacy, provider, command, and settings documentation.
+- Packaged extension changelog for VS Code Marketplace release notes.
+- Version information command for checking the installed extension build.
+- Sidebar support for provider status, model selection, persistent sessions, attachments, and edit review.
 
-### UI Improvements
-- Collapsible/expandable todo list (OpenCode-style)
-- Collapsible tool execution cards with left-border grouping
-- Work summary component showing files, duration, success/fail count
-- Auto-expanding textarea (32px min, 180px max)
-- Both send and stop buttons visible simultaneously
-- Queue only shows when items are genuinely pending
-- Auto-clear finished queue items after 3 seconds
-- Removed layout animation on prompt submit
+### Changed
 
-### Web Search
-- Replaced DuckDuckGo Instant Answer API with HTML lite endpoint
-- Returns actual search results (title, URL, snippet)
-- No API key required for basic web search
+- Refined public package metadata for a private-source Marketplace release.
+- Clarified that local privacy applies to Ollama usage, while remote providers and web search send data to the configured service.
+- Reduced Marketplace categories and removed public source-code positioning from extension metadata.
 
-### Build System
-- Switched from tsc to esbuild for extension bundling
-- Extension.js now bundles all dependencies
+### Security
 
-### Testing
-- Added 41 new tests (terminalArbitraryExecution, batchEditSecurity, realWorldAgentFlow)
-- All 165 tests passing
-- Platform-aware tests for Windows/Linux
+- Documented SecretStorage usage for provider and search keys.
+- Documented workspace trust restrictions for network and tool-related settings.
+- Documented approval controls for terminal and file-changing tools.
 
-### Project Cleanup
-- Deleted useless outside-1784301654103/ directory
-- Deleted placeholder ui/ folder
+## [0.6.0] - 2026-07-25
 
-## 0.1.47
+### Added
 
-- Added CI workflow badge and status indicators to README.
-- Added test count badge (62 tests across 8 files).
-- Added version and license badges.
-- Restructured README with streamlined features, configuration, and quick start sections.
-- Added configuration examples for Ollama, OpenCode Go, and HuggingFace providers.
+- Multi-agent runtime support for planning, coding, reviewing, QA, and security-oriented work.
+- Worker pool, background worker, skill tool, auto-memory, enhanced approval policy, and path-scoped rule infrastructure.
+- Web search tool support with configurable providers.
 
-## 0.1.22
+### Fixed
 
-- Rebuilt sidebar UX to a Copilot-style layout with session list, model/provider/mode top bar, and cleaner chat composition flow.
-- Added dynamic model dropdown sourced from provider model APIs and persisted model/provider/mode per session.
-- Added live provider connectivity badge with latency and refresh actions.
-- Added settings panel with temperature, reasoning visibility, auto-apply toggle, and terminal approval toggle.
-- Added drag-and-drop attachments and attachment preview chips.
-- Added smoother streaming experience with thinking indicator and buffered token rendering.
-- Added structured markdown rendering for assistant responses and collapsible reasoning/debug panels.
-- Added robust staging-based release packaging to guarantee runtime dependencies are present in VSIX installs.
+- Hardened command execution, path containment, secret redaction, and tool approval behavior.
+- Improved cross-platform file handling and agent isolation behavior.
 
-## 0.1.13
+### Security
 
-- Added sidebar chat experience with streaming, attachments, and approval workflow.
-- Added web search (`/tool web-search`) with Tavily and fallback engines.
-- Added reasoning trace and terminal confirmation controls.
-- Improved packaging scripts and maintenance docs.
+- Added stronger protections around shell execution, workspace containment, and sensitive environment handling.
 
-## 0.2.1
+## [0.5.0] - 2026-07-20
 
-**Date:** 2026-07-17
-**Previous version:** 0.2.0
+### Added
 
-### Documentation
-- docs: add AGENT.md, CLAUDE.md, and auto-version script (fc03251)
+- Enhanced memory, hooks, path-scoped rules, MCP adapters, and permission policy infrastructure.
+- Git, search, database adapter, and workspace tool improvements.
+
+### Fixed
+
+- Tool execution event reporting, JSON code block handling, approval behavior, and security regression issues.
+
+## [0.4.0] - 2026-07-15
+
+### Added
+
+- Initial VS Code extension, sidebar webview, agent loop, tool registry, terminal tool, file tools, search, Git operations, and memory system.
+
+### Security
+
+- Initial terminal safety, path containment, secret redaction, and approval policy support.
+
+## [0.3.0] - 2026-07-10
+
+### Added
+
+- Basic agent capabilities, multi-provider support, context management, and session persistence.
+
+## [0.2.0] - 2026-07-05
+
+### Added
+
+- VS Code extension structure, webview UI, and configuration system.
+
+## [0.1.0] - 2026-07-01
+
+### Added
+
+- Initial project setup and build configuration.

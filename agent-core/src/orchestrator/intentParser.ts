@@ -43,9 +43,11 @@ export function inferNaturalLanguageEditRequest(
   }
 
   const hasEditVerb =
-    /\b(refactor|rewrite|modify|change|update|fix|rename|remove|delete|add|implement|improve|clean up)\b/i.test(
+    /\b(refactor|rewrite|modify|change|update|fix|rename|remove|delete|implement|improve|clean up)\b/i.test(
       normalized,
     );
+  // Note: "add" is excluded from edit verbs because prompts like "Add a script to package.json"
+  // should be handled by the agent loop with tool calls, not by the proposed edit path.
   if (!hasEditVerb) {
     return null;
   }
@@ -177,11 +179,18 @@ export function extractToolCommandRequest(
     return null;
   }
 
-  const readMatch = normalized.match(
+  const readFileMatch = normalized.match(
     /^(?:please\s+)?(?:read|open|show)\s+(?:the\s+)?file\s+(.+)$/i,
   );
-  if (readMatch) {
-    return `read ${readMatch[1].trim()}`;
+  if (readFileMatch) {
+    return `read ${readFileMatch[1].trim()}`;
+  }
+
+  const readPathMatch = normalized.match(
+    /^(?:please\s+)?(?:read|open|show)\s+(?:the\s+)?([a-z0-9_./\\-]+\.\w+)$/i,
+  );
+  if (readPathMatch) {
+    return `read ${readPathMatch[1].trim()}`;
   }
 
   const searchMatch = normalized.match(

@@ -115,12 +115,6 @@ function playCompletionSound(): void {
 
 // ── Git-style diff utility — extracted to ./utils/diffUtils ──────────────────
 
-declare const acquireVsCodeApi: <T = unknown>() => {
-  postMessage: (message: unknown) => void;
-  setState: (state: T) => void;
-  getState: () => T | undefined;
-};
-
 // NC-036: Types, providerPresets, and utility functions imported from extracted modules (types.ts, utils.ts, store.ts)
 // Types and utilities now imported from ./types, ./utils, ./store (NC-036)
 // Removed: AgentMode, UiMode, PermissionLevel, EditStatus, ActivityStatus,
@@ -467,7 +461,6 @@ function MessageBubble({
                 message={message}
                 isStreaming={Boolean(message.streaming || message.thinking)}
                 onOpenFile={(filePath) => {
-                  const vscode = acquireVsCodeApi();
                   vscode.postMessage({ type: "openFile", filePath });
                 }}
                 onFrame={onAnimatedFrame}
@@ -748,11 +741,7 @@ function App() {
     Record<string, string[]>
   >({});
   const [mcpSelectedServer, setMcpSelectedServer] = useState("");
-  // NC-003: Local (uncontrolled) state for API key inputs.
-  // These are never persisted — the value is sent to the extension via
-  // sendSecret() and then the local state is cleared.
-  const [localApiKey, setLocalApiKey] = useState("");
-  const [localSearchApiKey, setLocalSearchApiKey] = useState("");
+
   const [mcpSelectedTool, setMcpSelectedTool] = useState("");
   const [mcpQuickInput, _setMcpQuickInput] = useState("");
   const [_mcpInvokeBusy, setMcpInvokeBusy] = useState(false);
@@ -797,18 +786,6 @@ function App() {
   );
 
   const activeDraft = activeSession ? (drafts[activeSession.id] ?? "") : "";
-
-  const modelsForActiveProvider = useMemo(() => {
-    if (!activeSession) return [];
-    const providerModels = modelSuggestions[activeSession.provider] ?? [];
-    const current = activeSession.model?.trim();
-    // Only include current model if it's actually in the provider's model list
-    // This prevents showing stale models from a previous provider
-    if (current && providerModels.includes(current)) {
-      return [...new Set([current, ...providerModels])];
-    }
-    return [...new Set(providerModels)];
-  }, [activeSession, modelSuggestions]);
 
   const _mcpToolsForSelectedServer = useMemo(
     () => mcpToolsByServer[mcpSelectedServer] ?? [],
@@ -2194,13 +2171,7 @@ function App() {
           <SettingsDropdown
             isOpen={settingsDropdownOpen}
             onToggle={() => setSettingsDropdownOpen(!settingsDropdownOpen)}
-            activeSession={activeSession}
             settings={settings}
-            modelsForActiveProvider={modelsForActiveProvider}
-            localApiKey={localApiKey}
-            setLocalApiKey={setLocalApiKey}
-            localSearchApiKey={localSearchApiKey}
-            setLocalSearchApiKey={setLocalSearchApiKey}
           />
           <button
             className="nk-icon-btn"

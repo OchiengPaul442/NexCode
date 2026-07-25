@@ -14,6 +14,7 @@
  */
 
 import { describe, it, expect, vi, afterEach } from "vitest";
+import { extractToolCallFromMalformedJson } from "../src/utils/jsonRepair";
 
 // Re-implement the PRIVILEGED_TOOLS set from agentLoop.ts for testing
 const PRIVILEGED_TOOLS = new Set([
@@ -258,5 +259,86 @@ describe("NC-017: Malformed tool call fail-closed behavior", () => {
       expect(errorMsg).toContain("Invalid JSON");
       expect(errorMsg.length).toBeLessThan(longInput.length);
     });
+  });
+});
+
+describe("extractToolCallFromMalformedJson", () => {
+  it("extracts tool call from truncated JSON missing closing braces", () => {
+    const malformed = '{"name":"read","arguments":{"path":"package.json"';
+    const result = extractToolCallFromMalformedJson(malformed);
+
+    expect(result).not.toBeNull();
+    expect(result!.name).toBe("read");
+    expect(result!.arguments).toEqual({ path: "package.json" });
+  });
+
+  it("extracts tool call from truncated JSON with multiple args", () => {
+    const malformed = '{"name":"write","arguments":{"path":"src/index.ts","content":"new content"';
+    const result = extractToolCallFromMalformedJson(malformed);
+
+    expect(result).not.toBeNull();
+    expect(result!.name).toBe("write");
+    expect(result!.arguments).toEqual({ path: "src/index.ts", content: "new content" });
+  });
+
+  it("extracts tool call from truncated JSON with numeric args", () => {
+    const malformed = '{"name":"terminal","arguments":{"command":"ls","timeout":5000';
+    const result = extractToolCallFromMalformedJson(malformed);
+
+    expect(result).not.toBeNull();
+    expect(result!.name).toBe("terminal");
+    expect(result!.arguments).toEqual({ command: "ls", timeout: 5000 });
+  });
+
+  it("extracts tool call from truncated JSON with boolean args", () => {
+    const malformed = '{"name":"search","arguments":{"query":"TODO","caseSensitive":true';
+    const result = extractToolCallFromMalformedJson(malformed);
+
+    expect(result).not.toBeNull();
+    expect(result!.name).toBe("search");
+    expect(result!.arguments).toEqual({ query: "TODO", caseSensitive: true });
+  });
+
+  it("returns null for text without name field", () => {
+    const result = extractToolCallFromMalformedJson('{"arguments":{"path":"file.txt"');
+    expect(result).toBeNull();
+  });
+
+  it("returns null for text without arguments field", () => {
+    const result = extractToolCallFromMalformedJson('{"name":"read","other":"data"');
+    expect(result).toBeNull();
+  });
+
+  it("returns null for empty input", () => {
+    expect(extractToolCallFromMalformedJson("")).toBeNull();
+    expect(extractToolCallFromMalformedJson(null)).toBeNull();
+    expect(extractToolCallFromMalformedJson(undefined)).toBeNull();
+  });
+
+  it("handles JSON with surrounding text", () => {
+    const text = 'I need to read the file. {"name":"read","arguments":{"path":"src/index.ts"';
+    const result = extractToolCallFromMalformedJson(text);
+
+    expect(result).not.toBeNull();
+    expect(result!.name).toBe("read");
+    expect(result!.arguments).toEqual({ path: "src/index.ts" });
+  });
+
+  it("handles already-valid JSON by returning parsed result", () => {
+    const valid = '{"name":"read","arguments":{"path":"file.txt"}}';
+    const result = extractToolCallFromMalformedJson(valid);
+
+    expect(result).not.toBeNull();
+    expect(result!.name).toBe("read");
+    expect(result!.arguments).toEqual({ path: "file.txt" });
+  });
+
+  it("extracts tool call with nested quotes in arguments", () => {
+    const malformed = '{"name":"terminal","arguments":{"command":"echo \\"hello\\""';
+    const result = extractToolCallFromMalformedJson(malformed);
+
+    expect(result).not.toBeNull();
+    expect(result!.name).toBe("terminal");
+    expect(result!.arguments).toEqual({ command: 'echo "hello"' });
   });
 });

@@ -34,6 +34,7 @@ import { OllamaProvider } from "./providers/ollamaProvider";
 import { OpenAICompatibleProvider } from "./providers/openAICompatibleProvider";
 import { ToolRegistry } from "./tools/toolRegistry";
 import { type ApprovalCallback, DefaultToolApprovalPolicy } from "./tools/toolApprovalPolicy";
+import { EnhancedToolApprovalPolicy } from "./tools/enhancedApprovalPolicy";
 import { TokenCounter } from "./utils/tokenCounter";
 import { getModelCapabilityRegistry } from "./utils/modelCapabilityRegistry";
 import { chunkText, extractFirstCodeBlock } from "./utils/text";
@@ -80,6 +81,11 @@ import { runAgentLoop, type AgentLoopConfig } from "./agents/agentLoop";
 import { getToolDefinitionsForMode } from "./tools/toolDefinitions";
 import { validateEditPreconditions } from "./utils/editValidation";
 import { atomicWriteFile } from "./tools/fileSystemTool";
+import { HookRegistry } from "./hooks/hookRegistry";
+import { GitMcpAdapter } from "./mcp/adapters/gitAdapter";
+import { SearchMcpAdapter } from "./mcp/adapters/searchAdapter";
+import { PathScopedRuleManager } from "./rules/pathScopedRules";
+import { AgentIsolation } from "./agents/agentIsolation";
 
 export interface NexcodeOrchestratorOptions {
   workspaceRoot?: string;
@@ -152,6 +158,9 @@ export class NexcodeOrchestrator {
   private readonly steeringProvider?: () => string | undefined;
   private readonly tokenCounter = new TokenCounter();
   private readonly efficiencyTracker = new EfficiencyTracker();
+  private readonly hooks = new HookRegistry();
+  private readonly pathScopedRules: PathScopedRuleManager | null;
+  private readonly agentIsolation: AgentIsolation | null;
 
   public constructor(options: NexcodeOrchestratorOptions = {}) {
     this.approvalCallback = options.approvalCallback;
@@ -239,6 +248,8 @@ export class NexcodeOrchestrator {
     // NOTE: This is an in-process adapter registry, not a real MCP protocol client.
     // Full MCP support requires the official @modelcontextprotocol/sdk.
     this.mcpRegistry.register(new FilesystemAdapter(this.config.workspaceRoot));
+    
+    // Use EnhancedToolApprovalPolicy with glob-pattern support
     this.tools = new ToolRegistry(this.config.workspaceRoot, {
       searchProvider: this.config.toolDefaults.searchProvider,
       searchApiKey: this.config.toolDefaults.searchApiKey,
@@ -246,8 +257,22 @@ export class NexcodeOrchestrator {
       tavilyApiKey: this.config.toolDefaults.tavilyApiKey,
       tavilyBaseUrl: this.config.toolDefaults.tavilyBaseUrl,
       mcpRegistry: this.mcpRegistry,
-      approvalPolicy: new DefaultToolApprovalPolicy(),
+      approvalPolicy: new EnhancedToolApprovalPolicy(),
     });
+    
+    // Register MCP adapters for Git and Search
+    this.mcpRegistry.register(new GitMcpAdapter(this.tools.git));
+    this.mcpRegistry.register(new SearchMcpAdapter(this.tools.search));
+    
+    // Initialize path-scoped rules if workspace root is available
+    this.pathScopedRules = this.config.workspaceRoot
+      ? new PathScopedRuleManager(this.config.workspaceRoot)
+      : null;
+    
+    // Initialize agent isolation for subagent workspaces
+    this.agentIsolation = this.config.workspaceRoot
+      ? new AgentIsolation({ workspaceRoot: this.config.workspaceRoot, useWorktrees: true })
+      : null;
 
     this.planner = new PlannerAgent(this.router, this.prompts);
     this.coder = new CoderAgent(this.router, this.prompts);
@@ -274,6 +299,50 @@ export class NexcodeOrchestrator {
     } catch (err) {
       console.error("[nexcode] Memory initialization failed:", err);
     }
+    
+    // Initialize path-scoped rules
+    if (this.pathScopedRules) {
+      try {
+        await this.pathScopedRules.load();
+      } catch (err) {
+        console.error("[nexcode] Path-scoped rules initialization failed:", err);
+      }
+    }
+  }
+
+  /**
+   * Register a hook for tool execution.
+   */
+  public registerHook(hook: import("./hooks/hookRegistry").Hook): void {
+    this.hooks.register(hook);
+  }
+
+  /**
+   * Unregister a hook by name.
+   */
+  public unregisterHook(name: string): void {
+    this.hooks.unregister(name);
+  }
+
+  /**
+   * Get the MCP registry for registering additional adapters.
+   */
+  public getMcpRegistry(): McpRegistry {
+    return this.mcpRegistry;
+  }
+
+  /**
+   * Get the agent isolation system for creating isolated workspaces.
+   */
+  public getAgentIsolation(): AgentIsolation | null {
+    return this.agentIsolation;
+  }
+
+  /**
+   * Get the path-scoped rules manager.
+   */
+  public getPathScopedRules(): PathScopedRuleManager | null {
+    return this.pathScopedRules;
   }
 
   /**
@@ -553,15 +622,11 @@ export class NexcodeOrchestrator {
         diagnostics.push(
           `[context-budget] approaching limit: estimated ${contextTokenEstimate} tokens, budget ${compressionThreshold} tokens, model context ${modelContextWindow} tokens`,
         );
-        const compressedSession = this.sessionCompressor.compressSession(
-          rawSessionMessages.map((m) => ({ role: m.role, text: m.content })),
-        );
-        sessionContextRaw = compressedSession
-          .map((m) => {
-            const prefix = m.role === "user" ? "User" : "Assistant";
-            return `${prefix}: ${m.text}`;
-          })
-          .join("\n");
+        // Session was already compressed above. If still over budget,
+        // further reduce session context by taking only the most recent messages.
+        const sessionParts = sessionContextRaw.split("\n");
+        const keepCount = Math.max(4, Math.floor(sessionParts.length * 0.5));
+        sessionContextRaw = sessionParts.slice(-keepCount).join("\n");
         sessionContext = clampText(
           sessionContextRaw,
           MAX_SESSION_CONTEXT_CHARS,
@@ -709,6 +774,19 @@ export class NexcodeOrchestrator {
           }
 
           yield step.value;
+        }
+
+        // Emit toolExecuted for non-dangerous inferred tool commands
+        const toolName = inferredToolCommand.split(/\s+/)[0] || "unknown";
+        const isDangerous = /rm\s+-rf|format\s+[a-z]:|del\s+\/[qs]|Remove-Item\s+-Recurse/i.test(inferredToolCommand);
+        if (!isDangerous && response) {
+          yield {
+            type: "toolExecuted",
+            toolName,
+            command: inferredToolCommand,
+            status: response.diagnostics.length > 0 ? "error" : "success",
+            message: response.text.substring(0, 200),
+          };
         }
 
       } else if (workspaceStatsCommand) {
@@ -1057,6 +1135,8 @@ export class NexcodeOrchestrator {
         response.text,
         response.proposedEdits.length,
         0,
+        diagnostics.length,
+        diagnostics.some(d => d.toLowerCase().includes("error")),
       );
       await this.feedbackLogger.log({
         ...feedback,
@@ -1245,6 +1325,9 @@ export class NexcodeOrchestrator {
     const composedChunks: string[] = [];
     let planContent: string | undefined;
     let implementationDraft: string | undefined;
+    let reviewerFeedback: string | undefined;
+    const MAX_FEEDBACK_ITERATIONS = 2;
+    let feedbackIteration = 0;
     const stageTodos: ActivityTodo[] = pipeline.map((stage, index) => ({
       id: `pipeline-${index + 1}-${stage}`,
       title: `${formatPipelineStageFn(stage)} stage`,
@@ -1252,9 +1335,13 @@ export class NexcodeOrchestrator {
       detail: index === 0 ? "Active" : "Queued",
     }));
 
+    // Build a mutable pipeline we can extend with feedback iterations
+    const effectivePipeline = [...pipeline];
+    // Pre-allocate slots for potential feedback iterations (coder + reviewer re-runs)
+    // We'll process the pipeline linearly and insert feedback loops after reviewer
 
-    for (let stageIndex = 0; stageIndex < pipeline.length; stageIndex += 1) {
-      const stage = pipeline[stageIndex];
+    for (let stageIndex = 0; stageIndex < effectivePipeline.length; stageIndex += 1) {
+      const stage = effectivePipeline[stageIndex];
       ensureNotAbortedFn(abortSignal);
 
       const stageLabel = formatPipelineStageFn(stage);
@@ -1284,6 +1371,9 @@ export class NexcodeOrchestrator {
         const stageContextParts = [
           planContent && stage !== "planner" ? `Plan:\n${planContent}` : "",
           implementationDraft && stage === "reviewer" ? `Implementation draft:\n${implementationDraft}` : "",
+          reviewerFeedback && stage === "coder"
+            ? `Reviewer feedback (address these issues):\n${reviewerFeedback}`
+            : "",
         ].filter((part) => part.length > 0);
 
         const stagePrompt = stageContextParts.length > 0
@@ -1291,6 +1381,7 @@ export class NexcodeOrchestrator {
           : prompt;
 
         // Use agent loop for each pipeline stage
+        const stageFiles: ActivityFile[] = [];
         for await (const event of this.runAgentLoopStreaming(
           stage,
           stagePrompt,
@@ -1310,9 +1401,30 @@ export class NexcodeOrchestrator {
             stageText += event.token;
             composedChunks.push(event.token);
             yield event;
-          } else if (event.type === "status" || event.type === "toolExecuted") {
+          } else if (event.type === "status") {
             yield event;
+          } else if (event.type === "toolExecuted") {
+            yield event;
+            // Track files changed by tool execution
+            if (event.filesChanged && event.status === "success") {
+              for (const filePath of event.filesChanged) {
+                if (filePath && !stageFiles.some(f => f.path === filePath)) {
+                  stageFiles.push({
+                    path: filePath,
+                    status: "modified",
+                    summary: `${event.toolName}: ${event.command.slice(0, 80)}`,
+                  });
+                }
+              }
+            }
           }
+        }
+        if (stageFiles.length > 0) {
+          yield {
+            type: "activity",
+            files: stageFiles,
+            note: `${stageLabel} modified ${stageFiles.length} file(s)`,
+          };
         }
       } catch (error) {
         if (isAbortErrorFn(error)) {
@@ -1363,12 +1475,51 @@ export class NexcodeOrchestrator {
 
       if (stage === "coder") {
         implementationDraft = stageText.trim();
+        // Reset reviewer feedback for next iteration
+        reviewerFeedback = undefined;
+      }
+
+      // Evaluator-optimizer loop: after reviewer, if issues found, loop back to coder
+      if (stage === "reviewer" && feedbackIteration < MAX_FEEDBACK_ITERATIONS) {
+        const reviewText = stageText.trim().toLowerCase();
+        const hasBlockers = /\b(blocker|critical|must fix|must not|incorrect|wrong|bug|error|security issue|vulnerability)\b/.test(reviewText);
+        const hasSuggestions = /\b(suggestion|improve|consider|could|should|recommend)\b/.test(reviewText);
+
+        if (hasBlockers || hasSuggestions) {
+          feedbackIteration++;
+          reviewerFeedback = stageText.trim();
+
+          yield {
+            type: "status",
+            message: `Evaluator-optimizer loop: reviewer found issues (iteration ${feedbackIteration}/${MAX_FEEDBACK_ITERATIONS}). Sending feedback to coder.`,
+          };
+
+          const feedbackPrefix = `\n\n---\n## Review Feedback (iteration ${feedbackIteration})\n\nThe reviewer identified the following issues. Address them in your revised implementation:\n\n${reviewerFeedback}\n`;
+          composedChunks.push(feedbackPrefix);
+          yield {
+            type: "token",
+            token: feedbackPrefix,
+          };
+
+          // Insert a coder re-run after the current position
+          // We do this by pushing a "coder" stage back into the effective pipeline
+          // This will be processed in the next loop iteration
+          effectivePipeline.splice(stageIndex + 1, 0, "coder");
+          stageTodos.splice(stageIndex + 1, 0, {
+            id: `pipeline-feedback-${feedbackIteration}-coder`,
+            title: `Coder (feedback iteration ${feedbackIteration})`,
+            status: "not-started",
+            detail: `Reworking based on review feedback`,
+          });
+        }
       }
 
       stageTodos[stageIndex] = {
         ...stageTodos[stageIndex],
         status: "completed",
-        detail: "Completed",
+        detail: feedbackIteration > 0 && stage === "coder" && reviewerFeedback
+          ? `Reworked (${feedbackIteration} feedback iteration${feedbackIteration > 1 ? "s" : ""})`
+          : "Completed",
       };
       if (stageIndex + 1 < stageTodos.length) {
         const nextTodo = stageTodos[stageIndex + 1];
@@ -1385,6 +1536,10 @@ export class NexcodeOrchestrator {
         message: `${stageLabel} stage complete`,
       };
 
+    }
+
+    if (feedbackIteration > 0) {
+      composedChunks.push(`\n\n> Completed after ${feedbackIteration} review feedback iteration${feedbackIteration > 1 ? "s" : ""}.`);
     }
 
     return {
@@ -1433,6 +1588,8 @@ export class NexcodeOrchestrator {
       maxTurns: parseInt(process.env.NEXCODE_MAX_TURNS || "30", 10),
       maxTokensPerTurn: parseInt(process.env.NEXCODE_MAX_TOKENS || "4096", 10),
       timeoutMs: parseInt(process.env.NEXCODE_TIMEOUT_MS || "600000", 10),
+      hooks: this.hooks,
+      pathScopedRules: this.pathScopedRules ?? undefined,
     };
 
     yield {
@@ -1453,6 +1610,7 @@ export class NexcodeOrchestrator {
         steeringProvider ?? this.steeringProvider,
         model,
         provider,
+        this.config.workspaceRoot,
       )) {
         yield event;
       }
@@ -1486,10 +1644,21 @@ export class NexcodeOrchestrator {
       let userMessage = "I could not complete this request due to an internal error. Please try again or rephrase your request.";
       if (errorStr.includes("malformed JSON") || errorStr.includes("can't find closing") || errorStr.includes("invalid response")) {
         userMessage = `The model "${model}" had trouble processing this request. This can happen when a model doesn't fully support tool calling. Try using a different model or simplifying your request.`;
-      } else if (errorStr.includes("Context window overflow")) {
+      } else if (errorStr.includes("Context window overflow") || errorStr.includes("context length")) {
         userMessage = "Your request was too long for the model's context window. Try breaking it into smaller parts or using a model with a larger context window.";
-      } else if (errorStr.includes("Provider returned no response")) {
-        userMessage = "The model didn't return a response. Please check if your provider is running and try again.";
+      } else if (errorStr.includes("Provider returned no response") || errorStr.includes("ECONNREFUSED")) {
+        userMessage = "Could not reach the model provider. Please check if it's running and accessible, then try again.";
+      } else if (errorStr.includes("timeout") || errorStr.includes("timed out")) {
+        userMessage = "The request timed out. Try a simpler task or a faster model.";
+      } else if (errorStr.includes("401") || errorStr.includes("403") || errorStr.includes("unauthorized")) {
+        userMessage = "Authentication failed. Check your API key in settings.";
+      } else if (errorStr.includes("429") || errorStr.includes("rate limit")) {
+        userMessage = "Rate limit reached. Wait a moment and try again.";
+      } else if (errorStr.includes("All") && errorStr.includes("attempt(s) failed")) {
+        // Extract the last error from the aggregated error message
+        const lastErrMatch = errorStr.match(/:\s*(.+?)$/);
+        const lastErr = lastErrMatch ? lastErrMatch[1].trim() : errorStr;
+        userMessage = `All model attempts failed. Last error: ${lastErr.slice(0, 200)}`;
       }
       
       return {
@@ -1909,7 +2078,7 @@ export class NexcodeOrchestrator {
       };
     }
 
-    return await this.handleToolRequest(
+    const response = await this.handleToolRequest(
       prompt,
       mode,
       provider,
@@ -1918,6 +2087,8 @@ export class NexcodeOrchestrator {
       allowWebSearch,
       abortSignal,
     );
+    
+    return response;
   }
 
   private async *streamCommandToolResult(

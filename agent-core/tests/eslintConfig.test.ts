@@ -153,12 +153,19 @@ describe("NC-030: ESLint configuration", () => {
       expect(pkg.scripts.typecheck).toBeDefined();
     });
 
-    it("root lint script includes both typecheck and eslint", () => {
+    it("root lint script runs eslint", () => {
       const pkg = JSON.parse(
         fs.readFileSync(path.join(ROOT, "package.json"), "utf-8"),
       );
-      expect(pkg.scripts.lint).toContain("typecheck");
       expect(pkg.scripts.lint).toContain("lint:eslint");
+    });
+
+    it("root typecheck script runs type checking", () => {
+      const pkg = JSON.parse(
+        fs.readFileSync(path.join(ROOT, "package.json"), "utf-8"),
+      );
+      expect(pkg.scripts.typecheck).toBeDefined();
+      expect(pkg.scripts.typecheck).toContain("lint");
     });
   });
 

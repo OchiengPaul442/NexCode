@@ -1,21 +1,19 @@
 // ── Webview Type Definitions ────────────────────────────────────────────────
 // Extracted from main.tsx for NC-036: monolithic file splitting.
-// Pure TypeScript types and interfaces with no runtime dependencies.
+// Shared types are imported from agent-core to avoid duplication.
 
-export type ProviderId = "ollama" | "openai-compatible" | "huggingface" | "openrouter" | "together" | "fireworks" | "groq" | "nvidia" | "baseten";
+import type {
+  ProviderId,
+  AgentMode,
+  ReasoningEffort,
+  ActivityStatus,
+  ActivityTodo,
+} from "@nexcode/agent-core";
 
-export type AgentMode = "auto" | "planner" | "coder" | "reviewer" | "qa" | "security";
+export type { ProviderId, AgentMode, ReasoningEffort, ActivityStatus, ActivityTodo };
 export type UiMode = "agent" | "plan" | "ask";
 export type PermissionLevel = "default" | "bypass" | "autopilot";
 export type EditStatus = "pending" | "applied" | "rejected";
-export type ActivityStatus =
-  | "pending"
-  | "not-started"
-  | "in-progress"
-  | "completed"
-  | "failed"
-  | "viewed"
-  | "modified";
 
 export interface ProviderStatus {
   provider: ProviderId;
@@ -33,13 +31,6 @@ export interface ProposedEdit {
   newText: string;
   status: EditStatus;
   statusLabel?: string;
-}
-
-export interface ActivityTodo {
-  id: string;
-  title: string;
-  status: ActivityStatus;
-  detail?: string;
 }
 
 export interface ActivityFile {
@@ -110,8 +101,6 @@ export interface QueuedPrompt {
   allowWebSearch: boolean;
   attachmentIds: string[];
 }
-
-export type ReasoningEffort = "none" | "low" | "medium" | "high" | "max";
 
 export interface Session {
   id: string;

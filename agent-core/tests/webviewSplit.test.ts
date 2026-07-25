@@ -64,7 +64,8 @@ describe("NC-036 — Monolithic main.tsx splitting", () => {
   describe("extracted modules export expected symbols", () => {
     it("types.ts exports ProviderId type", () => {
       const content = readFile("types.ts");
-      expect(content).toContain("export type ProviderId");
+      // ProviderId is either defined or re-exported from agent-core
+      expect(content).toMatch(/export (type|type\s*\{).*ProviderId/);
     });
 
     it("types.ts exports ChatMessage interface", () => {

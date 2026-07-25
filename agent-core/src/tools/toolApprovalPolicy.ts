@@ -30,7 +30,28 @@ export class DefaultToolApprovalPolicy implements ToolApprovalPolicy {
     }
 
     if (toolName === 'terminal' && typeof arg === 'string') {
-      const isSafe = SAFE_PATTERNS.some(pattern => pattern.test(arg.trim()));
+      const trimmed = arg.trim();
+
+      // Check for piped commands first - they need special handling
+      if (/\|/.test(trimmed)) {
+        // Split on pipe and check if the ENTIRE piped command matches a safe pattern
+        // A piped command is only safe if it matches one of our explicit safe piped patterns
+        const isSafePiped = SAFE_PATTERNS.some(pattern => {
+          // Only match patterns that include the pipe (safe piped patterns)
+          if (/\|/.test(pattern.source)) {
+            return pattern.test(trimmed);
+          }
+          return false;
+        });
+        if (isSafePiped) {
+          return false;
+        }
+        // Unknown piped commands require approval (confirm, don't block)
+        return true;
+      }
+
+      // Non-piped commands: check if they're safe
+      const isSafe = SAFE_PATTERNS.some(pattern => pattern.test(trimmed));
       if (isSafe) {
         return false;
       }

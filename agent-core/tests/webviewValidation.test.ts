@@ -149,7 +149,7 @@ describe("NC-005: validateWebviewMessage", () => {
             msg = { type: msgType, server: "my-server", tool: "run" };
             break;
           case "addAttachment":
-            msg = { type: msgType, name: "file.txt", attachment: {} };
+            msg = { type: msgType, attachment: { fileName: "file.txt", mimeType: "text/plain", kind: "text" } };
             break;
           case "removeAttachment":
             msg = { type: msgType, attachmentId: "a-1" };

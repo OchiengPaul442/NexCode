@@ -275,16 +275,42 @@ export const SAFE_PATTERNS = [
   /^type\b/i,
   /^where\b/i,
   /^findstr\b/i,
+  // Safe piped commands - read-only operations piped to formatting/filtering
+  // PowerShell piped read-only commands
+  /^Get-ChildItem\b[^\|]*\|\s*(?:Format-(?:Table|List|Wide|Custom)|Sort-Object|Select-Object|Where-Object|Measure-Object|Tee-Object|Out-(?:String|File|Host|GridView|Null|Printer|Default))\b/,
+  /^Get-Content\b[^\|]*\|\s*(?:Select-String|Sort-Object|Select-Object|Where-Object|Measure-Object|Format-(?:Table|List|Wide|Custom)|Tee-Object|Out-(?:String|File|Host|GridView|Null|Printer|Default)|ForEach-Object|Group-Object|Get-Unique|Get-Random|Out-GridView)\b/,
+  /^Get-Process\b[^\|]*\|\s*(?:Sort-Object|Select-Object|Where-Object|Measure-Object|Format-(?:Table|List|Wide|Custom)|Tee-Object|Out-(?:String|File|Host|GridView|Null|Printer|Default)|ForEach-Object|Group-Object|Stop-Process|Out-GridView)\b/,
+  /^Get-Service\b[^\|]*\|\s*(?:Sort-Object|Select-Object|Where-Object|Measure-Object|Format-(?:Table|List|Wide|Custom)|Tee-Object|Out-(?:String|File|Host|GridView|Null|Printer|Default)|ForEach-Object|Group-Object)\b/,
+  /^Get-ChildItem\b[^\|]*\|\s*ForEach-Object\b/,
+  /^Get-Content\b[^\|]*\|\s*ForEach-Object\b/,
+  /^Get-Content\b[^\|]*\|\s*Select-Object\b/,
+  /^Get-Content\b[^\|]*\|\s*Where-Object\b/,
+  /^Get-Content\b[^\|]*\|\s*Measure-Object\b/,
+  /^Select-String\b[^\|]*\|\s*(?:Select-Object|Sort-Object|Format-(?:Table|List|Wide|Custom)|Tee-Object|Out-(?:String|File|Host|GridView|Null|Printer|Default)|ForEach-Object|Group-Object|Out-GridView)\b/,
+  /^Get-Command\b[^\|]*\|\s*(?:Select-Object|Sort-Object|Format-(?:Table|List|Wide|Custom)|Where-Object|Tee-Object|Out-(?:String|File|Host|GridView|Null|Printer|Default)|ForEach-Object)\b/,
+  // Unix/POSIX piped read-only commands
+  /^ls\s+[^\|]*\|\s*(?:grep|head|tail|wc|less|more|sort|uniq|awk|sed|cut|tr|tee)\b/,
+  /^cat\s+[^\|]*\|\s*(?:grep|head|tail|wc|less|more|sort|uniq|awk|sed|cut|tr|tee)\b/,
+  /^head\s+[^\|]*\|\s*(?:grep|wc|less|more|sort|uniq|awk|sed|cut|tr)\b/,
+  /^tail\s+[^\|]*\|\s*(?:grep|wc|less|more|sort|uniq|awk|sed|cut|tr)\b/,
+  /^find\s+[^\|]*\|\s*(?:grep|head|tail|wc|less|more|sort|uniq|awk|sed|cut|tr|xargs\s+echo)\b/,
+  /^grep\s+[^\|]*\|\s*(?:grep|head|tail|wc|less|more|sort|uniq|awk|sed|cut|tr|tee|xargs\s+echo)\b/,
+  /^ps\s+[^\|]*\|\s*(?:grep|head|tail|wc|less|more|sort|uniq|awk|sed|cut|tr)\b/,
+  /^git\s+log\b[^\|]*\|\s*(?:grep|head|tail|wc|less|more|sort|uniq|awk|sed|cut|tr|tee)\b/,
+  /^git\s+diff\b[^\|]*\|\s*(?:grep|head|tail|wc|less|more|sort|uniq|awk|sed|cut|tr|tee)\b/,
+  /^git\s+status\b[^\|]*\|\s*(?:grep|head|tail|wc|less|more|sort|uniq|awk|sed|cut|tr|tee)\b/,
 ];
 
 // SHELL_EXPANSION_PATTERNS - block command substitution and shell expansion
+// NOTE: Pipe (|) is NOT blocked here. Safe piped commands are allowed via SAFE_PATTERNS.
+// Dangerous piped commands are blocked via BLOCKED_PATTERNS.
 const SHELL_EXPANSION_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /\$\(/, reason: 'Command substitution $() is blocked.' },
   { pattern: /`[^`]+`/, reason: 'Backtick command substitution is blocked.' },
   { pattern: /\$\{/, reason: 'Parameter expansion ${} is blocked.' },
   { pattern: /;\s*(?:rm|del|format|mkfs|shutdown|reboot)/i, reason: 'Chained destructive command blocked.' },
   { pattern: /&&\s*\w/, reason: 'Chained command (&&) is blocked.' },
-  { pattern: /\|\s*\w/, reason: 'Piped command (|) is blocked.' },
+  { pattern: /\|\|/, reason: 'OR chaining (||) is blocked. Use separate tool calls instead.' },
   { pattern: /;\s*\w/, reason: 'Chained command (;) is blocked.' },
   // C-02: Output redirection (>, >>) must be rejected — it turns read-only commands into writes.
   { pattern: /[^|;]\s*>\s*\S/, reason: 'Output redirection (>) is blocked. Use typed file tools instead.' },
@@ -368,6 +394,23 @@ const BLOCKED_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
     pattern: /\bInvoke-WebRequest\b[^\n]*\|\s*(?:Invoke-Expression|IEX)\b/i,
     reason: "Piped download-and-execute is blocked.",
   },
+  // Additional dangerous piped command patterns
+  {
+    pattern: /\bwget\b[^\n]*\|\s*(?:bash|sh|pwsh|powershell)\b/i,
+    reason: "Piped download-and-execute is blocked.",
+  },
+  {
+    pattern: /\bInvoke-RestMethod\b[^\n]*\|\s*(?:Invoke-Expression|IEX)\b/i,
+    reason: "Piped download-and-execute is blocked.",
+  },
+  {
+    pattern: /\bGet-Content\b[^\n]*\|\s*(?:Invoke-Expression|IEX)\b/i,
+    reason: "Piped content to execution is blocked.",
+  },
+  {
+    pattern: /\bcurl\b[^\n]*\|\s*(?:python|python3|perl|ruby|php)\b/i,
+    reason: "Piped download-and-execute to scripting language is blocked.",
+  },
 ];
 
 const BLOCKED_GIT_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
@@ -380,7 +423,7 @@ const BLOCKED_GIT_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
     reason: "Destructive git clean is blocked.",
   },
   {
-    pattern: /\bgit\s+checkout\s+--\b/i,
+    pattern: /\bgit\s+checkout\s+--\s/i,
     reason: "Discarding working tree changes is blocked.",
   },
   {
@@ -566,7 +609,16 @@ export function normalizeTerminalCommand(command: string): string {
   }
 
   const trimmed = cmd.trim();
-  const prefixMatch = trimmed.match(
+
+  // Strip "cd <workspace> && " or "cd <workspace>; " prefix — terminal already runs in workspace root
+  const cdPrefix = trimmed.match(
+    /^cd\s+["']?[^;&|]+["']?\s*(?:&&\s*|;\s*)/i,
+  );
+  if (cdPrefix) {
+    cmd = trimmed.slice(cdPrefix[0].length).trim();
+  }
+
+  const prefixMatch = cmd.match(
     /^(?:pnpm\s+create\s+next-app(?:@latest)?|npx\s+create-next-app(?:@latest)?|npm\s+create-next-app(?:@latest)?)\s+/i,
   );
 
@@ -617,7 +669,7 @@ export class TerminalTool {
     if (validationError) {
       return {
         ok: false,
-        output: `Command blocked by safety policy: ${validationError}`,
+        output: `Command requires user approval: ${validationError}`,
       };
     }
 
@@ -747,7 +799,7 @@ export class TerminalTool {
     if (validationError) {
       return {
         ok: false,
-        output: `Command blocked by safety policy: ${validationError}`,
+        output: `Command requires user approval: ${validationError}`,
       };
     }
 
@@ -803,9 +855,10 @@ export class TerminalTool {
       killProcessTree(child);
     }, timeoutMs);
 
-    // Abort signal handler: kill the process tree
+    // Abort signal handler: kill the process tree and clear timeout
     const onAbort = () => {
       cancelled = true;
+      clearTimeout(timeout);
       pushChunk("\n[command cancelled by abort signal]\n");
       killProcessTree(child);
     };
@@ -934,16 +987,10 @@ export class TerminalTool {
       }
     }
 
-    for (const safe of SAFE_PATTERNS) {
-      if (safe.test(trimmed)) {
-        return null;
-      }
-    }
-
-    // Deny-by-default: unknown commands are rejected.
-    // Only commands matching SAFE_PATTERNS are allowed through the terminal
-    // safety boundary. Everything else must go through typed tool wrappers
-    // (GitTool, TestRunnerTool, SearchTool) or require explicit approval.
-    return "Command is not in the terminal allowlist. Only explicitly permitted read-only commands are allowed. Use typed tool wrappers (git, test, search) instead of raw shell.";
+    // Commands not matching SAFE_PATTERNS are allowed through the terminal
+    // safety check but will require user approval via the approval policy.
+    // This implements "confirm, don't block" for development commands like
+    // npx, npm, node, python, docker, etc.
+    return null;
   }
 }

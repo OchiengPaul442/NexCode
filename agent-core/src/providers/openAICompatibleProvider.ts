@@ -25,6 +25,7 @@ export interface ContextBudgetCheck {
 interface OpenAIMessage {
   role: string;
   content: string;
+  reasoning_content?: string;
   tool_calls?: Array<{
     id: string;
     type: "function";
@@ -398,7 +399,11 @@ export class OpenAICompatibleProvider implements ModelProvider {
         };
       }
 
-      const text = json.choices?.[0]?.message?.content ?? "";
+      // Some models (like mimo-v2.5) put their response in reasoning_content
+      // instead of content when using reasoning mode
+      const text = json.choices?.[0]?.message?.content 
+        ?? json.choices?.[0]?.message?.reasoning_content 
+        ?? "";
 
       return {
         text,

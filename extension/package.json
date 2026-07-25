@@ -1,10 +1,9 @@
 {
   "name": "nexcode-kiboko-extension",
-  "displayName": "Nexcode Kiboko",
-  "description": "Local-first, multi-agent AI coding assistant for VS Code.",
+  "displayName": "NexCode Kiboko",
+  "description": "Local-first AI coding assistant for VS Code with agent modes, safe tool execution, edit review, Ollama, and OpenAI-compatible providers.",
   "publisher": "nexcode",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.8.0",
   "icon": "media/icon.png",
   "engines": {
     "vscode": "^1.95.0"
@@ -14,13 +13,61 @@
     "chat",
     "agent",
     "ollama",
+    "openai",
     "code-review",
-    "developer-tools"
+    "developer-tools",
+    "code-generation",
+    "copilot",
+    "llm",
+    "gpt",
+    "claude",
+    "coding-assistant",
+    "ai-assistant",
+    "code-completion",
+    "code-editing",
+    "terminal",
+    "git",
+    "search",
+    "refactoring",
+    "debugging",
+    "automation",
+    "productivity",
+    "multi-agent",
+    "local-ai",
+    "privacy-first",
+    "typescript",
+    "nextjs",
+    "react",
+    "webview",
+    "sidebar",
+    "workflow",
+    "pair-programming",
+    "code-analysis",
+    "security-scanning",
+    "test-generation",
+    "documentation",
+    "api-design",
+    "database",
+    "docker",
+    "kubernetes",
+    "devops",
+    "ci-cd",
+    "code-quality",
+    "linting",
+    "formatting",
+    "migration",
+    "deployment"
   ],
-  "license": "MIT",
   "categories": [
-    "Other"
+    "Other",
+    "Programming Languages",
+    "Testing"
   ],
+  "galleryBanner": {
+    "color": "#1E1E2E",
+    "theme": "dark"
+  },
+  "homepage": "https://nexcode.dev",
   "main": "./out/extension.js",
   "activationEvents": [
     "onView:nexcodeKiboko.sidebarView"
@@ -180,7 +227,7 @@
         "nexcodeKiboko.allowWorkspacePrompts": {
           "type": "boolean",
           "default": false,
-          "description": "Allow workspace prompt files to override built-in system prompts. Disabled by default for security — a malicious repository could otherwise inject arbitrary system instructions. Only enable in trusted workspaces where you explicitly want custom prompts."
+          "description": "Allow workspace prompt files to override built-in system prompts. Disabled by default for security - a malicious repository could otherwise inject arbitrary system instructions. Only enable in trusted workspaces where you explicitly want custom prompts."
         },
         "nexcodeKiboko.openAIBaseUrl": {
           "type": "string",
@@ -272,3 +319,5 @@
     "zustand": "^5.0.8"
   }
 }
+
+

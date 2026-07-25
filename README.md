@@ -1,6 +1,6 @@
 # NexCode Kiboko
 
-![CI](https://img.shields.io/badge/CI-passing-brightgreen?style=flat-square) ![Tests](https://img.shields.io/badge/tests-1476%20passing-brightgreen?style=flat-square) ![Version](https://img.shields.io/badge/version-0.1.47-blue?style=flat-square) ![License](https://img.shields.io/badge/license-MIT-green?style=flat-square) ![VS Code](https://img.shields.io/badge/VS%20Code-%5E1.95.0-blueviolet?style=flat-square)
+![CI](https://img.shields.io/badge/CI-passing-brightgreen?style=flat-square) ![Tests](https://img.shields.io/badge/tests-2000%20passing-brightgreen?style=flat-square) ![Version](https://img.shields.io/badge/version-0.3.0-blue?style=flat-square) ![License](https://img.shields.io/badge/license-MIT-green?style=flat-square) ![VS Code](https://img.shields.io/badge/VS%20Code-%5E1.95.0-blueviolet?style=flat-square)
 
 Local-first, multi-agent AI coding assistant for VS Code.
 
@@ -13,6 +13,7 @@ Local-first, multi-agent AI coding assistant for VS Code.
 - **Session management**: Persistent sessions with history
 - **Dynamic reasoning**: Real-time status updates
 - **Token efficiency**: Context compression, caching, batch operations
+- **Improved tool calling**: Better support for models with varying tool calling capabilities
 
 ## Quick Start
 
@@ -62,7 +63,7 @@ npm run extension:package
 
 ## Testing
 
-1476 tests passing across 59 test files:
+2000 tests passing across 68 test files:
 - Provider key isolation and lazy construction
 - Workspace trust and URL validation
 - Webview secret removal and state migration
@@ -88,6 +89,8 @@ npm run extension:package
 - Persistence reliability and error surfacing
 - Secret redaction (multi-layer engine)
 - Config schema alignment
+- Real-world integration tests
+- Security policy classification
 
 ## License
 

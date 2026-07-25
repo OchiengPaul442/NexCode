@@ -42,10 +42,12 @@ describe("NC-009 — MCP in-process adapter registry", () => {
       expect(servers).toContain("filesystem");
     });
 
-    it("orchestrator does not list any non-built-in servers by default", () => {
+    it("orchestrator lists built-in servers by default", () => {
       const orchestrator = createNexcodeOrchestrator({ workspaceRoot });
       const servers = orchestrator.listMcpServers();
-      expect(servers).toEqual(["filesystem"]);
+      expect(servers).toContain("filesystem");
+      expect(servers).toContain("git");
+      expect(servers).toContain("search");
     });
 
     it("orchestrator can list tools for the filesystem server", async () => {

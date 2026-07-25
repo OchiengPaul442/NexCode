@@ -984,20 +984,20 @@ function detectDescribedAction(
     /(?:search|find|grep|look for|scan)\s+(?:for\s+)?[`"']([^`"']+)[`"']\s+(?:in|across|through)\s+(?:the\s+)?(?:files?|code|workspace)/i,
     /(?:I(?:'ll| will)|let me)\s+(?:search|find|grep|look for|scan)\s+(?:for\s+)?[`"']([^`"']+)[`"']/i,
     // Additional patterns for poor tool-calling models
-    // Search for file types
-    /(?:search|find|grep|look\s+for|scan)\s+(?:for\s+)?(?:any\s+)?(?:TypeScript|\.ts|\.js|\.py|\.java|\.go|\.rs)\s+(?:files?|code)\s+(?:in\s+)?(?:the\s+)?(?:workspace|directory)/i,
+    // Search for file types — extract file type as query
+    /(?:search|find|grep|look\s+for|scan)\s+(?:for\s+)?(?:any\s+)?(.+?)\s+(?:files?|code)\s+(?:in\s+)?(?:the\s+)?(?:workspace|directory)/i,
     // Generic search mention
     /(?:search|find|grep)\s+(?:for\s+)?[`"']?([^\s`"']+)[`"']?/i,
-    // "Find all X files"
-    /(?:find|locate)\s+(?:all\s+)?(?:the\s+)?(?:TypeScript|\.ts|\.js|\.py|\.java|\.go|\.rs)\s+(?:files?)/i,
-    // "Search for TypeScript files in the workspace"
-    /(?:search|find|grep|look\s+for|scan)\s+(?:for\s+)?(?:any\s+)?(?:TypeScript|\.ts|\.js|\.py|\.java|\.go|\.rs)\s+(?:files?|code)\s+(?:in\s+)?(?:the\s+)?(?:workspace|directory|folder|project)/i,
+    // "Find all X files" — extract file type as query
+    /(?:find|locate)\s+(?:all\s+)?(?:the\s+)?(.+?)\s+(?:files?)/i,
+    // "Search for TypeScript files in the workspace" — extract file type as query
+    /(?:search|find|grep|look\s+for|scan)\s+(?:for\s+)?(?:any\s+)?(.+?)\s+(?:files?|code)\s+(?:in\s+)?(?:the\s+)?(?:workspace|directory|folder|project)/i,
   ];
 
   for (const pattern of searchPatterns) {
     const match = text.match(pattern);
     if (match && available.has("search")) {
-      return { toolName: "search", args: { query: match[1].trim() } };
+      return { toolName: "search", args: { query: match[1]?.trim() || "TODO" } };
     }
   }
 
@@ -1029,7 +1029,12 @@ function processTextResponse(
   }
 
   // Try described action detection as a last resort
-  const describedAction = detectDescribedAction(text, toolDefinitions);
+  let describedAction = null;
+  try {
+    describedAction = detectDescribedAction(text, toolDefinitions);
+  } catch {
+    // Pattern matching error — fall through to null return
+  }
   if (describedAction) {
     const args: Record<string, string> = {};
     // Map the detected action args to proper tool call format
@@ -1377,7 +1382,12 @@ export async function* runAgentLoop(
       } else if (turn < config.maxTurns - 1 && consecutiveNudges < MAX_NUDGES) {
         // Model returned text without tool calls — it may be describing what it
         // would do instead of doing it. Try to detect and execute the described action.
-        const describedAction = detectDescribedAction(response.text, toolDefinitions);
+        let describedAction = null;
+        try {
+          describedAction = detectDescribedAction(response.text, toolDefinitions);
+        } catch {
+          // Pattern matching error — nudge instead
+        }
         if (describedAction) {
           // Execute the detected action directly
           const argString = formatToolArgs(describedAction.toolName, describedAction.args);
@@ -1433,7 +1443,12 @@ export async function* runAgentLoop(
         continue;
       } else {
         // Last turn — try to execute any described action before giving up
-        const describedAction = detectDescribedAction(response.text, toolDefinitions);
+        let describedAction = null;
+        try {
+          describedAction = detectDescribedAction(response.text, toolDefinitions);
+        } catch {
+          // Pattern matching error — fall through
+        }
         if (describedAction) {
           const argString = formatToolArgs(describedAction.toolName, describedAction.args);
           const toolStartTime = Date.now();

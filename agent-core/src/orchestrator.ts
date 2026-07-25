@@ -707,6 +707,19 @@ export class NexcodeOrchestrator {
           yield step.value;
         }
 
+        // Emit toolExecuted for non-dangerous inferred tool commands
+        const toolName = inferredToolCommand.split(/\s+/)[0] || "unknown";
+        const isDangerous = /rm\s+-rf|format\s+[a-z]:|del\s+\/[qs]|Remove-Item\s+-Recurse/i.test(inferredToolCommand);
+        if (!isDangerous && response) {
+          yield {
+            type: "toolExecuted",
+            toolName,
+            command: inferredToolCommand,
+            status: response.diagnostics.length > 0 ? "error" : "success",
+            message: response.text.substring(0, 200),
+          };
+        }
+
       } else if (workspaceStatsCommand) {
         executedToolCommand = workspaceStatsCommand;
         latestActivityFiles = [
@@ -1994,7 +2007,7 @@ export class NexcodeOrchestrator {
       };
     }
 
-    return await this.handleToolRequest(
+    const response = await this.handleToolRequest(
       prompt,
       mode,
       provider,
@@ -2003,6 +2016,8 @@ export class NexcodeOrchestrator {
       allowWebSearch,
       abortSignal,
     );
+    
+    return response;
   }
 
   private async *streamCommandToolResult(
